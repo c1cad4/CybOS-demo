@@ -1,9 +1,19 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod models;
+
+use models::{
+    Event,
+    GraphLink,
+    GraphNode,
+    LearningFact,
+    LearningResponse,
+    Memory,
+    TokenMarket,
+};
 use chrono::Local;
 use eframe::egui::{self, Color32, RichText, Stroke, Vec2};
 use rusqlite::{Connection, params};
-use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
     fs,
@@ -18,18 +28,6 @@ use serde_json::json;
 const CICADAFARM_MINT: &str = "9QLCEL7Xo9VTwgBeAYU1PWX7JJ8joKxQCYw3msjUpump";
 const ROBOTCYB_MINT: &str = "8WZiguAp8NyFnwm8Z97k6sCbSRCWaW1YYXKeCTpupump";
 
-#[derive(Clone, Debug, Default)]
-struct TokenMarket {
-    name: String,
-    mint: String,
-    price: Option<f64>,
-    price_change_24h: Option<f64>,
-    volume_24h: Option<f64>,
-    liquidity: Option<f64>,
-    market_cap: Option<f64>,
-    candles: Vec<(i64, f64)>,
-    pool: Option<String>,
-}
 
 static TOKEN_MARKET_CACHE: std::sync::OnceLock<
     std::sync::Mutex<(std::time::Instant, Vec<TokenMarket>)>,
@@ -119,52 +117,9 @@ impl Page {
     }
 }
 
-#[derive(Clone, Serialize, Deserialize)]
-struct Event {
-    id: String,
-    time: String,
-    kind: String,
-    text: String,
-}
-#[derive(Clone, Serialize, Deserialize)]
-struct GraphNode {
-    id: String,
-    label: String,
-    kind: String,
-    x: f32,
-    y: f32,
-}
-#[derive(Clone, Serialize, Deserialize)]
-struct GraphLink {
-    from: String,
-    to: String,
-    relation: String,
-}
 
-#[derive(Clone, Serialize, Deserialize)]
-struct Memory {
-    id: String,
-    time: String,
-    text: String,
-    source: String,
-    importance: f32,
-}
 
-#[derive(Clone, Serialize, Deserialize)]
-struct LearningFact {
-    subject: String,
-    subject_label: String,
-    subject_kind: String,
-    relation: String,
-    object: String,
-    object_label: String,
-    object_kind: String,
-}
 
-#[derive(Clone, Serialize, Deserialize)]
-struct LearningResponse {
-    facts: Vec<LearningFact>,
-}
 
 struct Store {
     path: PathBuf,
