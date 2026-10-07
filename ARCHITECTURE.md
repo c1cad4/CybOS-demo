@@ -1,7 +1,9 @@
 # cybOS architecture
 
 cybOS 0.7 is a native desktop system composed of a small application shell,
-domain services, local persistence and page-oriented UI.
+domain services, local persistence and page-oriented UI. Its communication and
+runtime design also adopts selected protocol principles from the Cyberia CybOS
+concept without pretending the macOS app is a new kernel.
 
 ## Core layers
 
