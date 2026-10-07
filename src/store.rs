@@ -1,6 +1,9 @@
 use chrono::Local;
 use rusqlite::{params, Connection};
 use std::{fs, path::PathBuf};
+
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 use uuid::Uuid;
 
 use crate::models::{Event, GraphLink, GraphNode, Memory};
@@ -13,8 +16,23 @@ impl Store {
     pub(crate) fn open() -> Self {
         let base = dirs_fallback();
         let _ = fs::create_dir_all(&base);
+
+        #[cfg(unix)]
+        if let Ok(metadata) = fs::metadata(&base) {
+            let mut permissions = metadata.permissions();
+            permissions.set_mode(0o700);
+            let _ = fs::set_permissions(&base, permissions);
+        }
+
         let path = base.join("cybos.db");
         let conn = Connection::open(&path).expect("cannot open cybOS database");
+
+        #[cfg(unix)]
+        if let Ok(metadata) = fs::metadata(&path) {
+            let mut permissions = metadata.permissions();
+            permissions.set_mode(0o600);
+            let _ = fs::set_permissions(&path, permissions);
+        }
         conn.execute_batch(
             r#"
             CREATE TABLE IF NOT EXISTS events(
