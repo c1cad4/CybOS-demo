@@ -1,7 +1,7 @@
 use crate::CybOs;
-use crate::network::web_urls;
 use serde_json::json;
 use super::web_intent;
+use super::web_planner;
 
 impl CybOs {
     fn parse_planner_json(content: &str) -> Option<serde_json::Value> {
@@ -342,25 +342,7 @@ Return ONLY valid JSON.
         };
 
         if let Some(web_query) = forced_web_query {
-            let search_result = self.tool_web_search(&web_query);
-
-            let urls = web_urls::web_urls_from_result(&search_result);
-
-            if urls.is_empty() {
-                return "Веб-поиск не нашёл подходящих источников.".into();
-            }
-
-            for url in urls {
-                let fetched = self.tool_web_fetch(&url);
-
-                if !fetched.starts_with("WEB SOURCE\n") {
-                    continue;
-                }
-
-                return self.web_answer_from_source(&conversation, &fetched);
-            }
-
-            return "Поиск выполнился, но cybOS не смог открыть источник. Непроверенная информация не была выдана как факт.".into();
+            return self.direct_web_answer(&conversation, &web_query);
         }
 
         // ----------------------------------------------------
@@ -386,48 +368,30 @@ Return ONLY valid JSON.
 
                 "get_events" => {
                     let limit = arguments.parse::<usize>().unwrap_or(10).clamp(1, 50);
-
                     self.tool_get_events(limit)
                 }
 
                 "get_entity" => self.tool_get_entity(&arguments),
-
                 "search_knowledge" => self.tool_search_knowledge(&arguments),
-
                 "farm_status" => self.tool_farm_status(),
 
-                "web_search" => self.tool_web_search(&arguments),
-
-                "web_fetch" => {
-                    let fetched = self.tool_web_fetch(&arguments);
-
-                    if fetched.starts_with("WEB SOURCE\n") {
-                        return self.web_answer_from_source(&conversation, &fetched);
+                "web_search" | "web_fetch" => {
+                    match self.handle_web_tool(
+                        &tool,
+                        &arguments,
+                        &conversation,
+                    ) {
+                        web_planner::WebToolOutcome::Answer(answer) => {
+                            return answer;
+                        }
+                        web_planner::WebToolOutcome::Continue(result) => result,
                     }
-
-                    fetched
                 }
 
                 _ => {
                     return format!("RobotCYB: неизвестный инструмент {}.", tool);
                 }
             };
-
-            // If the planner itself selected web_search,
-            // immediately fetch the best candidate.
-            if tool == "web_search" {
-                let urls = web_urls::web_urls_from_result(&result);
-
-                for url in urls {
-                    let fetched = self.tool_web_fetch(&url);
-
-                    if fetched.starts_with("WEB SOURCE\n") {
-                        return self.web_answer_from_source(&conversation, &fetched);
-                    }
-                }
-
-                return "Поиск выполнился, но источник не удалось открыть. Непроверенная информация не была выдана как факт.".into();
-            }
 
             let observation = format!(
                 "ORIGINAL CONVERSATION:
