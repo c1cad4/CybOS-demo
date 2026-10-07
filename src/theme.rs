@@ -5,11 +5,11 @@ use eframe::egui::{self, Color32, RichText, Stroke, Vec2};
 impl CybOs {
 
     pub(crate) fn green() -> Color32 {
-        Color32::from_rgb(125, 255, 189)
+        Color32::from_rgb(73, 255, 157)
     }
 
     pub(crate) fn neon() -> Color32 {
-        Color32::from_rgb(0, 255, 150)
+        Color32::from_rgb(73, 255, 157)
     }
 
     pub(crate) fn paint_icon(painter: &egui::Painter, c: egui::Pos2, icon: Icon, color: Color32, s: f32) {
@@ -236,7 +236,16 @@ impl CybOs {
 
         visuals.panel_fill = Color32::from_rgb(2, 9, 7);
 
-        visuals.hyperlink_color = Color32::from_rgb(80, 255, 170);
+        visuals.hyperlink_color = Color32::from_rgb(85, 233, 255);
+        visuals.selection.bg_fill = Color32::from_rgba_unmultiplied(73, 255, 157, 65);
+        visuals.selection.stroke = Stroke::new(1.0, Color32::from_rgb(73, 255, 157));
+        visuals.widgets.inactive.bg_fill = Color32::from_rgba_unmultiplied(3, 12, 8, 230);
+        visuals.widgets.inactive.bg_stroke = Stroke::new(1.0, Color32::from_rgba_unmultiplied(73, 255, 157, 100));
+        visuals.widgets.hovered.bg_fill = Color32::from_rgba_unmultiplied(7, 30, 18, 245);
+        visuals.widgets.hovered.bg_stroke = Stroke::new(1.0, Color32::from_rgb(73, 255, 157));
+        visuals.widgets.active.bg_fill = Color32::from_rgba_unmultiplied(9, 38, 23, 255);
+        visuals.widgets.active.bg_stroke = Stroke::new(1.0, Color32::from_rgb(85, 233, 255));
+        visuals.widgets.open.bg_fill = Color32::from_rgba_unmultiplied(7, 30, 18, 245);
 
         ctx.set_visuals(visuals);
     }
