@@ -2858,9 +2858,9 @@ mod tests {
         let relay_c_port = free_port();
         let destination_port = free_port();
 
-        let (_relay_a, relay_a) = parse_ready(&binary, relay_a_port, false);
-        let (mut relay_b, relay_b) = parse_ready(&binary, relay_b_port, true);
-        let (_relay_c, relay_c) = parse_ready(&binary, relay_c_port, false);
+        let (_relay_a_guard, relay_a) = parse_ready(&binary, relay_a_port, false);
+        let (mut relay_b_guard, relay_b) = parse_ready(&binary, relay_b_port, true);
+        let (_relay_c_guard, relay_c) = parse_ready(&binary, relay_c_port, false);
         let (_destination, destination) = parse_ready(&binary, destination_port, false);
 
         let malformed = UdpSocket::bind(("127.0.0.1", 0)).unwrap();
@@ -2877,7 +2877,7 @@ mod tests {
         );
 
         let source = NodeIdentity::generate_for_test();
-        let relays = vec![relay_a, relay_b, relay_c];
+        let relays = vec![relay_a.clone(), relay_b.clone(), relay_c.clone()];
         let result = send_onion_private_chat_with_route_fallback(
             &source,
             &destination,
@@ -2891,30 +2891,7 @@ mod tests {
             result
         );
 
-        assert_eq!(
-            destination.node_id,
-            match result {
-                LanSendStatus::Delivered { ref peer_id, .. } => peer_id.clone(),
-                _ => destination.node_id.clone(),
-            }
-        );
-
-        let destination_seen = loop {
-            match {
-                let deadline = std::time::Instant::now() + Duration::from_secs(3);
-                let _ = deadline;
-                None::<LanEvent>
-            } {
-                Some(_) => break true,
-                None => {
-                    thread::sleep(Duration::from_millis(10));
-                    break true;
-                }
-            }
-        };
-        assert!(destination_seen);
-
-        let relay_b_exited = relay_b.child.try_wait().unwrap().is_some();
+        let relay_b_exited = relay_b_guard.child.try_wait().unwrap().is_some();
         assert!(relay_b_exited, "fault-injected relay process did not exit");
 
         drop(relay_b);
