@@ -62,7 +62,9 @@ On macOS, the Ed25519 private identity is protected by the system Keychain and C
 Recommended next step: extend the same encrypted-storage policy to any additional sensitive persisted datasets that require it.
 
 ### MEDIUM — Adversarial integration coverage is still bounded
-The harness now covers live routed delivery, replay injection and ciphertext tampering across three real cybOS child processes, in addition to the existing in-process direct-LAN and routed tests. Some broader process-level fault cases are still not covered.
+The harness now covers live routed delivery, replay injection and ciphertext tampering
+in the real UDP listener path, in addition to the existing direct-LAN and routed tests.
+Some broader process-level fault cases are still not covered.
 
 Recommended next step: extend the process harness with controlled relay crash, route-expiry, malformed-binding and mid-route packet-drop scenarios.
 
@@ -108,7 +110,7 @@ Implemented:
 - live three-relay loopback forwarding test;
 - live full-path source → relay-a → relay-b → destination delivery with reverse ACK;
 - standalone headless onion smoke test executed from the debug cybOS binary;
-- process-isolated routed delivery, replay and ciphertext-tampering tests;
+- live routed delivery, replay and ciphertext-tampering tests through the actual UDP listener path;
 - forged encrypted route-ack rejection;
 - regression test proving route-bind payload does not expose source node ID/public key.
 

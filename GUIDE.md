@@ -132,9 +132,10 @@ The onion packet therefore exposes only the metadata necessary for the current h
 A relay does not receive the source Ed25519 public key as part of route setup, and
 it does not decrypt the end-to-end CybChat payload.
 
-The relay listener is a real UDP forwarder. Live loopback and process-isolated tests
-exercise multi-hop forwarding, replay rejection, ciphertext tampering, route-binding
-authentication and routed ACK delivery.
+The relay listener is a real UDP forwarder. Live loopback tests exercise multi-hop
+forwarding, replay rejection, ciphertext tampering, route-binding authentication and
+routed ACK delivery. The debug binary also exposes a standalone headless onion
+smoke test that exercises the same live listener path.
 
 This is routed encrypted transport, not a complete anonymity network. Network
 endpoints, timing, packet size and route participation remain visible to relevant
@@ -176,10 +177,10 @@ The live loopback harness currently exercises:
 - wrong recipient rejection
 - lost-ACK recovery through a fresh handshake
 
-The production-hardening harness now also launches three real cybOS child processes
-for relay-a, relay-b and destination, performs a routed E2E delivery through those
-process boundaries, and injects replay and ciphertext-tampering packets against the
-first relay.
+The current harness also exercises a full live source → relay-a → relay-b →
+destination route with reverse ACK delivery, plus a standalone headless onion
+smoke test. Process-isolated fault injection remains a separate future hardening
+milestone.
 
 ## 12. Operational status
 
