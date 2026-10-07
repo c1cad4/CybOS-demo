@@ -1,4 +1,5 @@
 use crate::CybOs;
+use super::web_intent;
 
 impl CybOs {
     pub(crate) fn build_brain_context(&self, query: &str) -> String {
@@ -82,7 +83,7 @@ impl CybOs {
 
             let message = message.trim();
 
-            if Self::is_web_request(message) && !Self::is_web_followup(message) {
+            if web_intent::is_web_request(message) && !web_intent::is_web_followup(message) {
                 return Some(message.to_string());
             }
         }
