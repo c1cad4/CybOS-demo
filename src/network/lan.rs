@@ -211,7 +211,14 @@ pub(crate) fn build_dynamic_onion_route_candidates(
     let ranked = rank_onion_relays(relays);
     let mut candidates: Vec<Vec<OnionRoutePeer>> = Vec::new();
 
-    push_candidate(&mut candidates, ranked.clone());
+    // Preserve the caller's topology/order for the first attempt. The source
+    // may have an explicitly constructed route; health ranking is for fallback
+    // candidates and UI AUTO selection, not permission to reorder an active path.
+    push_candidate(&mut candidates, relays.to_vec());
+
+    if ranked != relays {
+        push_candidate(&mut candidates, ranked.clone());
+    }
 
     for length in 1..=ranked.len().min(2) {
         push_candidate(
@@ -2942,6 +2949,7 @@ mod tests {
         let candidates = build_dynamic_onion_route_candidates(&peers);
 
         assert!(!candidates.is_empty());
+        assert_eq!(candidates[0], peers);
         assert_eq!(candidates[0].len(), 4);
         assert!(candidates.iter().any(|candidate| candidate.len() == 1));
         assert!(candidates.iter().any(|candidate| candidate.len() == 2));
