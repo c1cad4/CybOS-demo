@@ -99,6 +99,9 @@ impl Store {
     pub(crate) fn set(&self, key: &str, value: &str) {
         let _ = self.conn.execute("INSERT INTO kv(key,value) VALUES(?1,?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value", params![key,value]);
     }
+    pub(crate) fn delete(&self, key: &str) {
+        let _ = self.conn.execute("DELETE FROM kv WHERE key=?1", [key]);
+    }
     pub(crate) fn add_memory(&self, memory: &Memory) {
         let _ = self.conn.execute(
             "INSERT OR IGNORE INTO memories(id,time,text,source,importance)
