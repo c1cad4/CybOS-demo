@@ -56,7 +56,7 @@ pub(crate) fn encrypt(
 ) -> Result<(String, String), &'static str> {
     let rng = rand::SystemRandom::new();
     let mut nonce = [0u8; NONCE_LEN];
-    rng.fill(&mut nonce).map_err(|_| "cannot create nonce")?;
+    rand::SecureRandom::fill(&rng, &mut nonce).map_err(|_| "cannot create nonce")?;
     let unbound = aead::UnboundKey::new(&aead::CHACHA20_POLY1305, key)
         .map_err(|_| "cannot create AEAD key")?;
     let cipher = aead::LessSafeKey::new(unbound);
