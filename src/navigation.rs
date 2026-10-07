@@ -80,6 +80,7 @@ impl Page {
             Page::Cameras => "cameras camera rtsp farm live",
             Page::System => "system energy battery node database",
         };
+
         keys.contains(q) || self.title().to_lowercase().contains(q)
     }
 }
