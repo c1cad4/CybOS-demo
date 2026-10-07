@@ -8,9 +8,11 @@ A node ID is derived from SHA-256(public_key):
 
 cyb-<first-12-bytes-of-sha256(public-key)>
 
-The private Ed25519 key remains local to the node and is stored in the local
-SQLite runtime store. The current implementation does not provide OS-keychain
-or database-level encryption at rest.
+The private Ed25519 key remains local to the node. On macOS it is stored in the
+system Keychain as a generic password item and is not persisted in the SQLite
+runtime store. Existing SQLite-backed identities are migrated to Keychain on
+first launch and then removed from SQLite. Non-macOS builds retain the existing
+local SQLite identity storage until a platform-specific secure keystore is added.
 
 Peer discovery is authenticated. A peer announces its node ID, application version, Ed25519 public key and a signature binding those values.
 
@@ -150,18 +152,18 @@ Automated unit coverage currently includes:
 - signature tampering failure
 - ratchet key/counter derivation
 
-The following remain integration-test targets and should be exercised with
-two real cybOS processes before treating the transport as production-grade:
-- AAD tampering failure
+The live loopback harness currently exercises:
 - ciphertext tampering failure on the live wire
-- invalid node-ID/public-key binding in discovery and handshake
 - stale timestamp rejection
-- duplicate message rejection
-- ratchet counter ordering on the live transport
+- duplicate/replay rejection
+- ratchet counter ordering
 - TOFU key replacement rejection
-- ACK signature rejection
+- forged ACK signature rejection
 - wrong recipient rejection
 - lost-ACK recovery through a fresh handshake
+
+The remaining production-hardening target is an OS-process two-node adversarial
+harness with controlled fault injection.
 
 ## 12. Operational status
 
