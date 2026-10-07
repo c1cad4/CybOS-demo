@@ -52,7 +52,6 @@ pub struct LearningResponse {
 #[derive(Clone, Debug, Default)]
 pub struct TokenMarket {
     pub name: String,
-    pub mint: String,
     pub price: Option<f64>,
     pub price_change_24h: Option<f64>,
     pub volume_24h: Option<f64>,
