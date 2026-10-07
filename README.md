@@ -17,6 +17,7 @@ not a browser wrapper.
 - Local Qwen runtime shared by planner, learning, RobotCYB and web answers
 - Real local LAN peer discovery with UDP broadcast and node/version reporting
 - Directed LAN CybChat with explicit recipient identity, message IDs and bounded delivery acknowledgements
+- Multi-hop onion transport core with layered ChaCha20-Poly1305 relay packets, route-scoped key derivation, replay cache and bounded UDP relay forwarding
 - Background market and Solana balance refreshes that do not block UI rendering
 - Public $CICADAFARM and $ROBOTCYB mint identifiers
 - Rust CI checks for push and pull requests
@@ -33,7 +34,7 @@ and infrastructure is not presented as live until a real connection exists.
 
 The communication design borrows the useful protocol ideas from the Cyberia CybOS
 concept: persistent node identity, explicit message addressing, bounded delivery
-and graph-oriented state. Direct LAN CybChat now uses authenticated peer identity, X25519 key exchange, encrypted wire envelopes, signed ACKs, TOFU pinning and a per-message key ratchet.
+and graph-oriented state. Direct LAN CybChat now uses authenticated peer identity, X25519 key exchange, encrypted wire envelopes, signed ACKs, TOFU pinning and a per-message key ratchet. The onion transport core adds nested relay layers, route/packet IDs, hop binding, replay suppression and a real UDP forwarding relay; automatic route setup and reverse routed ACKs are still separate integration work.
 
 ## What is deliberately not faked
 
