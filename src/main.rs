@@ -15,6 +15,7 @@ mod graph;
 mod network;
 mod navigation;
 mod robot;
+mod runtime;
 mod shell;
 mod state;
 mod theme;

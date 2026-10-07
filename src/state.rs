@@ -9,7 +9,6 @@ use crate::store::Store;
 use eframe::egui::Vec2;
 use std::process::Child;
 use std::time::Instant;
-use uuid::Uuid;
 
 pub(crate) struct CybOs {
     pub(crate) store: Store,
@@ -47,17 +46,9 @@ pub(crate) struct CybOs {
 }
 impl Default for CybOs {
     fn default() -> Self {
-        let store = Store::open();
-        let node_id = store.get("node_id").unwrap_or_else(|| {
-            let v = format!("cyb-{}", Uuid::new_v4().to_string()[..8].to_string());
-            store.set("node_id", &v);
-            v
-        });
-        let mut events = store.events();
-        if events.is_empty() {
-            store.add_event("SYSTEM", "cybOS local runtime initialized");
-            events = store.events();
-        }
+        let store = crate::runtime::open_store();
+        let node_id = crate::runtime::load_or_create_node_id(&store);
+        let events = crate::runtime::load_events(&store);
         let mut app = Self {
             store,
             page: Page::Dashboard,
