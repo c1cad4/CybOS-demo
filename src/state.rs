@@ -60,6 +60,11 @@ pub(crate) struct CybOs {
     pub(crate) lan_delivery_status: String,
 
     pub(crate) remember_note: String,
+
+    // CicadaFarm web-experience state
+    pub(crate) farm_season: usize,
+    pub(crate) farm_panel: Option<String>,
+    pub(crate) farm_knowledge: String,
 }
 
 impl Default for CybOs {
@@ -130,6 +135,9 @@ impl Default for CybOs {
             lan_delivery_status: "NO DIRECT LAN MESSAGE YET".into(),
 
             remember_note: String::new(),
+            farm_season: 1,
+            farm_panel: None,
+            farm_knowledge: store.get("cicadafarm_knowledge").unwrap_or_default(),
         };
 
         app.initialize_graph();
