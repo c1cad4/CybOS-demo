@@ -16,6 +16,9 @@ mod state;
 mod theme;
 mod ui;
 
+#[cfg(test)]
+mod tests;
+
 pub(crate) use navigation::{Icon, Page};
 pub(crate) use state::CybOs;
 
