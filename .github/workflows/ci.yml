@@ -20,6 +20,9 @@ jobs:
       - name: Cargo check
         run: cargo check --locked
 
+      - name: Build debug binary for process harness
+        run: cargo build --locked --bin cybos
+
       - name: Cargo test
         run: cargo test --locked -- --test-threads=1
 
