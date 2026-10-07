@@ -1,3 +1,4 @@
+use base64::Engine as _;
 //! Multi-hop onion packet construction and relay peeling for CybChat.
 //!
 //! Long-term node identity remains Ed25519. Each adjacent hop uses its own
