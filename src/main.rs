@@ -30,6 +30,34 @@ use eframe::egui;
 
 fn main() -> eframe::Result {
     #[cfg(debug_assertions)]
+    {
+        let mut args = std::env::args().skip(1);
+        if let Some(command) = args.next() {
+            if command == "--self-test" {
+                match args.next().as_deref() {
+                    Some("onion") | None => {
+                        match network::lan::run_headless_onion_test() {
+                            Ok(()) => return Ok(()),
+                            Err(error) => {
+                                eprintln!("cybOS onion self-test failed: {error}");
+                                std::process::exit(2);
+                            }
+                        }
+                    }
+                    Some("help") | Some("--help") | Some("-h") => {
+                        println!("cybOS self-tests:");
+                        println!("  cargo run -- --self-test onion");
+                        return Ok(());
+                    }
+                    Some(name) => {
+                        eprintln!("unknown self-test '{name}'. Use '--self-test help'.");
+                        std::process::exit(2);
+                    }
+                }
+            }
+        }
+    }
+    #[cfg(debug_assertions)]
     if std::env::var_os("CYBOS_HEADLESS_ONION_TEST").is_some() {
         if let Err(error) = network::lan::run_headless_onion_test() {
             eprintln!("cybOS headless onion test failed: {error}");
