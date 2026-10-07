@@ -27,6 +27,9 @@ jobs:
       - name: Build debug binary for process harness
         run: cargo build --locked --bin cybos
 
+      - name: Headless onion smoke test
+        run: CYBOS_HEADLESS_ONION_TEST=1 target/debug/cybos
+
       - name: Cargo test
         run: cargo test --locked -- --test-threads=1
 
@@ -48,6 +51,9 @@ jobs:
 
       - name: Build debug binary for process harness
         run: cargo build --locked --bin cybos
+
+      - name: Headless onion smoke test
+        run: CYBOS_HEADLESS_ONION_TEST=1 target/debug/cybos
 
       - name: Cargo test
         run: cargo test --locked -- --test-threads=1
