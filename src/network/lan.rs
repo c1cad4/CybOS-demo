@@ -1671,10 +1671,11 @@ mod tests {
             &relays,
             "hello through the onion",
         );
-        assert!(matches!(
-            result,
-            LanSendStatus::Delivered { .. }
-        ));
+        assert!(
+            matches!(result, LanSendStatus::Delivered { .. }),
+            "routed onion send failed: {:?}",
+            result
+        );
 
         wait_for_chat(&destination_events, "hello through the onion");
     }
