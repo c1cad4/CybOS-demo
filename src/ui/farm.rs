@@ -5,9 +5,12 @@ use egui::{Color32, RichText, Vec2};
 
 impl CybOs {
     pub(crate) fn farm(&mut self, ui: &mut egui::Ui) {
-        if self.balance_refresh.elapsed() >= std::time::Duration::from_secs(30) {
+        self.poll_cicada_balances();
+
+        if self.balance_task.is_none()
+            && self.balance_refresh.elapsed() >= std::time::Duration::from_secs(30)
+        {
             self.refresh_cicada_balances();
-            self.balance_refresh = std::time::Instant::now();
         }
 
         let neon = Color32::from_rgb(0, 255, 150);
