@@ -34,7 +34,7 @@ and infrastructure is not presented as live until a real connection exists.
 
 Bluetooth, P2P, Nostr and RTSP camera feeds are shown as transport/ready states,
 but the MVP does not claim them as connected. LAN discovery is implemented as a
-real local peer-discovery channel; application message transport is still separate.
+real local peer-discovery channel; application message transport is separate. LAN chat is an unencrypted local-network broadcast and should not carry secrets.
 
 
 ## One-click macOS launch
