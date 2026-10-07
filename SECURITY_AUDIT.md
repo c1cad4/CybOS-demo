@@ -53,7 +53,7 @@ The Ed25519 private key and chat history are stored in the local SQLite database
 Recommended next step: move the private identity key to an OS-backed secure key store and separately define whether chat history should be encrypted at rest.
 
 ### MEDIUM — Adversarial integration coverage is partial
-A deterministic two-node loopback UDP harness now exercises real handshake, signed delivery ACKs, sequential ratchet messages, replay injection and ciphertext tampering. OS-process isolation and several remaining cases are still not covered.
+A deterministic two-node loopback UDP harness now exercises real handshake, signed delivery ACKs, sequential ratchet messages, replay injection, ciphertext tampering, and lost-ACK recovery through a fresh handshake. OS-process isolation and several remaining cases are still not covered.
 
 Recommended next step: add an OS-process harness and cover stale timestamps, wrong recipient, TOFU replacement, forged ACKs, and lost-ACK recovery under controlled fault injection.
 
