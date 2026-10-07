@@ -523,6 +523,9 @@ fn spawn_listener_on_addr_with_stop(
         let exit_on_onion_packet =
             cfg!(debug_assertions)
                 && std::env::var_os("CYBOS_HEADLESS_TEST_EXIT_ON_ONION_PACKET").is_some();
+        let exit_on_onion_bind =
+            cfg!(debug_assertions)
+                && std::env::var_os("CYBOS_HEADLESS_TEST_EXIT_ON_ONION_BIND").is_some();
 
         loop {
             let (size, peer_addr) = match socket.recv_from(&mut buffer) {
@@ -673,6 +676,10 @@ fn spawn_listener_on_addr_with_stop(
                     || frame.expires_at != bind.expires_at
                 {
                     continue;
+                }
+
+                if exit_on_onion_bind {
+                    std::process::exit(87);
                 }
 
                 let previous_address = if frame.hop_index == 0 {
@@ -2995,7 +3002,7 @@ mod tests {
         fn parse_ready(
             binary: &std::path::Path,
             port: u16,
-            exit_on_onion_packet: bool,
+            exit_on_onion_bind: bool,
         ) -> (ChildGuard, OnionRoutePeer) {
             let mut command = std::process::Command::new(binary);
             command
@@ -3006,8 +3013,8 @@ mod tests {
                 .stdout(std::process::Stdio::piped())
                 .stderr(std::process::Stdio::inherit());
 
-            if exit_on_onion_packet {
-                command.env("CYBOS_HEADLESS_TEST_EXIT_ON_ONION_PACKET", "1");
+            if exit_on_onion_bind {
+                command.env("CYBOS_HEADLESS_TEST_EXIT_ON_ONION_BIND", "1");
             }
 
             let mut child = command.spawn().expect("spawn cybOS headless node");
