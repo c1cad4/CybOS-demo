@@ -1,4 +1,4 @@
-use crate::config::{CICADAFARM_MINT, DEFAULT_CICADA_WALLET};
+use crate::config::CICADAFARM_MINT;
 use crate::CybOs;
 use eframe::egui;
 use egui::{Color32, RichText, Vec2};
