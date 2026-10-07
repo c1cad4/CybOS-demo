@@ -38,6 +38,8 @@ const REPLAY_WINDOW_SECS: u64 = 300;
 const MAX_SESSIONS: usize = 128;
 const MAX_ONION_ROUTES: usize = 256;
 const MAX_ONION_SESSIONS: usize = 256;
+const DELIVERED_ACK_CACHE_LIMIT: usize = 512;
+const ONION_ROUTE_ATTEMPT_LIMIT: usize = 5;
 const ONION_SESSION_TTL_SECS: u64 = 120;
 
 #[derive(Clone, Debug)]
@@ -94,7 +96,7 @@ struct WireEnvelope {
     signature: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 struct LanAck {
     message_id: String,
     from: String,
@@ -383,6 +385,7 @@ fn spawn_listener_on_addr_with_stop(
         let mut buffer = [0u8; 8192];
         let mut sessions: HashMap<String, Session> = HashMap::new();
         let mut seen_messages: HashMap<String, u64> = HashMap::new();
+        let mut delivered_acks: HashMap<String, (u64, LanAck)> = HashMap::new();
         let mut onion_bindings: HashMap<String, OnionRouteBinding> = HashMap::new();
         let mut onion_sessions: HashMap<String, OnionHopSession> = HashMap::new();
         let mut onion_cache = onion::OnionRelayCache::new();
@@ -403,6 +406,9 @@ fn spawn_listener_on_addr_with_stop(
             let Ok(message) = std::str::from_utf8(&buffer[..size]) else { continue };
 
             let now = now_secs();
+            let cutoff = now.saturating_sub(REPLAY_WINDOW_SECS);
+            seen_messages.retain(|_, ts| *ts >= cutoff);
+            delivered_acks.retain(|_, (ts, _)| *ts >= cutoff);
             onion_sessions.retain(|_, session| session.expires_at >= now);
             onion_bindings.retain(|_, binding| binding.expires_at >= now);
 
@@ -720,16 +726,7 @@ fn spawn_listener_on_addr_with_stop(
                     continue;
                 }
 
-                let cutoff = now_secs().saturating_sub(REPLAY_WINDOW_SECS);
-                seen_messages.retain(|_, ts| *ts >= cutoff);
-                if seen_messages.contains_key(&envelope.message_id) {
-                    continue;
-                }
-
-                let Some(session) = sessions.get_mut(&envelope.from) else { continue };
-                if envelope.counter != session.counter + 1 {
-                    continue;
-                }
+                let Some(session) = sessions.get(&envelope.from) else { continue };
                 let signed = [
                     crypto::PROTOCOL,
                     "message",
@@ -745,6 +742,27 @@ fn spawn_listener_on_addr_with_stop(
                 .into_bytes();
                 let Ok(signature) = STANDARD.decode(&envelope.signature) else { continue };
                 if !crypto::verify_signature(&session.public_key, &signed, &signature) {
+                    continue;
+                }
+
+                if let Some((_, cached_ack)) = delivered_acks.get(&envelope.message_id) {
+                    if let Ok(body) = serde_json::to_string(&OnionReverseAck {
+                        route_id: delivery.route_id.clone(),
+                        packet_id: delivery.packet_id.clone(),
+                        message_id: envelope.message_id.clone(),
+                        hop_index: u8::MAX,
+                        ack: cached_ack.clone(),
+                    }) {
+                        let _ = socket.send_to(
+                            format!("{} {}", ONION_REVERSE_PREFIX, body).as_bytes(),
+                            peer_addr,
+                        );
+                    }
+                    continue;
+                }
+
+                let Some(session) = sessions.get_mut(&envelope.from) else { continue };
+                if envelope.counter != session.counter + 1 {
                     continue;
                 }
                 let message_key = match crypto::ratchet_key(&session.key, envelope.counter) {
@@ -790,6 +808,19 @@ fn spawn_listener_on_addr_with_stop(
                     to: envelope.from.clone(),
                     signature: STANDARD.encode(crypto::sign(&identity, ack_signed.as_bytes())),
                 };
+                if delivered_acks.len() >= DELIVERED_ACK_CACHE_LIMIT {
+                    if let Some((oldest_id, _)) = delivered_acks
+                        .iter()
+                        .min_by_key(|(_, (ts, _))| *ts)
+                        .map(|(id, value)| (id.clone(), value.clone()))
+                    {
+                        delivered_acks.remove(&oldest_id);
+                    }
+                }
+                delivered_acks.insert(
+                    envelope.message_id.clone(),
+                    (envelope.timestamp, ack.clone()),
+                );
                 if let Ok(body) = serde_json::to_string(&OnionReverseAck {
                     route_id: delivery.route_id,
                     packet_id: delivery.packet_id,
@@ -842,18 +873,29 @@ fn spawn_listener_on_addr_with_stop(
                 if envelope.to != node_id || envelope.from == node_id || envelope.message_id.trim().is_empty()
                     || !fresh_timestamp(envelope.timestamp) { continue; }
 
-                let cutoff = now_secs().saturating_sub(REPLAY_WINDOW_SECS);
-                seen_messages.retain(|_, ts| *ts >= cutoff);
-                if seen_messages.contains_key(&envelope.message_id) { continue; }
-
-                let Some(session) = sessions.get_mut(&envelope.from) else { continue };
-                if envelope.counter != session.counter + 1 { continue; }
+                let Some(session) = sessions.get(&envelope.from) else { continue };
                 let signed = [
                     crypto::PROTOCOL, "message", envelope.message_id.as_str(), envelope.from.as_str(),
                     envelope.to.as_str(), &envelope.timestamp.to_string(), &envelope.counter.to_string(),
                     envelope.nonce.as_str(), envelope.ciphertext.as_str()
                 ].join("|").into_bytes();
-                if !crypto::verify_signature(&session.public_key, &signed, &STANDARD.decode(&envelope.signature).unwrap_or_default()) { continue; }
+                let Ok(signature) = STANDARD.decode(&envelope.signature) else { continue };
+                if !crypto::verify_signature(&session.public_key, &signed, &signature) { continue; }
+
+                if let Some((_, cached_ack)) = delivered_acks.get(&envelope.message_id) {
+                    if ack_state.load(Ordering::Acquire) {
+                        if let Ok(body) = serde_json::to_string(cached_ack) {
+                            let _ = socket.send_to(
+                                format!("{} {}", ACK_PREFIX, body).as_bytes(),
+                                peer_addr,
+                            );
+                        }
+                    }
+                    continue;
+                }
+
+                let Some(session) = sessions.get_mut(&envelope.from) else { continue };
+                if envelope.counter != session.counter + 1 { continue };
                 let message_key = match crypto::ratchet_key(&session.key, envelope.counter) { Ok(k) => k, Err(_) => continue };
                 let associated = aad(&envelope.message_id, &envelope.from, &envelope.to, envelope.timestamp, envelope.counter);
                 let Ok(plaintext) = crypto::decrypt(&message_key, &associated, &envelope.nonce, &envelope.ciphertext) else { continue };
@@ -874,6 +916,19 @@ fn spawn_listener_on_addr_with_stop(
                     to: envelope.from.clone(),
                     signature: STANDARD.encode(crypto::sign(&identity, ack_signed.as_bytes())),
                 };
+                if delivered_acks.len() >= DELIVERED_ACK_CACHE_LIMIT {
+                    if let Some((oldest_id, _)) = delivered_acks
+                        .iter()
+                        .min_by_key(|(_, (ts, _))| *ts)
+                        .map(|(id, value)| (id.clone(), value.clone()))
+                    {
+                        delivered_acks.remove(&oldest_id);
+                    }
+                }
+                delivered_acks.insert(
+                    envelope.message_id.clone(),
+                    (envelope.timestamp, ack.clone()),
+                );
                 if ack_state.load(Ordering::Acquire) {
                     if let Ok(body) = serde_json::to_string(&ack) {
                         let _ = socket.send_to(format!("{} {}", ACK_PREFIX, body).as_bytes(), peer_addr);
@@ -1401,13 +1456,13 @@ fn send_onion_route_bind(
     }
 }
 
-fn send_onion_private_chat(
+fn send_onion_private_chat_with_message_id(
     identity: &NodeIdentity,
     destination: &OnionRoutePeer,
     relays: &[OnionRoutePeer],
     message: &str,
+    message_id: &str,
 ) -> LanSendStatus {
-    let message_id = Uuid::new_v4().to_string();
     if message.trim().is_empty() {
         return LanSendStatus::Failed {
             message_id,
@@ -1740,6 +1795,79 @@ fn send_onion_private_chat(
     }
 }
 
+fn send_onion_private_chat(
+    identity: &NodeIdentity,
+    destination: &OnionRoutePeer,
+    relays: &[OnionRoutePeer],
+    message: &str,
+) -> LanSendStatus {
+    let message_id = Uuid::new_v4().to_string();
+    send_onion_private_chat_with_message_id(
+        identity,
+        destination,
+        relays,
+        message,
+        &message_id,
+    )
+}
+
+fn send_onion_private_chat_with_route_fallback(
+    identity: &NodeIdentity,
+    destination: &OnionRoutePeer,
+    relays: &[OnionRoutePeer],
+    message: &str,
+) -> LanSendStatus {
+    let message_id = Uuid::new_v4().to_string();
+
+    if relays.len() > onion::MAX_ONION_HOPS || relays.is_empty() {
+        return LanSendStatus::Failed {
+            message_id,
+            peer_id: destination.node_id.clone(),
+            reason: "invalid onion relay count".into(),
+        };
+    }
+
+    let mut candidates = Vec::new();
+    candidates.push(relays.to_vec());
+    for remove_index in 0..relays.len() {
+        if candidates.len() >= ONION_ROUTE_ATTEMPT_LIMIT {
+            break;
+        }
+        let candidate: Vec<_> = relays
+            .iter()
+            .enumerate()
+            .filter_map(|(index, peer)| (index != remove_index).then(|| peer.clone()))
+            .collect();
+        if !candidate.is_empty() && !candidates.iter().any(|existing| existing == &candidate) {
+            candidates.push(candidate);
+        }
+    }
+
+    let mut last_status = LanSendStatus::Failed {
+        message_id: message_id.clone(),
+        peer_id: destination.node_id.clone(),
+        reason: "onion route unavailable".into(),
+    };
+
+    for candidate in candidates {
+        let status = send_onion_private_chat_with_message_id(
+            identity,
+            destination,
+            &candidate,
+            message,
+            &message_id,
+        );
+        match status {
+            LanSendStatus::Delivered { .. } => return status,
+            LanSendStatus::TimedOut { .. } | LanSendStatus::Failed { .. } => {
+                last_status = status;
+            }
+        }
+    }
+
+    last_status
+}
+
 pub(crate) fn send_private_chat(
     identity: &NodeIdentity,
     peer_id: &str,
@@ -2068,7 +2196,12 @@ impl crate::state::CybOs {
 
         thread::spawn(move || {
             let result =
-                send_onion_private_chat(&identity, &destination, &relay_peers, &message);
+                send_onion_private_chat_with_route_fallback(
+                    &identity,
+                    &destination,
+                    &relay_peers,
+                    &message,
+                );
             let _ = tx.send(result);
         });
     }
