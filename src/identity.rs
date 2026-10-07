@@ -40,22 +40,21 @@ impl NodeIdentity {
 
     pub(crate) fn public_key(&self) -> &[u8] { &self.public_key }
     pub(crate) fn pkcs8(&self) -> &[u8] { &self.pkcs8 }
-}
 
-#[cfg(test)]
-pub(crate) fn generate_for_test() -> Self {
-    let rng = rand::SystemRandom::new();
-    let document = signature::Ed25519KeyPair::generate_pkcs8(&rng)
-        .expect("test Ed25519 generation must succeed");
-    let pkcs8 = document.as_ref().to_vec();
-    let pair = signature::Ed25519KeyPair::from_pkcs8(&pkcs8)
-        .expect("test Ed25519 key must parse");
-    Self {
-        pkcs8,
-        public_key: pair.public_key().as_ref().to_vec(),
+    #[cfg(test)]
+    pub(crate) fn generate_for_test() -> Self {
+        let rng = rand::SystemRandom::new();
+        let document = signature::Ed25519KeyPair::generate_pkcs8(&rng)
+            .expect("test Ed25519 generation must succeed");
+        let pkcs8 = document.as_ref().to_vec();
+        let pair = signature::Ed25519KeyPair::from_pkcs8(&pkcs8)
+            .expect("test Ed25519 key must parse");
+        Self {
+            pkcs8,
+            public_key: pair.public_key().as_ref().to_vec(),
+        }
     }
 }
-
 
 pub(crate) fn verify_node_id(node_id: &str, public_key: &[u8]) -> bool {
     let hash = digest::digest(&digest::SHA256, public_key);
