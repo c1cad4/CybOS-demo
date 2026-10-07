@@ -14,7 +14,9 @@ source "$HOME/.cargo/env" 2>/dev/null || true
 need_build=0
 if [ ! -x "$BIN" ]; then
   need_build=1
-elif [ "src/main.rs" -nt "$BIN" ] || [ "Cargo.toml" -nt "$BIN" ] || [ "Cargo.lock" -nt "$BIN" ]; then
+elif find src -type f -name '*.rs' -newer "$BIN" -print -quit | grep -q .; then
+  need_build=1
+elif [ "Cargo.toml" -nt "$BIN" ] || [ "Cargo.lock" -nt "$BIN" ]; then
   need_build=1
 fi
 if [ "$need_build" = "1" ]; then
