@@ -188,3 +188,26 @@ The direct LAN channel is real transport, not a UI simulation.
 The UI should report actual states: authenticated peer, key exchange, encrypted send, acknowledged delivery, timeout, authentication failure, and pinned-key conflict.
 
 It must never claim E2E delivery before the cryptographic ACK is verified.
+
+
+## 12. Headless onion smoke test
+
+The debug binary includes a standalone live onion-path smoke test. It creates one
+source node, two relay nodes and one destination in the same process, establishes
+anonymous per-hop sessions, binds the route, sends an end-to-end CybChat envelope,
+and verifies the reverse signed ACK and destination delivery.
+
+Run it with:
+
+```bash
+CYBOS_HEADLESS_ONION_TEST=1 cargo run
+```
+
+A successful run prints:
+
+```text
+ONION_TEST OK · 2 relays · <source-id> → <destination-id>
+```
+
+The GitHub CI runs the same smoke test against the debug `cybos` binary on Linux
+and macOS.

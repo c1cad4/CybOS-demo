@@ -17,7 +17,7 @@ not a browser wrapper.
 - Local Qwen runtime shared by planner, learning, RobotCYB and web answers
 - Real local LAN peer discovery with UDP broadcast and node/version reporting
 - Directed LAN CybChat with explicit recipient identity, message IDs and bounded delivery acknowledgements
-- Multi-hop onion transport with anonymous per-hop X25519 sessions, encrypted route binding, layered ChaCha20-Poly1305 relay packets, replay cache and bounded UDP relay forwarding
+- Multi-hop onion transport with anonymous per-hop X25519 sessions, encrypted route binding, layered ChaCha20-Poly1305 relay packets, replay cache, bounded UDP relay forwarding, live end-to-end relay tests and a standalone headless smoke test
 - Background market and Solana balance refreshes that do not block UI rendering
 - Public $CICADAFARM and $ROBOTCYB mint identifiers
 - Rust CI checks for push and pull requests
@@ -59,3 +59,16 @@ The launcher:
 5. launches the app.
 
 The first build requires internet access because Cargo downloads Rust crates.
+
+
+## Headless onion smoke test
+
+For a local debug verification of the full routed path:
+
+```bash
+CYBOS_HEADLESS_ONION_TEST=1 cargo run
+```
+
+This starts a source, two relays and a destination, performs the real anonymous
+per-hop session/bind flow, sends an encrypted CybChat payload, verifies the signed
+reverse ACK, and confirms that relay nodes do not receive the destination chat event.

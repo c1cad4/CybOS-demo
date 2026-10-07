@@ -106,6 +106,8 @@ Implemented:
 - onion session state capped at 256 entries with endpoint binding;
 - live UDP relay forwarding;
 - live three-relay loopback forwarding test;
+- live full-path source → relay-a → relay-b → destination delivery with reverse ACK;
+- standalone headless onion smoke test executed from the debug cybOS binary;
 - process-isolated routed delivery, replay and ciphertext-tampering tests;
 - forged encrypted route-ack rejection;
 - regression test proving route-bind payload does not expose source node ID/public key.
