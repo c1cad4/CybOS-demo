@@ -887,15 +887,25 @@ fn spawn_listener_on_addr_with_stop(
 }
 
 #[cfg(debug_assertions)]
+fn free_udp_port() -> Result<u16, String> {
+    let socket = UdpSocket::bind(("127.0.0.1", 0))
+        .map_err(|e| format!("cannot allocate test UDP port: {e}"))?;
+    socket
+        .local_addr()
+        .map(|address| address.port())
+        .map_err(|e| format!("cannot inspect test UDP port: {e}"))
+}
+
+#[cfg(debug_assertions)]
 pub(crate) fn run_headless_onion_test() -> Result<(), String> {
     let alice = NodeIdentity::generate_ephemeral();
     let relay_a = NodeIdentity::generate_ephemeral();
     let relay_b = NodeIdentity::generate_ephemeral();
     let bob = NodeIdentity::generate_ephemeral();
 
-    let relay_a_port = free_port();
-    let relay_b_port = free_port();
-    let bob_port = free_port();
+    let relay_a_port = free_udp_port()?;
+    let relay_b_port = free_udp_port()?;
+    let bob_port = free_udp_port()?;
 
     let relay_a_stop = Arc::new(AtomicBool::new(true));
     let relay_b_stop = Arc::new(AtomicBool::new(true));
