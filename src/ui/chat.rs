@@ -247,19 +247,18 @@ impl CybOs {
                             )
                             .clicked()
                         {
-                            self.lan_onion_relays.clear();
-                            for peer in self
+                            let target_id = self.lan_target.clone();
+                            self.lan_onion_relays = self
                                 .lan_peers
                                 .iter()
                                 .filter(|peer| {
                                     peer.trusted
-                                        && self.lan_target.as_deref()
+                                        && target_id.as_deref()
                                             != Some(peer.node_id.as_str())
                                 })
                                 .take(crate::network::onion::MAX_ONION_HOPS)
-                            {
-                                self.lan_onion_relays.push(peer.node_id.clone());
-                            }
+                                .map(|peer| peer.node_id.clone())
+                                .collect();
                         }
 
                         if ui
