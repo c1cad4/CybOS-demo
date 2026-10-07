@@ -658,6 +658,504 @@ pub(crate) fn scan(node_id: String) -> Vec<LanPeer> {
     peers
 }
 
+fn ensure_onion_session(
+    socket: &UdpSocket,
+    identity: &NodeIdentity,
+    peer: &OnionRoutePeer,
+) -> Result<Session, String> {
+    let peer_public_key = STANDARD
+        .decode(&peer.public_key_b64)
+        .map_err(|_| "invalid peer identity key".to_string())?;
+    if crypto::node_id_from_public_key(&peer_public_key) != peer.node_id {
+        return Err("peer identity key is invalid".into());
+    }
+
+    if let Ok(sessions) = send_sessions().lock() {
+        if let Some(existing) = sessions.get(&peer.node_id) {
+            if existing.public_key == peer_public_key {
+                return Ok(existing.clone());
+            }
+        }
+    }
+
+    socket
+        .set_read_timeout(Some(KEY_TIMEOUT))
+        .map_err(|e| e.to_string())?;
+    let (private, init_public) = crypto::ephemeral().map_err(str::to_string)?;
+    let init_public_b64 = STANDARD.encode(&init_public);
+    let identity_public_b64 = STANDARD.encode(identity.public_key());
+    let timestamp = now_secs();
+    let init = KeyInit {
+        from: identity.node_id(),
+        to: peer.node_id.clone(),
+        public_key: identity_public_b64.clone(),
+        ephemeral_public_key: init_public_b64.clone(),
+        timestamp,
+        signature: STANDARD.encode(crypto::sign(
+            identity,
+            &signed_key_init(
+                &identity.node_id(),
+                &peer.node_id,
+                &identity_public_b64,
+                &init_public_b64,
+                timestamp,
+            ),
+        )),
+    };
+    let body = serde_json::to_string(&init).map_err(|e| e.to_string())?;
+    socket
+        .send_to(
+            format!("{} {}", KEY_INIT_PREFIX, body).as_bytes(),
+            &peer.address,
+        )
+        .map_err(|e| e.to_string())?;
+
+    let mut buffer = [0u8; 8192];
+    let reply = loop {
+        match socket.recv_from(&mut buffer) {
+            Ok((size, _)) => {
+                let Ok(text) = std::str::from_utf8(&buffer[..size]) else { continue };
+                let Some(payload) = text
+                    .strip_prefix(KEY_REPLY_PREFIX)
+                    .and_then(|r| r.strip_prefix(' '))
+                else {
+                    continue;
+                };
+                let Ok(reply) = serde_json::from_str::<KeyReply>(payload) else {
+                    continue;
+                };
+                if reply.from != peer.node_id
+                    || reply.to != identity.node_id()
+                    || !fresh_timestamp(reply.timestamp)
+                    || reply.initiator_ephemeral_public_key != init_public_b64
+                {
+                    continue;
+                }
+                let Ok(sig) = STANDARD.decode(&reply.signature) else { continue };
+                let signed = signed_key_reply(
+                    &reply.from,
+                    &reply.to,
+                    &reply.initiator_ephemeral_public_key,
+                    &reply.responder_ephemeral_public_key,
+                    reply.timestamp,
+                );
+                if crypto::verify_signature(&peer_public_key, &signed, &sig) {
+                    break reply;
+                }
+            }
+            Err(_) => {
+                clear_send_session(&peer.node_id);
+                return Err("key exchange timeout".into());
+            }
+        }
+    };
+
+    let reply_public = STANDARD
+        .decode(&reply.responder_ephemeral_public_key)
+        .map_err(|_| "invalid key reply".to_string())?;
+    let transcript = session_transcript(
+        &identity.node_id(),
+        &peer.node_id,
+        &init_public,
+        &reply_public,
+    );
+    let key = crypto::derive_session_key(private, &reply_public, &transcript)
+        .map_err(str::to_string)?;
+
+    let session = Session {
+        root_key: key,
+        key,
+        public_key: peer_public_key,
+        counter: 0,
+    };
+    if let Ok(mut sessions) = send_sessions().lock() {
+        sessions.insert(peer.node_id.clone(), session.clone());
+    }
+    Ok(session)
+}
+
+fn send_onion_route_bind(
+    socket: &UdpSocket,
+    identity: &NodeIdentity,
+    peer: &OnionRoutePeer,
+    route_id: &str,
+    hop_index: u8,
+    previous_node_id: &str,
+    previous_address: &str,
+    next_node_id: &str,
+    next_address: &str,
+    expires_at: u64,
+) -> Result<(), String> {
+    let mut bind = OnionRouteBind {
+        route_id: route_id.to_string(),
+        hop_index,
+        source_id: identity.node_id(),
+        source_public_key: STANDARD.encode(identity.public_key()),
+        previous_node_id: previous_node_id.to_string(),
+        previous_address: previous_address.to_string(),
+        next_node_id: next_node_id.to_string(),
+        next_address: next_address.to_string(),
+        expires_at,
+        signature: String::new(),
+    };
+    bind.signature = STANDARD.encode(crypto::sign(
+        identity,
+        &signed_onion_route_bind(&bind),
+    ));
+    let body = serde_json::to_string(&bind).map_err(|e| e.to_string())?;
+    socket
+        .send_to(
+            format!("{} {}", ONION_BIND_PREFIX, body).as_bytes(),
+            &peer.address,
+        )
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+fn send_onion_private_chat(
+    identity: &NodeIdentity,
+    destination: &OnionRoutePeer,
+    relays: &[OnionRoutePeer],
+    message: &str,
+) -> LanSendStatus {
+    let message_id = Uuid::new_v4().to_string();
+    if message.trim().is_empty() {
+        return LanSendStatus::Failed {
+            message_id,
+            peer_id: destination.node_id.clone(),
+            reason: "empty message".into(),
+        };
+    }
+    if message.as_bytes().len() > MAX_CHAT_BYTES {
+        return LanSendStatus::Failed {
+            message_id,
+            peer_id: destination.node_id.clone(),
+            reason: format!("message exceeds {} bytes", MAX_CHAT_BYTES),
+        };
+    }
+    if relays.is_empty() || relays.len() > onion::MAX_ONION_HOPS {
+        return LanSendStatus::Failed {
+            message_id,
+            peer_id: destination.node_id.clone(),
+            reason: "invalid onion relay count".into(),
+        };
+    }
+
+    let mut seen_ids = std::collections::HashSet::new();
+    for peer in relays.iter().chain(std::iter::once(destination)) {
+        if peer.node_id == identity.node_id() || !seen_ids.insert(peer.node_id.clone()) {
+            return LanSendStatus::Failed {
+                message_id,
+                peer_id: destination.node_id.clone(),
+                reason: "onion route contains duplicate node identity".into(),
+            };
+        }
+        if peer.address.parse::<SocketAddr>().is_err() {
+            return LanSendStatus::Failed {
+                message_id,
+                peer_id: destination.node_id.clone(),
+                reason: "onion route contains invalid address".into(),
+            };
+        }
+    }
+
+    let socket = match UdpSocket::bind(("0.0.0.0", 0)) {
+        Ok(socket) => socket,
+        Err(e) => {
+            return LanSendStatus::Failed {
+                message_id,
+                peer_id: destination.node_id.clone(),
+                reason: e.to_string(),
+            }
+        }
+    };
+    let route_id = onion::new_route_id();
+    let packet_id = onion::new_packet_id();
+    let expires_at = now_secs() + 60;
+
+    let mut relay_sessions = Vec::with_capacity(relays.len());
+    for relay in relays {
+        match ensure_onion_session(&socket, identity, relay) {
+            Ok(session) => relay_sessions.push(session),
+            Err(reason) => {
+                return LanSendStatus::Failed {
+                    message_id,
+                    peer_id: destination.node_id.clone(),
+                    reason: format!("relay session {}: {}", relay.node_id, reason),
+                }
+            }
+        }
+    }
+    let mut destination_session = match ensure_onion_session(&socket, identity, destination) {
+        Ok(session) => session,
+        Err(reason) => {
+            return LanSendStatus::Failed {
+                message_id,
+                peer_id: destination.node_id.clone(),
+                reason: format!("destination session: {}", reason),
+            }
+        }
+    };
+
+    let source_socket_address = socket
+        .local_addr()
+        .map(|addr| addr.to_string())
+        .unwrap_or_else(|_| "127.0.0.1:0".into());
+
+    for (index, relay) in relays.iter().enumerate() {
+        let previous_node_id = if index == 0 {
+            identity.node_id()
+        } else {
+            &relays[index - 1].node_id
+        };
+        let previous_address = if index == 0 {
+            source_socket_address.as_str()
+        } else {
+            &relays[index - 1].address
+        };
+        let next_node_id = if index + 1 < relays.len() {
+            &relays[index + 1].node_id
+        } else {
+            &destination.node_id
+        };
+        let next_address = if index + 1 < relays.len() {
+            &relays[index + 1].address
+        } else {
+            &destination.address
+        };
+
+        if let Err(reason) = send_onion_route_bind(
+            &socket,
+            identity,
+            relay,
+            &route_id,
+            index as u8,
+            previous_node_id,
+            previous_address,
+            next_node_id,
+            next_address,
+            expires_at,
+        ) {
+            return LanSendStatus::Failed {
+                message_id,
+                peer_id: destination.node_id.clone(),
+                reason: format!("relay bind {}: {}", relay.node_id, reason),
+            };
+        }
+    }
+
+    let timestamp = now_secs();
+    let counter = destination_session.counter + 1;
+    let associated = aad(
+        &message_id,
+        &identity.node_id(),
+        &destination.node_id,
+        timestamp,
+        counter,
+    );
+    let message_key = match crypto::ratchet_key(&destination_session.key, counter) {
+        Ok(key) => key,
+        Err(reason) => {
+            return LanSendStatus::Failed {
+                message_id,
+                peer_id: destination.node_id.clone(),
+                reason: reason.into(),
+            }
+        }
+    };
+    let (nonce, ciphertext) =
+        match crypto::encrypt(&message_key, &associated, message.as_bytes()) {
+            Ok(value) => value,
+            Err(reason) => {
+                return LanSendStatus::Failed {
+                    message_id,
+                    peer_id: destination.node_id.clone(),
+                    reason: reason.into(),
+                }
+            }
+        };
+    let signed = [
+        crypto::PROTOCOL,
+        "message",
+        message_id.as_str(),
+        identity.node_id().as_str(),
+        destination.node_id.as_str(),
+        &timestamp.to_string(),
+        &counter.to_string(),
+        nonce.as_str(),
+        ciphertext.as_str(),
+    ]
+    .join("|")
+    .into_bytes();
+    let envelope = WireEnvelope {
+        message_id: message_id.clone(),
+        from: identity.node_id(),
+        to: destination.node_id.clone(),
+        timestamp,
+        counter,
+        nonce,
+        ciphertext,
+        signature: STANDARD.encode(crypto::sign(identity, &signed)),
+    };
+    let e2e_payload = match serde_json::to_vec(&envelope) {
+        Ok(body) if body.len() <= MAX_WIRE_BYTES => body,
+        Ok(_) => {
+            return LanSendStatus::Failed {
+                message_id,
+                peer_id: destination.node_id.clone(),
+                reason: "encrypted envelope exceeds wire limit".into(),
+            }
+        }
+        Err(e) => {
+            return LanSendStatus::Failed {
+                message_id,
+                peer_id: destination.node_id.clone(),
+                reason: e.to_string(),
+            }
+        }
+    };
+
+    let hops: Vec<onion::OnionHop> = relays
+        .iter()
+        .map(|peer| onion::OnionHop {
+            node_id: peer.node_id.clone(),
+            address: peer.address.clone(),
+        })
+        .collect();
+    let relay_keys: Vec<[u8; 32]> =
+        relay_sessions.iter().map(|session| session.root_key).collect();
+    let packet = match onion::wrap(
+        &route_id,
+        &packet_id,
+        expires_at,
+        &e2e_payload,
+        &hops,
+        &relay_keys,
+        &destination.node_id,
+        &destination.address,
+    ) {
+        Ok(packet) => packet,
+        Err(reason) => {
+            return LanSendStatus::Failed {
+                message_id,
+                peer_id: destination.node_id.clone(),
+                reason: reason.into(),
+            }
+        }
+    };
+    let body = match serde_json::to_string(&packet) {
+        Ok(body) if body.len() <= onion::MAX_ONION_BYTES => body,
+        Ok(_) => {
+            return LanSendStatus::Failed {
+                message_id,
+                peer_id: destination.node_id.clone(),
+                reason: "onion packet exceeds wire limit".into(),
+            }
+        }
+        Err(e) => {
+            return LanSendStatus::Failed {
+                message_id,
+                peer_id: destination.node_id.clone(),
+                reason: e.to_string(),
+            }
+        }
+    };
+
+    #[cfg(test)]
+    remember_sent_wire(&format!("{} {}", ONION_PREFIX, body));
+
+    let _ = socket.set_read_timeout(Some(CHAT_ACK_TIMEOUT));
+    if let Err(e) = socket.send_to(
+        format!("{} {}", ONION_PREFIX, body).as_bytes(),
+        &relays[0].address,
+    ) {
+        return LanSendStatus::Failed {
+            message_id,
+            peer_id: destination.node_id.clone(),
+            reason: e.to_string(),
+        };
+    }
+
+    let destination_public_key = match STANDARD.decode(&destination.public_key_b64) {
+        Ok(key) => key,
+        Err(_) => {
+            return LanSendStatus::Failed {
+                message_id,
+                peer_id: destination.node_id.clone(),
+                reason: "invalid destination identity key".into(),
+            }
+        }
+    };
+
+    let mut buffer = [0u8; 8192];
+    loop {
+        match socket.recv_from(&mut buffer) {
+            Ok((size, _)) => {
+                let Ok(text) = std::str::from_utf8(&buffer[..size]) else { continue };
+                let Some(ack_payload) = text
+                    .strip_prefix(ONION_REVERSE_PREFIX)
+                    .and_then(|rest| rest.strip_prefix(' '))
+                else {
+                    continue;
+                };
+                let Ok(reverse) = serde_json::from_str::<OnionReverseAck>(ack_payload) else {
+                    continue;
+                };
+                if reverse.route_id != route_id
+                    || reverse.packet_id != packet_id
+                    || reverse.hop_index != 0
+                    || reverse.ack.message_id != message_id
+                    || reverse.ack.to != identity.node_id()
+                    || reverse.ack.from != destination.node_id
+                {
+                    continue;
+                }
+                let Ok(sig) = STANDARD.decode(&reverse.ack.signature) else { continue };
+                let ack_signed = [
+                    crypto::PROTOCOL,
+                    "ack",
+                    reverse.ack.message_id.as_str(),
+                    reverse.ack.from.as_str(),
+                    reverse.ack.to.as_str(),
+                ]
+                .join("|");
+                if !crypto::verify_signature(
+                    &destination_public_key,
+                    ack_signed.as_bytes(),
+                    &sig,
+                ) {
+                    continue;
+                }
+                let Ok(next) =
+                    crypto::ratchet_chain(&destination_session.key, counter)
+                else {
+                    return LanSendStatus::Failed {
+                        message_id,
+                        peer_id: destination.node_id.clone(),
+                        reason: "cannot advance destination ratchet".into(),
+                    };
+                };
+                destination_session.key = next;
+                destination_session.counter = counter;
+                if let Ok(mut sessions) = send_sessions().lock() {
+                    sessions.insert(destination.node_id.clone(), destination_session.clone());
+                }
+                return LanSendStatus::Delivered {
+                    message_id,
+                    peer_id: destination.node_id.clone(),
+                };
+            }
+            Err(_) => {
+                clear_send_session(&destination.node_id);
+                return LanSendStatus::TimedOut {
+                    message_id,
+                    peer_id: destination.node_id.clone(),
+                };
+            }
+        }
+    }
+}
+
 pub(crate) fn send_private_chat(
     identity: &NodeIdentity,
     peer_id: &str,
