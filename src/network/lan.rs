@@ -2118,6 +2118,95 @@ mod tests {
     }
 
     #[test]
+    fn live_udp_multi_hop_onion_chat_roundtrip_and_ack() {
+        let _guard = test_guard();
+
+        let alice = NodeIdentity::generate_for_test();
+        let relay_a = NodeIdentity::generate_for_test();
+        let relay_b = NodeIdentity::generate_for_test();
+        let bob = NodeIdentity::generate_for_test();
+
+        let relay_a_port = free_port();
+        let relay_b_port = free_port();
+        let bob_port = free_port();
+
+        let relay_a_stop = Arc::new(AtomicBool::new(true));
+        let relay_b_stop = Arc::new(AtomicBool::new(true));
+        let bob_stop = Arc::new(AtomicBool::new(true));
+
+        let (relay_a_events, _relay_a_ack, relay_a_handle) =
+            spawn_listener_on_port_with_control(
+                relay_a.node_id(),
+                relay_a.clone(),
+                relay_a_port,
+                Arc::new(AtomicBool::new(true)),
+                Arc::clone(&relay_a_stop),
+            );
+        let (relay_b_events, _relay_b_ack, relay_b_handle) =
+            spawn_listener_on_port_with_control(
+                relay_b.node_id(),
+                relay_b.clone(),
+                relay_b_port,
+                Arc::new(AtomicBool::new(true)),
+                Arc::clone(&relay_b_stop),
+            );
+        let (bob_events, _bob_ack, bob_handle) = spawn_listener_on_port_with_control(
+            bob.node_id(),
+            bob.clone(),
+            bob_port,
+            Arc::new(AtomicBool::new(true)),
+            Arc::clone(&bob_stop),
+        );
+
+        thread::sleep(Duration::from_millis(60));
+
+        let relay_a_peer = OnionRoutePeer {
+            node_id: relay_a.node_id(),
+            address: format!("127.0.0.1:{}", relay_a_port),
+            public_key_b64: STANDARD.encode(relay_a.public_key()),
+        };
+        let relay_b_peer = OnionRoutePeer {
+            node_id: relay_b.node_id(),
+            address: format!("127.0.0.1:{}", relay_b_port),
+            public_key_b64: STANDARD.encode(relay_b.public_key()),
+        };
+        let destination = OnionRoutePeer {
+            node_id: bob.node_id(),
+            address: format!("127.0.0.1:{}", bob_port),
+            public_key_b64: STANDARD.encode(bob.public_key()),
+        };
+
+        let result = send_onion_private_chat(
+            &alice,
+            &destination,
+            &[relay_a_peer, relay_b_peer],
+            "full-path onion integration",
+        );
+
+        assert!(matches!(
+            result,
+            LanSendStatus::Delivered { ref peer_id, .. }
+            if peer_id == &bob.node_id()
+        ));
+
+        wait_for_chat(&bob_events, "full-path onion integration");
+        assert!(relay_a_events.try_recv().is_err());
+        assert!(relay_b_events.try_recv().is_err());
+
+        let wire = last_sent_wire().expect("onion sender should expose the outer test wire");
+        assert!(!wire.contains("full-path onion integration"));
+        assert!(!wire.contains(&bob.node_id()));
+        assert!(!wire.contains(&relay_b.node_id()));
+
+        relay_a_stop.store(false, Ordering::Release);
+        relay_b_stop.store(false, Ordering::Release);
+        bob_stop.store(false, Ordering::Release);
+        let _ = relay_a_handle.join();
+        let _ = relay_b_handle.join();
+        let _ = bob_handle.join();
+    }
+
+    #[test]
     fn onion_bind_rejects_forged_encrypted_ack() {
         let _guard = test_guard();
         let relay = NodeIdentity::generate_for_test();
