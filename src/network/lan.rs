@@ -260,6 +260,8 @@ fn spawn_listener_on_addr(
         let mut buffer = [0u8; 8192];
         let mut sessions: HashMap<String, Session> = HashMap::new();
         let mut seen_messages: HashMap<String, u64> = HashMap::new();
+        let mut onion_bindings: HashMap<String, OnionRouteBinding> = HashMap::new();
+        let mut onion_cache = onion::OnionRelayCache::new();
 
         loop {
             let Ok((size, peer_addr)) = socket.recv_from(&mut buffer) else { break };
@@ -272,6 +274,66 @@ fn spawn_listener_on_addr(
                 let sig = crypto::sign(&identity, &crypto::peer_binding(&node_id, APP_VERSION, &public_key_b64));
                 let response = format!("{} {} {} {} {}", RESPONSE_PREFIX, node_id, APP_VERSION, public_key_b64, STANDARD.encode(sig));
                 let _ = socket.send_to(response.as_bytes(), peer_addr);
+                continue;
+            }
+
+
+            if let Some(payload) = message.strip_prefix(ONION_BIND_PREFIX).and_then(|r| r.strip_prefix(' ')) {
+                let Ok(bind) = serde_json::from_str::<OnionRouteBind>(payload) else { continue };
+                if bind.source_id == node_id
+                    || bind.route_id.is_empty()
+                    || bind.previous_node_id.is_empty()
+                    || bind.previous_address.is_empty()
+                    || bind.next_node_id.is_empty()
+                    || bind.next_address.is_empty()
+                    || bind.hop_index as usize >= onion::MAX_ONION_HOPS
+                    || !fresh_timestamp(bind.expires_at)
+                {
+                    continue;
+                }
+
+                let Ok(source_public_key) = STANDARD.decode(&bind.source_public_key) else { continue };
+                let Ok(signature) = STANDARD.decode(&bind.signature) else { continue };
+                if crypto::node_id_from_public_key(&source_public_key) != bind.source_id
+                    || !crypto::verify_signature(
+                        &source_public_key,
+                        &signed_onion_route_bind(&bind),
+                        &signature,
+                    )
+                {
+                    continue;
+                }
+
+                if !sessions.contains_key(&bind.source_id) {
+                    continue;
+                }
+
+                let binding = OnionRouteBinding {
+                    source_id: bind.source_id.clone(),
+                    hop_index: bind.hop_index,
+                    previous_node_id: bind.previous_node_id.clone(),
+                    previous_address: bind.previous_address.clone(),
+                    next_node_id: bind.next_node_id.clone(),
+                    next_address: bind.next_address.clone(),
+                    expires_at: bind.expires_at,
+                };
+
+                if let Some(existing) = onion_bindings.get(&bind.route_id) {
+                    if existing.source_id != binding.source_id
+                        || existing.hop_index != binding.hop_index
+                        || existing.previous_node_id != binding.previous_node_id
+                        || existing.previous_address != binding.previous_address
+                        || existing.next_node_id != binding.next_node_id
+                        || existing.next_address != binding.next_address
+                    {
+                        continue;
+                    }
+                } else {
+                    if onion_bindings.len() >= MAX_ONION_ROUTES {
+                        continue;
+                    }
+                    onion_bindings.insert(bind.route_id.clone(), binding);
+                }
                 continue;
             }
 
