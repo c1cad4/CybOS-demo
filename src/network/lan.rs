@@ -1,26 +1,28 @@
-//! Local LAN discovery and directed CybChat transport.
-//!
-//! Discovery is broadcast-only. Chat is explicitly addressed to one peer,
-//! carries a message identity, and uses a bounded delivery acknowledgement.
-//! Payloads are still plaintext on the LAN; end-to-end cryptography is a
-//! separate transport layer and is deliberately not faked here.
-
+//! Authenticated LAN discovery, peer key exchange and encrypted CybChat transport.
 use crate::config::APP_VERSION;
+use crate::crypto;
+use crate::identity::NodeIdentity;
+use base64::{engine::general_purpose::STANDARD, Engine as _};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::net::UdpSocket;
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
 
 const LAN_DISCOVERY_PORT: u16 = 39393;
 const DISCOVERY_PREFIX: &str = "CYBOS_DISCOVER";
 const RESPONSE_PREFIX: &str = "CYBOS_PEER";
-const IDENTITY_PREFIX: &str = "CYBOS_IDENTITY";
+const KEY_INIT_PREFIX: &str = "CYBOS_KEY_INIT";
+const KEY_REPLY_PREFIX: &str = "CYBOS_KEY_REPLY";
 const CHAT_PREFIX: &str = "CYBOS_CHAT";
 const ACK_PREFIX: &str = "CYBOS_ACK";
 const MAX_CHAT_BYTES: usize = 1800;
-const CHAT_ACK_TIMEOUT: Duration = Duration::from_millis(700);
+const MAX_WIRE_BYTES: usize = 4096;
+const CHAT_ACK_TIMEOUT: Duration = Duration::from_millis(900);
+const KEY_TIMEOUT: Duration = Duration::from_millis(900);
+const REPLAY_WINDOW_SECS: u64 = 300;
 
 #[derive(Clone, Debug)]
 pub(crate) struct LanPeer {
@@ -32,461 +34,379 @@ pub(crate) struct LanPeer {
 
 #[derive(Clone, Debug)]
 pub(crate) enum LanEvent {
-    Chat {
-        message_id: String,
-        node_id: String,
-        message: String,
-    },
+    Chat { message_id: String, node_id: String, message: String },
 }
 
 #[derive(Clone, Debug)]
 pub(crate) enum LanSendStatus {
-    Delivered {
-        message_id: String,
-        peer_id: String,
-    },
-    TimedOut {
-        message_id: String,
-        peer_id: String,
-    },
-    Failed {
-        message_id: String,
-        peer_id: String,
-        reason: String,
-    },
+    Delivered { message_id: String, peer_id: String },
+    TimedOut { message_id: String, peer_id: String },
+    Failed { message_id: String, peer_id: String, reason: String },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-struct LanMessage {
+struct KeyInit {
+    from: String,
+    to: String,
+    public_key: String,
+    ephemeral_public_key: String,
+    timestamp: u64,
+    signature: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct KeyReply {
+    from: String,
+    to: String,
+    initiator_ephemeral_public_key: String,
+    responder_ephemeral_public_key: String,
+    timestamp: u64,
+    signature: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct WireEnvelope {
     message_id: String,
     from: String,
     to: String,
-    message: String,
-    version: String,
+    timestamp: u64,
+    nonce: String,
+    ciphertext: String,
+    signature: String,
 }
 
-pub(crate) fn spawn_listener(node_id: String) -> Receiver<LanEvent> {
+#[derive(Clone)]
+struct Session {
+    key: [u8; 32],
+    public_key: Vec<u8>,
+}
+
+fn now_secs() -> u64 {
+    SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs()
+}
+
+fn fresh_timestamp(ts: u64) -> bool {
+    now_secs().abs_diff(ts) <= REPLAY_WINDOW_SECS
+}
+
+fn signed_key_init(from: &str, to: &str, public_key: &str, eph: &str, timestamp: u64) -> Vec<u8> {
+    [crypto::PROTOCOL, "key-init", from, to, public_key, eph, &timestamp.to_string()].join("|").into_bytes()
+}
+
+fn signed_key_reply(from: &str, to: &str, init_eph: &str, reply_eph: &str, timestamp: u64) -> Vec<u8> {
+    [crypto::PROTOCOL, "key-reply", from, to, init_eph, reply_eph, &timestamp.to_string()].join("|").into_bytes()
+}
+
+fn session_transcript(from: &str, to: &str, init_eph: &[u8], reply_eph: &[u8]) -> Vec<u8> {
+    [crypto::PROTOCOL.as_bytes(), from.as_bytes(), to.as_bytes(), init_eph, reply_eph].concat()
+}
+
+fn aad(message_id: &str, from: &str, to: &str, timestamp: u64) -> Vec<u8> {
+    [crypto::PROTOCOL, "aead", message_id, from, to, &timestamp.to_string()].join("|").into_bytes()
+}
+
+pub(crate) fn spawn_listener(node_id: String, identity: NodeIdentity) -> Receiver<LanEvent> {
     let (tx, rx) = mpsc::channel();
-
     thread::spawn(move || {
-        let socket = match UdpSocket::bind(("0.0.0.0", LAN_DISCOVERY_PORT)) {
-            Ok(socket) => socket,
-            Err(_) => return,
-        };
-
-        let mut buffer = [0_u8; 4096];
+        let socket = match UdpSocket::bind(("0.0.0.0", LAN_DISCOVERY_PORT)) { Ok(s) => s, Err(_) => return };
+        let mut buffer = [0u8; 8192];
+        let mut sessions: HashMap<String, Session> = HashMap::new();
+        let mut seen_messages: HashMap<String, u64> = HashMap::new();
 
         loop {
-            let Ok((size, peer_addr)) = socket.recv_from(&mut buffer) else {
-                break;
-            };
+            let Ok((size, peer_addr)) = socket.recv_from(&mut buffer) else { break };
+            if size > MAX_WIRE_BYTES { continue; }
+            let Ok(message) = std::str::from_utf8(&buffer[..size]) else { continue };
 
-            let Ok(message) = std::str::from_utf8(&buffer[..size]) else {
-                continue;
-            };
-
-            if let Some(sender_id) = message
-                .strip_prefix(DISCOVERY_PREFIX)
-                .and_then(|rest| rest.strip_prefix(' '))
-            {
-                if sender_id == node_id {
-                    continue;
-                }
-
-                let response = format!(
-                    "{} {} {}",
-                    RESPONSE_PREFIX,
-                    node_id,
-                    APP_VERSION
-                );
-
+            if let Some(sender_id) = message.strip_prefix(DISCOVERY_PREFIX).and_then(|r| r.strip_prefix(' ')) {
+                if sender_id == node_id { continue; }
+                let public_key_b64 = STANDARD.encode(identity.public_key());
+                let sig = crypto::sign(&identity, &crypto::peer_binding(&node_id, APP_VERSION, &public_key_b64));
+                let response = format!("{} {} {} {} {}", RESPONSE_PREFIX, node_id, APP_VERSION, public_key_b64, STANDARD.encode(sig));
                 let _ = socket.send_to(response.as_bytes(), peer_addr);
                 continue;
             }
 
-            if let Some(payload) = message
-                .strip_prefix(CHAT_PREFIX)
-                .and_then(|rest| rest.strip_prefix(' '))
-            {
-                let Ok(envelope) = serde_json::from_str::<LanMessage>(payload) else {
-                    continue;
+            if let Some(payload) = message.strip_prefix(KEY_INIT_PREFIX).and_then(|r| r.strip_prefix(' ')) {
+                let Ok(init) = serde_json::from_str::<KeyInit>(payload) else { continue };
+                if init.to != node_id || init.from == node_id || !fresh_timestamp(init.timestamp) { continue; }
+                let Ok(public_key) = STANDARD.decode(&init.public_key) else { continue };
+                let Ok(eph) = STANDARD.decode(&init.ephemeral_public_key) else { continue };
+                let Ok(sig) = STANDARD.decode(&init.signature) else { continue };
+                if crypto::node_id_from_public_key(&public_key) != init.from || eph.len() != 32 { continue; }
+                if !crypto::verify_signature(
+                    &public_key,
+                    &signed_key_init(&init.from, &init.to, &init.public_key, &init.ephemeral_public_key, init.timestamp),
+                    &sig,
+                ) { continue; }
+
+                let Ok((private, reply_eph)) = crypto::ephemeral() else { continue };
+                let transcript = session_transcript(&init.from, &init.to, &eph, &reply_eph);
+                let Ok(key) = crypto::derive_session_key(private, &eph, &transcript) else { continue };
+                sessions.insert(init.from.clone(), Session { key, public_key });
+
+                let timestamp = now_secs();
+                let reply_eph_b64 = STANDARD.encode(&reply_eph);
+                let reply = KeyReply {
+                    from: node_id.clone(),
+                    to: init.from.clone(),
+                    initiator_ephemeral_public_key: init.ephemeral_public_key.clone(),
+                    responder_ephemeral_public_key: reply_eph_b64.clone(),
+                    timestamp,
+                    signature: STANDARD.encode(crypto::sign(
+                        &identity,
+                        &signed_key_reply(&node_id, &init.from, &init.ephemeral_public_key, &reply_eph_b64, timestamp),
+                    )),
                 };
-
-                if envelope.to != node_id || envelope.from == node_id {
-                    continue;
+                if let Ok(body) = serde_json::to_string(&reply) {
+                    let _ = socket.send_to(format!("{} {}", KEY_REPLY_PREFIX, body).as_bytes(), peer_addr);
                 }
+                continue;
+            }
 
-                if envelope.message.trim().is_empty()
-                    || envelope.message.as_bytes().len() > MAX_CHAT_BYTES
-                    || envelope.message_id.trim().is_empty()
-                {
-                    continue;
-                }
+            if let Some(payload) = message.strip_prefix(CHAT_PREFIX).and_then(|r| r.strip_prefix(' ')) {
+                let Ok(envelope) = serde_json::from_str::<WireEnvelope>(payload) else { continue };
+                if envelope.to != node_id || envelope.from == node_id || envelope.message_id.trim().is_empty()
+                    || !fresh_timestamp(envelope.timestamp) { continue; }
 
-                let ack = format!(
-                    "{} {} {}",
-                    ACK_PREFIX,
-                    envelope.message_id,
-                    node_id
-                );
+                let cutoff = now_secs().saturating_sub(REPLAY_WINDOW_SECS);
+                seen_messages.retain(|_, ts| *ts >= cutoff);
+                if seen_messages.contains_key(&envelope.message_id) { continue; }
 
-                let _ = socket.send_to(ack.as_bytes(), peer_addr);
+                let Some(session) = sessions.get(&envelope.from) else { continue };
+                let signed = crypto::envelope_bytes(&envelope.message_id, &envelope.from, &envelope.to, envelope.timestamp, &envelope.nonce, &envelope.ciphertext);
+                if !crypto::verify_signature(&session.public_key, &signed, &STANDARD.decode(&envelope.signature).unwrap_or_default()) { continue; }
+                let associated = aad(&envelope.message_id, &envelope.from, &envelope.to, envelope.timestamp);
+                let Ok(plaintext) = crypto::decrypt(&session.key, &associated, &envelope.nonce, &envelope.ciphertext) else { continue };
+                if plaintext.len() > MAX_CHAT_BYTES { continue; }
+                let Ok(text) = String::from_utf8(plaintext) else { continue };
 
-                let _ = tx.send(LanEvent::Chat {
-                    message_id: envelope.message_id,
-                    node_id: envelope.from,
-                    message: envelope.message,
-                });
+                seen_messages.insert(envelope.message_id.clone(), envelope.timestamp);
+                let _ = socket.send_to(format!("{} {} {}", ACK_PREFIX, envelope.message_id, node_id).as_bytes(), peer_addr);
+                let _ = tx.send(LanEvent::Chat { message_id: envelope.message_id, node_id: envelope.from, message: text });
             }
         }
     });
-
     rx
 }
 
 pub(crate) fn scan(node_id: String) -> Vec<LanPeer> {
-    let socket = match UdpSocket::bind(("0.0.0.0", 0)) {
-        Ok(socket) => socket,
-        Err(_) => return Vec::new(),
-    };
-
-    if socket.set_broadcast(true).is_err() {
-        return Vec::new();
-    }
-
+    let socket = match UdpSocket::bind(("0.0.0.0", 0)) { Ok(s) => s, Err(_) => return Vec::new() };
+    if socket.set_broadcast(true).is_err() { return Vec::new(); }
     let _ = socket.set_read_timeout(Some(Duration::from_millis(700)));
-
-    let message = format!("{} {}", DISCOVERY_PREFIX, node_id);
-
-    if socket
-        .send_to(
-            message.as_bytes(),
-            ("255.255.255.255", LAN_DISCOVERY_PORT),
-        )
-        .is_err()
-    {
-        return Vec::new();
-    }
+    if socket.send_to(format!("{} {}", DISCOVERY_PREFIX, node_id).as_bytes(), ("255.255.255.255", LAN_DISCOVERY_PORT)).is_err() { return Vec::new(); }
 
     let mut peers = Vec::new();
-    let mut buffer = [0_u8; 1024];
-
+    let mut buffer = [0u8; 4096];
     loop {
         match socket.recv_from(&mut buffer) {
             Ok((size, addr)) => {
-                let Ok(message) = std::str::from_utf8(&buffer[..size]) else {
-                    continue;
-                };
-
+                let Ok(message) = std::str::from_utf8(&buffer[..size]) else { continue };
                 let mut parts = message.split_whitespace();
-
-                if parts.next() != Some(RESPONSE_PREFIX) {
-                    continue;
-                }
-
-                let Some(peer_id) = parts.next() else {
-                    continue;
-                };
-
+                if parts.next() != Some(RESPONSE_PREFIX) { continue; }
+                let Some(peer_id) = parts.next() else { continue };
                 let version = parts.next().unwrap_or("unknown").to_string();
-
-                if peer_id == node_id {
-                    continue;
-                }
-
-                if peers.iter().any(|p: &LanPeer| p.node_id == peer_id) {
-                    continue;
-                }
-
-                peers.push(LanPeer {
-                    node_id: peer_id.to_string(),
-                    address: addr.ip().to_string(),
-                    version,
-                    public_key: None,
-                });
+                let Some(public_key_b64) = parts.next() else { continue };
+                let Some(signature_b64) = parts.next() else { continue };
+                let Ok(public_key) = STANDARD.decode(public_key_b64) else { continue };
+                let Ok(sig) = STANDARD.decode(signature_b64) else { continue };
+                if crypto::node_id_from_public_key(&public_key) != peer_id
+                    || !crypto::verify_signature(&public_key, &crypto::peer_binding(peer_id, &version, public_key_b64), &sig)
+                { continue; }
+                if peer_id == node_id || peers.iter().any(|p: &LanPeer| p.node_id == peer_id) { continue; }
+                peers.push(LanPeer { node_id: peer_id.to_string(), address: addr.ip().to_string(), version, public_key: Some(public_key_b64.to_string()) });
             }
             Err(_) => break,
         }
     }
-
     peers
 }
 
 pub(crate) fn send_private_chat(
-    sender_id: &str,
+    identity: &NodeIdentity,
     peer_id: &str,
     peer_address: &str,
+    peer_public_key_b64: &str,
     message: &str,
 ) -> LanSendStatus {
     let message_id = Uuid::new_v4().to_string();
-
     if message.trim().is_empty() {
-        return LanSendStatus::Failed {
-            message_id,
-            peer_id: peer_id.to_string(),
-            reason: "empty message".into(),
-        };
+        return LanSendStatus::Failed { message_id, peer_id: peer_id.to_string(), reason: "empty message".into() };
     }
-
     if message.as_bytes().len() > MAX_CHAT_BYTES {
-        return LanSendStatus::Failed {
-            message_id,
-            peer_id: peer_id.to_string(),
-            reason: format!("message exceeds {} bytes", MAX_CHAT_BYTES),
-        };
+        return LanSendStatus::Failed { message_id, peer_id: peer_id.to_string(), reason: format!("message exceeds {} bytes", MAX_CHAT_BYTES) };
     }
 
+    let peer_public_key = match STANDARD.decode(peer_public_key_b64) {
+        Ok(k) if crypto::node_id_from_public_key(&k) == peer_id => k,
+        _ => return LanSendStatus::Failed { message_id, peer_id: peer_id.to_string(), reason: "peer identity key is invalid".into() },
+    };
     let socket = match UdpSocket::bind(("0.0.0.0", 0)) {
-        Ok(socket) => socket,
-        Err(error) => {
-            return LanSendStatus::Failed {
-                message_id,
-                peer_id: peer_id.to_string(),
-                reason: error.to_string(),
-            };
-        }
+        Ok(s) => s,
+        Err(e) => return LanSendStatus::Failed { message_id, peer_id: peer_id.to_string(), reason: e.to_string() },
     };
-
-    let _ = socket.set_read_timeout(Some(CHAT_ACK_TIMEOUT));
-
-    let target = format!("{}:{}", peer_address, LAN_DISCOVERY_PORT);
-
-    let envelope = LanMessage {
-        message_id: message_id.clone(),
-        from: sender_id.to_string(),
+    let _ = socket.set_read_timeout(Some(KEY_TIMEOUT));
+    let (private, init_public) = match crypto::ephemeral() {
+        Ok(v) => v,
+        Err(e) => return LanSendStatus::Failed { message_id, peer_id: peer_id.to_string(), reason: e.into() },
+    };
+    let init_public_b64 = STANDARD.encode(&init_public);
+    let timestamp = now_secs();
+    let init = KeyInit {
+        from: identity.node_id(),
         to: peer_id.to_string(),
-        message: message.to_string(),
-        version: APP_VERSION.to_string(),
+        public_key: STANDARD.encode(identity.public_key()),
+        ephemeral_public_key: init_public_b64.clone(),
+        timestamp,
+        signature: STANDARD.encode(crypto::sign(identity, &signed_key_init(&identity.node_id(), peer_id, &STANDARD.encode(identity.public_key()), &init_public_b64, timestamp))),
     };
-
-    let payload = match serde_json::to_string(&envelope) {
-        Ok(value) => value,
-        Err(error) => {
-            return LanSendStatus::Failed {
-                message_id,
-                peer_id: peer_id.to_string(),
-                reason: error.to_string(),
-            };
-        }
+    let target = format!("{}:{}", peer_address, LAN_DISCOVERY_PORT);
+    let body = match serde_json::to_string(&init) {
+        Ok(v) => v,
+        Err(e) => return LanSendStatus::Failed { message_id, peer_id: peer_id.to_string(), reason: e.to_string() },
     };
-
-    let wire = format!("{} {}", CHAT_PREFIX, payload);
-
-    if let Err(error) = socket.send_to(wire.as_bytes(), target.as_str()) {
-        return LanSendStatus::Failed {
-            message_id,
-            peer_id: peer_id.to_string(),
-            reason: error.to_string(),
-        };
+    if let Err(e) = socket.send_to(format!("{} {}", KEY_INIT_PREFIX, body).as_bytes(), &target) {
+        return LanSendStatus::Failed { message_id, peer_id: peer_id.to_string(), reason: e.to_string() };
     }
 
-    let mut buffer = [0_u8; 1024];
+    let mut buffer = [0u8; 8192];
+    let reply = loop {
+        match socket.recv_from(&mut buffer) {
+            Ok((size, _)) => {
+                let Ok(text) = std::str::from_utf8(&buffer[..size]) else { continue };
+                let Some(payload) = text.strip_prefix(KEY_REPLY_PREFIX).and_then(|r| r.strip_prefix(' ')) else { continue };
+                let Ok(reply) = serde_json::from_str::<KeyReply>(payload) else { continue };
+                if reply.from != peer_id || reply.to != identity.node_id() || !fresh_timestamp(reply.timestamp)
+                    || reply.initiator_ephemeral_public_key != init_public_b64 { continue; }
+                let Ok(sig) = STANDARD.decode(&reply.signature) else { continue };
+                let signed = signed_key_reply(&reply.from, &reply.to, &reply.initiator_ephemeral_public_key, &reply.responder_ephemeral_public_key, reply.timestamp);
+                if !crypto::verify_signature(&peer_public_key, &signed, &sig) { continue; }
+                break reply;
+            }
+            Err(_) => return LanSendStatus::TimedOut { message_id, peer_id: peer_id.to_string() },
+        }
+    };
+
+    let reply_public = match STANDARD.decode(&reply.responder_ephemeral_public_key) {
+        Ok(v) => v,
+        Err(_) => return LanSendStatus::Failed { message_id, peer_id: peer_id.to_string(), reason: "invalid key reply".into() },
+    };
+    let transcript = session_transcript(&identity.node_id(), peer_id, &init_public, &reply_public);
+    let key = match crypto::derive_session_key(private, &reply_public, &transcript) {
+        Ok(k) => k,
+        Err(e) => return LanSendStatus::Failed { message_id, peer_id: peer_id.to_string(), reason: e.into() },
+    };
+
+    let timestamp = now_secs();
+    let associated = aad(&message_id, &identity.node_id(), peer_id, timestamp);
+    let (nonce, ciphertext) = match crypto::encrypt(&key, &associated, message.as_bytes()) {
+        Ok(v) => v,
+        Err(e) => return LanSendStatus::Failed { message_id, peer_id: peer_id.to_string(), reason: e.into() },
+    };
+    let signed = crypto::envelope_bytes(&message_id, &identity.node_id(), peer_id, timestamp, &nonce, &ciphertext);
+    let envelope = WireEnvelope {
+        message_id: message_id.clone(),
+        from: identity.node_id(),
+        to: peer_id.to_string(),
+        timestamp,
+        nonce,
+        ciphertext,
+        signature: STANDARD.encode(crypto::sign(identity, &signed)),
+    };
+    let body = match serde_json::to_string(&envelope) {
+        Ok(v) => v,
+        Err(e) => return LanSendStatus::Failed { message_id, peer_id: peer_id.to_string(), reason: e.to_string() },
+    };
+    if body.as_bytes().len() > MAX_WIRE_BYTES {
+        return LanSendStatus::Failed { message_id, peer_id: peer_id.to_string(), reason: "encrypted envelope exceeds wire limit".into() };
+    }
+    let _ = socket.set_read_timeout(Some(CHAT_ACK_TIMEOUT));
+    if let Err(e) = socket.send_to(format!("{} {}", CHAT_PREFIX, body).as_bytes(), &target) {
+        return LanSendStatus::Failed { message_id, peer_id: peer_id.to_string(), reason: e.to_string() };
+    }
 
     loop {
         match socket.recv_from(&mut buffer) {
-            Ok((size, _addr)) => {
-                let Ok(ack) = std::str::from_utf8(&buffer[..size]) else {
-                    continue;
-                };
-
+            Ok((size, _)) => {
+                let Ok(ack) = std::str::from_utf8(&buffer[..size]) else { continue };
                 let mut parts = ack.split_whitespace();
-
-                if parts.next() != Some(ACK_PREFIX) {
-                    continue;
-                }
-
-                let Some(ack_message_id) = parts.next() else {
-                    continue;
-                };
-
-                let Some(ack_peer_id) = parts.next() else {
-                    continue;
-                };
-
-                if ack_message_id == message_id && ack_peer_id == peer_id {
-                    return LanSendStatus::Delivered {
-                        message_id,
-                        peer_id: peer_id.to_string(),
-                    };
+                if parts.next() == Some(ACK_PREFIX) && parts.next() == Some(message_id.as_str()) && parts.next() == Some(peer_id) {
+                    return LanSendStatus::Delivered { message_id, peer_id: peer_id.to_string() };
                 }
             }
-            Err(_) => {
-                return LanSendStatus::TimedOut {
-                    message_id,
-                    peer_id: peer_id.to_string(),
-                };
-            }
+            Err(_) => return LanSendStatus::TimedOut { message_id, peer_id: peer_id.to_string() },
         }
     }
 }
 
 impl crate::state::CybOs {
     pub(crate) fn start_lan_scan(&mut self) {
-        if self.lan_scan.is_some() {
-            return;
-        }
-
+        if self.lan_scan.is_some() { return; }
         let node_id = self.node_id.clone();
         let (tx, rx) = mpsc::channel();
-
         self.lan_scan = Some(rx);
-
-        thread::spawn(move || {
-            let peers = scan(node_id);
-            let _ = tx.send(peers);
-        });
+        thread::spawn(move || { let peers = scan(node_id); let _ = tx.send(peers); });
     }
 
     pub(crate) fn poll_lan_scan(&mut self) {
-        let Some(rx) = &self.lan_scan else {
-            return;
-        };
-
+        let Some(rx) = &self.lan_scan else { return };
         match rx.try_recv() {
             Ok(peers) => {
                 self.lan_peers = peers;
-
-                let target_still_exists = self
-                    .lan_target
-                    .as_deref()
-                    .map(|target| self.lan_peers.iter().any(|peer| peer.node_id == target))
-                    .unwrap_or(false);
-
-                if !target_still_exists {
-                    self.lan_target = self
-                        .lan_peers
-                        .first()
-                        .map(|peer| peer.node_id.clone());
-                }
-
+                let target_still_exists = self.lan_target.as_deref().map(|target| self.lan_peers.iter().any(|peer| peer.node_id == target)).unwrap_or(false);
+                if !target_still_exists { self.lan_target = self.lan_peers.first().map(|peer| peer.node_id.clone()); }
                 self.lan_scan = None;
                 self.last_scan = Some(std::time::Instant::now());
-                self.add_event(
-                    "NETWORK",
-                    format!(
-                        "LAN scan completed: {} peer(s) discovered",
-                        self.lan_peers.len()
-                    ),
-                );
+                self.add_event("NETWORK", format!("LAN scan completed: {} authenticated peer(s) discovered", self.lan_peers.len()));
             }
             Err(TryRecvError::Empty) => {}
-            Err(TryRecvError::Disconnected) => {
-                self.lan_scan = None;
-            }
+            Err(TryRecvError::Disconnected) => self.lan_scan = None,
         }
     }
 
     pub(crate) fn send_lan_chat(&mut self, message: &str) {
-        if self.lan_send_task.is_some() {
-            self.notify("LAN DELIVERY ALREADY IN PROGRESS");
-            return;
-        }
-
+        if self.lan_send_task.is_some() { self.notify("LAN DELIVERY ALREADY IN PROGRESS"); return; }
         let message = message.trim().to_string();
-        if message.is_empty() {
-            return;
-        }
-
-        let Some(target_id) = self.lan_target.clone() else {
-            self.notify("SELECT A LAN PEER FIRST");
-            return;
-        };
-
-        let Some(peer) = self
-            .lan_peers
-            .iter()
-            .find(|peer| peer.node_id == target_id)
-            .cloned()
-        else {
-            self.notify("LAN TARGET IS NO LONGER AVAILABLE");
-            return;
-        };
+        if message.is_empty() { return; }
+        let Some(target_id) = self.lan_target.clone() else { self.notify("SELECT A LAN PEER FIRST"); return };
+        let Some(peer) = self.lan_peers.iter().find(|p| p.node_id == target_id).cloned() else { self.notify("LAN TARGET IS NO LONGER AVAILABLE"); return };
+        let Some(peer_public_key) = peer.public_key.clone() else { self.notify("PEER HAS NO AUTHENTICATED IDENTITY KEY"); return };
 
         let (tx, rx) = mpsc::channel();
         self.lan_send_task = Some(rx);
-        self.lan_delivery_status = format!("SENDING TO {}", peer.node_id);
-
-        let sender_id = self.node_id.clone();
-
+        self.lan_delivery_status = format!("KEY EXCHANGE → ENCRYPT → SEND TO {}", peer.node_id);
+        let identity = self.identity.clone();
         thread::spawn(move || {
-            let result = send_private_chat(
-                &sender_id,
-                &peer.node_id,
-                &peer.address,
-                &message,
-            );
+            let result = send_private_chat(&identity, &peer.node_id, &peer.address, &peer_public_key, &message);
             let _ = tx.send(result);
         });
     }
 
     pub(crate) fn poll_lan_send(&mut self) {
-        let Some(rx) = &self.lan_send_task else {
-            return;
-        };
-
+        let Some(rx) = &self.lan_send_task else { return };
         match rx.try_recv() {
             Ok(status) => {
                 self.lan_send_task = None;
-
                 match status {
-                    LanSendStatus::Delivered {
-                        message_id,
-                        peer_id,
-                    } => {
-                        self.lan_delivery_status = format!(
-                            "DELIVERED · {} · {}",
-                            peer_id, message_id
-                        );
-                        self.add_event(
-                            "CHAT",
-                            format!(
-                                "LAN message delivered to {} · {}",
-                                peer_id, message_id
-                            ),
-                        );
-                        self.notify("LAN MESSAGE DELIVERED");
+                    LanSendStatus::Delivered { message_id, peer_id } => {
+                        self.lan_delivery_status = format!("E2E DELIVERED · {} · {}", peer_id, message_id);
+                        self.add_event("CHAT", format!("Encrypted LAN message delivered to {} · {}", peer_id, message_id));
+                        self.notify("E2E LAN MESSAGE DELIVERED");
                     }
-                    LanSendStatus::TimedOut {
-                        message_id,
-                        peer_id,
-                    } => {
-                        self.lan_delivery_status = format!(
-                            "DELIVERY TIMEOUT · {} · {}",
-                            peer_id, message_id
-                        );
-                        self.add_event(
-                            "CHAT",
-                            format!(
-                                "LAN message delivery timeout to {} · {}",
-                                peer_id, message_id
-                            ),
-                        );
-                        self.notify("LAN DELIVERY TIMEOUT");
+                    LanSendStatus::TimedOut { message_id, peer_id } => {
+                        self.lan_delivery_status = format!("E2E DELIVERY TIMEOUT · {} · {}", peer_id, message_id);
+                        self.add_event("CHAT", format!("Encrypted LAN delivery timeout to {} · {}", peer_id, message_id));
+                        self.notify("E2E LAN DELIVERY TIMEOUT");
                     }
-                    LanSendStatus::Failed {
-                        message_id,
-                        peer_id,
-                        reason,
-                    } => {
-                        self.lan_delivery_status = format!(
-                            "DELIVERY FAILED · {} · {}",
-                            peer_id, reason
-                        );
-                        self.add_event(
-                            "CHAT",
-                            format!(
-                                "LAN message failed to {} · {} · {}",
-                                peer_id, message_id, reason
-                            ),
-                        );
-                        self.notify("LAN MESSAGE FAILED");
+                    LanSendStatus::Failed { message_id, peer_id, reason } => {
+                        self.lan_delivery_status = format!("E2E DELIVERY FAILED · {} · {}", peer_id, reason);
+                        self.add_event("CHAT", format!("Encrypted LAN message failed to {} · {} · {}", peer_id, message_id, reason));
+                        self.notify("E2E LAN MESSAGE FAILED");
                     }
                 }
             }
             Err(TryRecvError::Empty) => {}
-            Err(TryRecvError::Disconnected) => {
-                self.lan_send_task = None;
-            }
+            Err(TryRecvError::Disconnected) => self.lan_send_task = None,
         }
     }
 
@@ -494,54 +414,32 @@ impl crate::state::CybOs {
         loop {
             let event = match self.lan_events.try_recv() {
                 Ok(event) => event,
-                Err(TryRecvError::Empty) => break,
-                Err(TryRecvError::Disconnected) => break,
+                Err(TryRecvError::Empty) | Err(TryRecvError::Disconnected) => break,
             };
-
             match event {
-                LanEvent::Chat {
-                    message_id,
-                    node_id,
-                    message,
-                } => {
-                    let display = format!("LAN:{}", node_id);
-                    self.push_chat_message(display, message.clone(), false);
-                    self.add_event(
-                        "CHAT",
-                        format!(
-                            "LAN message received from {} · {}",
-                            node_id, message_id
-                        ),
-                    );
+                LanEvent::Chat { message_id, node_id, message } => {
+                    self.push_chat_message(format!("LAN:{}", node_id), message.clone(), false);
+                    self.add_event("CHAT", format!("E2E encrypted LAN message received from {} · {}", node_id, message_id));
                 }
             }
         }
     }
 }
 
-
-
 #[cfg(test)]
 mod tests {
-    use super::LanMessage;
-
+    use super::*;
     #[test]
-    fn directed_message_envelope_roundtrips() {
-        let message = LanMessage {
-            message_id: "msg-001".into(),
-            from: "cyb-a".into(),
-            to: "cyb-b".into(),
-            message: "hello from cybOS".into(),
-            version: "0.7.0".into(),
-        };
-
-        let encoded = serde_json::to_string(&message).expect("encode message");
-        let decoded: LanMessage =
-            serde_json::from_str(&encoded).expect("decode message");
-
-        assert_eq!(decoded.message_id, "msg-001");
-        assert_eq!(decoded.from, "cyb-a");
-        assert_eq!(decoded.to, "cyb-b");
-        assert_eq!(decoded.message, "hello from cybOS");
+    fn timestamp_window_rejects_old_messages() {
+        assert!(fresh_timestamp(now_secs()));
+        assert!(!fresh_timestamp(now_secs().saturating_sub(REPLAY_WINDOW_SECS + 1)));
+    }
+    #[test]
+    fn encrypted_envelope_is_not_plaintext() {
+        let key = [7u8; 32];
+        let associated = aad("msg", "cyb-a", "cyb-b", 123);
+        let (nonce, ciphertext) = crypto::encrypt(&key, &associated, b"secret").unwrap();
+        assert!(!ciphertext.contains("secret"));
+        assert_eq!(crypto::decrypt(&key, &associated, &nonce, &ciphertext).unwrap(), b"secret");
     }
 }

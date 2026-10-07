@@ -90,7 +90,7 @@ impl Default for CybOs {
             );
         }
 
-        let lan_events = crate::network::lan::spawn_listener(node_id.clone());
+        let lan_events = crate::network::lan::spawn_listener(node_id.clone(), identity.clone());
 
         let mut app = Self {
             store,
