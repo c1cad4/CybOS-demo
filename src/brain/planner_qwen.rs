@@ -257,3 +257,41 @@ Return ONLY valid JSON.
     }
 
 }
+
+#[cfg(test)]
+mod tests {
+    use super::CybOs;
+
+    #[test]
+    fn parses_plain_json() {
+        let value = CybOs::parse_planner_json(
+            r#"{"action":"final","answer":"ok"}"#,
+        ).expect("plain JSON should parse");
+        assert_eq!(value["action"].as_str(), Some("final"));
+        assert_eq!(value["answer"].as_str(), Some("ok"));
+    }
+
+    #[test]
+    fn parses_fenced_json() {
+        let value = CybOs::parse_planner_json(
+            "```json\n{\"action\":\"tool\",\"tool\":\"get_events\",\"arguments\":\"10\"}\n```",
+        ).expect("fenced JSON should parse");
+        assert_eq!(value["action"].as_str(), Some("tool"));
+        assert_eq!(value["tool"].as_str(), Some("get_events"));
+        assert_eq!(value["arguments"].as_str(), Some("10"));
+    }
+
+    #[test]
+    fn extracts_json_from_surrounding_text() {
+        let value = CybOs::parse_planner_json(
+            "Planner result: {\"action\":\"final\",\"answer\":\"done\"}",
+        ).expect("embedded JSON should parse");
+        assert_eq!(value["action"].as_str(), Some("final"));
+        assert_eq!(value["answer"].as_str(), Some("done"));
+    }
+
+    #[test]
+    fn rejects_invalid_json() {
+        assert!(CybOs::parse_planner_json("not json").is_none());
+    }
+}
