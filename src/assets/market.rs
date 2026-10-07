@@ -7,7 +7,13 @@ use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 use eframe::egui::{self, Color32, RichText, Stroke, Vec2};
 
-static TOKEN_MARKET_CACHE: OnceLock<Mutex<(Instant, Vec<TokenMarket>)>> = OnceLock::new();
+struct TokenMarketCache {
+    refreshed_at: Instant,
+    markets: Vec<TokenMarket>,
+    loading: bool,
+}
+
+static TOKEN_MARKET_CACHE: OnceLock<Mutex<TokenMarketCache>> = OnceLock::new();
 
 impl CybOs {
     fn fetch_token_market(name: &str, mint: &str) -> TokenMarket {
@@ -129,41 +135,44 @@ impl CybOs {
 
     fn token_markets(&self) -> Vec<TokenMarket> {
         let cache = TOKEN_MARKET_CACHE.get_or_init(|| {
-            Mutex::new((Instant::now(), Vec::new()))
+            Mutex::new(TokenMarketCache {
+                refreshed_at: Instant::now()
+                    .checked_sub(Duration::from_secs(120))
+                    .unwrap_or_else(Instant::now),
+                markets: Vec::new(),
+                loading: false,
+            })
         });
 
-        let (refresh_needed, cached) = {
-            let guard = cache.lock().unwrap();
-            (
-                guard.1.is_empty() || guard.0.elapsed() >= Duration::from_secs(60),
-                guard.1.clone(),
-            )
+        let (cached, spawn_refresh) = {
+            let mut guard = cache.lock().unwrap();
+            let stale =
+                guard.markets.is_empty()
+                    || guard.refreshed_at.elapsed() >= Duration::from_secs(60);
+
+            let spawn_refresh = stale && !guard.loading;
+
+            if spawn_refresh {
+                guard.loading = true;
+            }
+
+            (guard.markets.clone(), spawn_refresh)
         };
 
-        if refresh_needed {
-            let should_spawn = {
-                let mut guard = cache.lock().unwrap();
-                if guard.1.is_empty() || guard.0.elapsed() >= Duration::from_secs(60) {
-                    guard.0 = Instant::now();
-                    true
-                } else {
-                    false
+        if spawn_refresh {
+            std::thread::spawn(|| {
+                let markets = vec![
+                    CybOs::fetch_token_market("$CICADAFARM", CICADAFARM_MINT),
+                    CybOs::fetch_token_market("$ROBOTCYB", ROBOTCYB_MINT),
+                ];
+
+                if let Some(cache) = TOKEN_MARKET_CACHE.get() {
+                    let mut guard = cache.lock().unwrap();
+                    guard.markets = markets;
+                    guard.refreshed_at = Instant::now();
+                    guard.loading = false;
                 }
-            };
-
-            if should_spawn {
-                std::thread::spawn(|| {
-                    let markets = vec![
-                        CybOs::fetch_token_market("$CICADAFARM", CICADAFARM_MINT),
-                        CybOs::fetch_token_market("$ROBOTCYB", ROBOTCYB_MINT),
-                    ];
-
-                    if let Some(cache) = TOKEN_MARKET_CACHE.get() {
-                        let mut guard = cache.lock().unwrap();
-                        guard.1 = markets;
-                    }
-                });
-            }
+            });
         }
 
         if cached.is_empty() {
