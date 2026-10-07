@@ -1077,35 +1077,149 @@ fn ensure_onion_session(
     Ok(session)
 }
 
+fn ensure_anonymous_onion_session(
+    socket: &UdpSocket,
+    peer: &OnionRoutePeer,
+) -> Result<(String, [u8; 32]), String> {
+    let peer_public_key = STANDARD
+        .decode(&peer.public_key_b64)
+        .map_err(|_| "invalid relay identity key".to_string())?;
+    if crypto::node_id_from_public_key(&peer_public_key) != peer.node_id {
+        return Err("relay identity key does not match node id".into());
+    }
+
+    socket
+        .set_read_timeout(Some(KEY_TIMEOUT))
+        .map_err(|e| e.to_string())?;
+
+    let session_id = Uuid::new_v4().to_string();
+    let (private, init_public) =
+        crypto::ephemeral().map_err(|e| e.to_string())?;
+    let init_public_b64 = STANDARD.encode(&init_public);
+    let init = OnionSessionInit {
+        session_id: session_id.clone(),
+        to_node_id: peer.node_id.clone(),
+        ephemeral_public_key: init_public_b64.clone(),
+        timestamp: now_secs(),
+    };
+    let body = serde_json::to_string(&init).map_err(|e| e.to_string())?;
+    socket
+        .send_to(
+            format!("{} {}", ONION_SESSION_INIT_PREFIX, body).as_bytes(),
+            &peer.address,
+        )
+        .map_err(|e| e.to_string())?;
+
+    let mut buffer = [0u8; 8192];
+    let reply = loop {
+        let (size, sender) = socket
+            .recv_from(&mut buffer)
+            .map_err(|_| format!("onion session timeout for {}", peer.node_id))?;
+        if sender.to_string() != peer.address {
+            continue;
+        }
+
+        let Ok(text) = std::str::from_utf8(&buffer[..size]) else {
+            continue;
+        };
+        let Some(payload) = text
+            .strip_prefix(ONION_SESSION_REPLY_PREFIX)
+            .and_then(|r| r.strip_prefix(' '))
+        else {
+            continue;
+        };
+        let Ok(reply) = serde_json::from_str::<OnionSessionReply>(payload) else {
+            continue;
+        };
+        if reply.session_id != session_id
+            || reply.relay_id != peer.node_id
+            || reply.initiator_ephemeral_public_key != init_public_b64
+            || !fresh_timestamp(reply.timestamp)
+        {
+            continue;
+        }
+
+        let Ok(signature) = STANDARD.decode(&reply.signature) else {
+            continue;
+        };
+        if !crypto::verify_signature(
+            &peer_public_key,
+            &signed_onion_session_reply(&reply),
+            &signature,
+        ) {
+            continue;
+        }
+        break reply;
+    };
+
+    let reply_public = STANDARD
+        .decode(&reply.responder_ephemeral_public_key)
+        .map_err(|_| "invalid onion session reply key".to_string())?;
+    if reply_public.len() != 32 {
+        return Err("invalid onion session reply key length".into());
+    }
+
+    let transcript = onion_session_transcript(
+        &session_id,
+        &peer.node_id,
+        &init_public,
+        &reply_public,
+    );
+    let key = crypto::derive_session_key(private, &reply_public, &transcript)
+        .map_err(|e| e.to_string())?;
+
+    Ok((session_id, key))
+}
+
 fn send_onion_route_bind(
     socket: &UdpSocket,
-    identity: &NodeIdentity,
     peer: &OnionRoutePeer,
+    session_id: &str,
+    session_key: &[u8; 32],
     route_id: &str,
     hop_index: u8,
-    previous_node_id: &str,
     previous_address: &str,
     next_node_id: &str,
     next_address: &str,
     expires_at: u64,
 ) -> Result<(), String> {
-    let mut bind = OnionRouteBind {
+    if session_id.trim().is_empty()
+        || route_id.trim().is_empty()
+        || previous_address.parse::<SocketAddr>().is_err()
+        || next_address.parse::<SocketAddr>().is_err()
+    {
+        return Err("invalid onion route bind".into());
+    }
+
+    let frame = OnionRouteBindFrame {
         route_id: route_id.to_string(),
         hop_index,
-        source_id: identity.node_id(),
-        source_public_key: STANDARD.encode(identity.public_key()),
-        previous_node_id: previous_node_id.to_string(),
         previous_address: previous_address.to_string(),
         next_node_id: next_node_id.to_string(),
         next_address: next_address.to_string(),
         expires_at,
-        signature: String::new(),
     };
-    bind.signature = STANDARD.encode(crypto::sign(
-        identity,
-        &signed_onion_route_bind(&bind),
-    ));
+    let frame_bytes = serde_json::to_vec(&frame).map_err(|e| e.to_string())?;
+    let aad = onion_bind_aad(
+        "onion-bind-v1",
+        session_id,
+        route_id,
+        hop_index,
+        expires_at,
+    );
+    let (nonce, ciphertext) =
+        crypto::encrypt(session_key, &aad, &frame_bytes).map_err(|e| e.to_string())?;
+
+    let bind = OnionRouteBind {
+        session_id: session_id.to_string(),
+        route_id: route_id.to_string(),
+        hop_index,
+        expires_at,
+        nonce,
+        ciphertext,
+    };
     let body = serde_json::to_string(&bind).map_err(|e| e.to_string())?;
+
     socket
         .set_read_timeout(Some(KEY_TIMEOUT))
         .map_err(|e| e.to_string())?;
@@ -1115,10 +1229,6 @@ fn send_onion_route_bind(
             &peer.address,
         )
         .map_err(|e| e.to_string())?;
-
-    let expected_peer_key = STANDARD
-        .decode(&peer.public_key_b64)
-        .map_err(|_| "invalid relay identity key".to_string())?;
 
     let mut buffer = [0u8; 8192];
     loop {
@@ -1141,31 +1251,38 @@ fn send_onion_route_bind(
         let Ok(ack) = serde_json::from_str::<OnionRouteBindAck>(payload) else {
             continue;
         };
-
-        if ack.route_id != route_id
+        if ack.session_id != session_id
+            || ack.route_id != route_id
             || ack.hop_index != hop_index
-            || ack.source_id != identity.node_id()
-            || ack.relay_id != peer.node_id
-            || ack.previous_node_id != previous_node_id
-            || ack.previous_address != previous_address
-            || ack.next_node_id != next_node_id
-            || ack.next_address != next_address
             || ack.expires_at != expires_at
             || !fresh_timestamp(ack.expires_at)
         {
             continue;
         }
 
-        let Ok(signature) = STANDARD.decode(&ack.signature) else {
+        let aad = onion_bind_aad(
+            "onion-bind-ack-v1",
+            session_id,
+            route_id,
+            hop_index,
+            expires_at,
+        );
+        let plaintext = match crypto::decrypt(
+            session_key,
+            &aad,
+            &ack.nonce,
+            &ack.ciphertext,
+        ) {
+            Ok(bytes) => bytes,
+            Err(_) => continue,
+        };
+        let Ok(frame) = serde_json::from_slice::<OnionRouteBindAckFrame>(&plaintext) else {
             continue;
         };
-        if crypto::verify_signature(
-            &expected_peer_key,
-            &signed_onion_route_bind_ack(&ack),
-            &signature,
-        ) {
+        if frame.accepted {
             return Ok(());
         }
+        return Err(format!("relay {} rejected route bind", peer.node_id));
     }
 }
 
