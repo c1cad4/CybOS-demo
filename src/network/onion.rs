@@ -408,9 +408,10 @@ pub(crate) fn peel(
     if packet.hop_index != expected_hop_index {
         return Err("unexpected onion hop index");
     }
-    if packet.expires_at < now
-        || packet.expires_at.saturating_sub(now) > ONION_TTL_SECS
-    {
+    if packet.expires_at < now {
+        return Err("onion packet expired");
+    }
+    if packet.expires_at - now > ONION_TTL_SECS {
         return Err("invalid onion expiry");
     }
 
