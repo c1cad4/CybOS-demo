@@ -248,7 +248,7 @@ impl CybOs {
                             .clicked()
                         {
                             let target_id = self.lan_target.clone();
-                            self.lan_onion_relays = self
+                            let relay_peers: Vec<_> = self
                                 .lan_peers
                                 .iter()
                                 .filter(|peer| {
@@ -256,9 +256,22 @@ impl CybOs {
                                         && target_id.as_deref()
                                             != Some(peer.node_id.as_str())
                                 })
-                                .take(crate::network::onion::MAX_ONION_HOPS)
-                                .map(|peer| peer.node_id.clone())
+                                .filter_map(|peer| {
+                                    Some(crate::network::lan::OnionRoutePeer {
+                                        node_id: peer.node_id.clone(),
+                                        address: peer.address.clone(),
+                                        public_key_b64: peer.public_key.clone()?,
+                                    })
+                                })
                                 .collect();
+                            let ranked =
+                                crate::network::lan::rank_onion_relays(&relay_peers);
+                            self.lan_onion_relays = ranked
+                                .into_iter()
+                                .take(crate::network::onion::MAX_ONION_HOPS)
+                                .map(|peer| peer.node_id)
+                                .collect();
+                            self.notify("ONION AUTO · HEALTH-RANKED ROUTE SELECTED");
                         }
 
                         if ui
@@ -282,7 +295,7 @@ impl CybOs {
                     if self.lan_onion_relays.is_empty() {
                         ui.label(
                             RichText::new(
-                                "No relay selected. Choose trusted peers below; route order follows selection order.",
+                                "AUTO ranks trusted relays by recent delivery health and RTT. Manual selection remains available.",
                             )
                             .size(8.0)
                             .color(dim),
