@@ -2117,13 +2117,11 @@ mod tests {
     }
 
     #[test]
-    fn onion_bind_rejects_forged_ack() {
+    fn onion_bind_rejects_forged_encrypted_ack() {
         let _guard = test_guard();
-        let source = NodeIdentity::generate_for_test();
         let relay = NodeIdentity::generate_for_test();
         let relay_socket = UdpSocket::bind(("127.0.0.1", 0)).unwrap();
         let relay_address = relay_socket.local_addr().unwrap();
-        relay_socket.set_read_timeout(Some(Duration::from_secs(1))).unwrap();
 
         let source_socket = UdpSocket::bind(("127.0.0.1", 0)).unwrap();
         source_socket
@@ -2136,36 +2134,40 @@ mod tests {
             public_key_b64: STANDARD.encode(relay.public_key()),
         };
         let route_id = onion::new_route_id();
+        let session_id = onion::new_route_id();
         let expires_at = now_secs() + 30;
+        let session_key = [41u8; 32];
 
-        let forged_route_id = route_id.clone();
-        let forged_source_id = source.node_id();
-        let forged_relay_id = relay.node_id();
-        let forged_expires_at = expires_at;
         let handle = thread::spawn(move || {
             let mut buffer = [0u8; 4096];
             let (size, source_address) = relay_socket.recv_from(&mut buffer).unwrap();
             let text = std::str::from_utf8(&buffer[..size]).unwrap();
             assert!(text.starts_with(ONION_BIND_PREFIX));
 
-            let mut forged = OnionRouteBindAck {
-                route_id: forged_route_id,
-                hop_index: 0,
-                source_id: forged_source_id.clone(),
-                relay_id: forged_relay_id,
-                previous_node_id: forged_source_id,
-                previous_address: "0.0.0.0:12345".into(),
-                next_node_id: "destination".into(),
-                next_address: "127.0.0.1:49494".into(),
-                expires_at: forged_expires_at,
-                signature: String::new(),
-            };
+            let payload = text.strip_prefix(ONION_BIND_PREFIX).unwrap().trim_start();
+            let bind: OnionRouteBind = serde_json::from_str(payload).unwrap();
 
-            let attacker = NodeIdentity::generate_for_test();
-            forged.signature = STANDARD.encode(crypto::sign(
-                &attacker,
-                &signed_onion_route_bind_ack(&forged),
-            ));
+            let attacker_key = [99u8; 32];
+            let frame = OnionRouteBindAckFrame { accepted: true };
+            let bytes = serde_json::to_vec(&frame).unwrap();
+            let aad = onion_bind_aad(
+                "onion-bind-ack-v1",
+                &bind.session_id,
+                &bind.route_id,
+                bind.hop_index,
+                bind.expires_at,
+            );
+            let (nonce, ciphertext) =
+                crypto::encrypt(&attacker_key, &aad, &bytes).unwrap();
+
+            let forged = OnionRouteBindAck {
+                session_id: bind.session_id,
+                route_id: bind.route_id,
+                hop_index: bind.hop_index,
+                expires_at: bind.expires_at,
+                nonce,
+                ciphertext,
+            };
             let body = serde_json::to_string(&forged).unwrap();
             relay_socket
                 .send_to(
@@ -2177,11 +2179,11 @@ mod tests {
 
         let result = send_onion_route_bind(
             &source_socket,
-            &source,
             &peer,
+            &session_id,
+            &session_key,
             &route_id,
             0,
-            &source.node_id(),
             &source_socket.local_addr().unwrap().to_string(),
             "destination",
             "127.0.0.1:49494",
