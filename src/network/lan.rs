@@ -384,7 +384,7 @@ fn spawn_listener_on_addr(
                     source_id: bind.source_id.clone(),
                     relay_id: node_id.clone(),
                     previous_node_id: bind.previous_node_id.clone(),
-                    previous_address: binding.previous_address.clone(),
+                    previous_address: bind.previous_address.clone(),
                     next_node_id: bind.next_node_id.clone(),
                     next_address: bind.next_address.clone(),
                     expires_at: bind.expires_at,
