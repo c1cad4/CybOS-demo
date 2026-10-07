@@ -2899,6 +2899,56 @@ mod tests {
     }
     
     #[test]
+    fn dynamic_onion_routing_demotes_failed_relays() {
+        let failed = OnionRoutePeer {
+            node_id: format!("failed-{}", Uuid::new_v4()),
+            address: "127.0.0.1:40401".into(),
+            public_key_b64: "failed-key".into(),
+        };
+        let healthy = OnionRoutePeer {
+            node_id: format!("healthy-{}", Uuid::new_v4()),
+            address: "127.0.0.1:40402".into(),
+            public_key_b64: "healthy-key".into(),
+        };
+
+        record_onion_relay_outcome(
+            std::slice::from_ref(&healthy),
+            true,
+            Duration::from_millis(4),
+        );
+        mark_onion_relay_failed(&failed);
+
+        let ranked = rank_onion_relays(&[failed.clone(), healthy.clone()]);
+        assert_eq!(
+            ranked.first().map(|peer| peer.node_id.as_str()),
+            Some(healthy.node_id.as_str())
+        );
+        assert_eq!(
+            ranked.last().map(|peer| peer.node_id.as_str()),
+            Some(failed.node_id.as_str())
+        );
+    }
+
+    #[test]
+    fn dynamic_onion_route_candidates_include_shorter_failover_paths() {
+        let peers: Vec<_> = (0..4)
+            .map(|index| OnionRoutePeer {
+                node_id: format!("relay-{}-{}", index, Uuid::new_v4()),
+                address: format!("127.0.0.1:{}", 40500 + index),
+                public_key_b64: format!("key-{index}"),
+            })
+            .collect();
+
+        let candidates = build_dynamic_onion_route_candidates(&peers);
+
+        assert!(!candidates.is_empty());
+        assert_eq!(candidates[0].len(), 4);
+        assert!(candidates.iter().any(|candidate| candidate.len() == 1));
+        assert!(candidates.iter().any(|candidate| candidate.len() == 2));
+        assert!(candidates.len() <= ONION_ROUTE_ATTEMPT_LIMIT);
+    }
+
+    #[test]
     fn process_isolated_routed_onion_recovers_after_relay_process_exit() {
         let _guard = test_guard();
 
