@@ -1,14 +1,54 @@
 # cybOS architecture
 
-cybOS is a single native desktop product combining:
+cybOS is a native desktop system composed of a small application shell,
+domain services, local persistence and page-oriented UI.
 
-- RobotCYB — agent / mind
-- CicadaFarm — physical-world model / body
-- CybChat — communication UI and transport adapters
-- Brain — memory, context, knowledge and AI adapters
-- Cybergraph — knowledge topology
-- Network — BLE/LAN/P2P/Nostr adapters
-- Identity — persistent local node identity
-- Assets — public token identifiers only
+## Core layers
 
-The MVP is local-first. The UI and storage do not require a web browser. SQLite persists events and the local node identity. Cybergraph is represented by a native graph model now; an upstream cybergraph adapter can be integrated without changing the UI layer.
+- Application shell — src/shell.rs owns the eframe application trait only.
+- Shell UI composition — src/ui/shell.rs owns the native window layout,
+  navigation rails, header, central page router and bottom status bus.
+- State — src/state.rs owns the central runtime state and initialization.
+- Persistence — src/store.rs owns SQLite events, memories and graph data.
+- Runtime — src/runtime/ owns node bootstrap and persistent runtime setup.
+- Brain — src/brain/ owns context, learning, planning, tools, web intent
+  and the shared local Qwen HTTP runtime.
+- Network — src/network/ owns web discovery, fetch, parsing and source
+  handling.
+- Assets — src/assets/ owns Solana balances, market data and asset state.
+- UI pages — src/ui/ contains dashboard, graph, brain, farm, robot,
+  chat, network, cameras, assets and system views.
+- Theme/navigation — src/theme.rs and src/navigation.rs own visual
+  primitives and page semantics.
+
+## Local-first contract
+
+The application does not pretend that unavailable infrastructure is live.
+BLE, LAN, P2P, Nostr and camera feeds are represented as ready/adaptor states
+until a real transport is connected.
+
+SQLite persists the local node identity, events, memories and graph state.
+
+## Qwen runtime contract
+
+All local Qwen chat requests use the shared runtime in
+src/brain/qwen_runtime.rs.
+
+The runtime owns:
+
+- local address and chat endpoint;
+- model identifier;
+- JSON chat request construction;
+- temperature/max-token handling;
+- HTTP transport;
+- JSON decoding.
+
+Callers such as the planner, learning flow, RobotCYB answer path and web-source
+answer path do not implement their own Qwen HTTP transport.
+
+## Refactoring boundary
+
+The root application shell is intentionally thin. Page rendering lives under
+src/ui/, while domain-specific computation remains in the relevant service
+modules. Empty placeholder domain module shells were removed once the page
+layers became the active implementation boundary.
