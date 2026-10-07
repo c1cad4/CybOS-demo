@@ -35,6 +35,8 @@ pub(crate) struct LanPeer {
     pub(crate) address: String,
     pub(crate) version: String,
     pub(crate) public_key: Option<String>,
+    pub(crate) fingerprint: Option<String>,
+    pub(crate) trusted: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -311,7 +313,14 @@ pub(crate) fn scan(node_id: String) -> Vec<LanPeer> {
                     || !crypto::verify_signature(&public_key, &crypto::peer_binding(peer_id, &version, public_key_b64), &sig)
                 { continue; }
                 if peer_id == node_id || peers.iter().any(|p: &LanPeer| p.node_id == peer_id) { continue; }
-                peers.push(LanPeer { node_id: peer_id.to_string(), address: addr.ip().to_string(), version, public_key: Some(public_key_b64.to_string()) });
+                peers.push(LanPeer {
+                    node_id: peer_id.to_string(),
+                    address: addr.ip().to_string(),
+                    version,
+                    fingerprint: Some(crypto::fingerprint(&public_key)),
+                    public_key: Some(public_key_b64.to_string()),
+                    trusted: false,
+                });
             }
             Err(_) => break,
         }
@@ -491,8 +500,19 @@ impl crate::state::CybOs {
         let Some(rx) = &self.lan_scan else { return };
         match rx.try_recv() {
             Ok(peers) => {
-                self.lan_peers = peers.into_iter().filter(|peer| {
-                    peer.public_key.as_deref().map(|key| self.store.trust_peer_key(&peer.node_id, key)).unwrap_or(false)
+                self.lan_peers = peers.into_iter().filter_map(|mut peer| {
+                    let Some(key) = peer.public_key.as_deref() else { return None; };
+                    match self.store.peer_pin(&peer.node_id) {
+                        Some(pinned) if pinned == key => {
+                            peer.trusted = true;
+                            Some(peer)
+                        }
+                        Some(_) => {
+                            self.add_event("SECURITY", format!("Pinned-key conflict for {}", peer.node_id));
+                            None
+                        }
+                        None => Some(peer),
+                    }
                 }).collect();
                 let target_still_exists = self.lan_target.as_deref().map(|target| self.lan_peers.iter().any(|peer| peer.node_id == target)).unwrap_or(false);
                 if !target_still_exists { self.lan_target = self.lan_peers.first().map(|peer| peer.node_id.clone()); }
