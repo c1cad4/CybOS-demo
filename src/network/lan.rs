@@ -98,6 +98,12 @@ fn send_sessions() -> &'static Mutex<HashMap<String, Session>> {
     SEND_SESSIONS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+fn clear_send_session(peer_id: &str) {
+    if let Ok(mut sessions) = send_sessions().lock() {
+        sessions.remove(peer_id);
+    }
+}
+
 fn now_secs() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs()
 }
@@ -204,8 +210,13 @@ pub(crate) fn spawn_listener(node_id: String, identity: NodeIdentity) -> Receive
                 if plaintext.len() > MAX_CHAT_BYTES { continue; }
                 let Ok(text) = String::from_utf8(plaintext) else { continue };
 
+                let next = match crypto::ratchet_chain(&session.key, envelope.counter) {
+                    Ok(next) => next,
+                    Err(_) => continue,
+                };
+                session.key = next;
+                session.counter = envelope.counter;
                 seen_messages.insert(envelope.message_id.clone(), envelope.timestamp);
-                if let Ok(next) = crypto::ratchet_chain(&session.key, envelope.counter) { session.key = next; session.counter = envelope.counter; }
                 let ack_signed = [crypto::PROTOCOL, "ack", envelope.message_id.as_str(), node_id.as_str(), envelope.from.as_str()].join("|");
                 let ack = LanAck {
                     message_id: envelope.message_id.clone(),
@@ -320,7 +331,10 @@ pub(crate) fn send_private_chat(
                     let signed = signed_key_reply(&reply.from, &reply.to, &reply.initiator_ephemeral_public_key, &reply.responder_ephemeral_public_key, reply.timestamp);
                     if crypto::verify_signature(&peer_public_key, &signed, &sig) { break reply; }
                 }
-                Err(_) => return LanSendStatus::TimedOut { message_id, peer_id: peer_id.to_string() },
+                Err(_) => {
+                clear_send_session(peer_id);
+                return LanSendStatus::TimedOut { message_id, peer_id: peer_id.to_string() };
+            },
             }
         };
         let reply_public = match STANDARD.decode(&reply.responder_ephemeral_public_key) {
