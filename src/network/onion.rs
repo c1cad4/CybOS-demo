@@ -31,7 +31,7 @@ pub(crate) struct OnionHop {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub(crate) struct OnionPacket {
     pub(crate) version: u8,
-    pub(crate) binding_token: String,
+    pub(crate) route_id: String,
     pub(crate) packet_id: String,
     pub(crate) session_id: String,
     pub(crate) hop_index: u8,
@@ -63,7 +63,7 @@ pub(crate) enum PeelResult {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub(crate) struct OnionReversePacket {
     pub(crate) version: u8,
-    pub(crate) binding_token: String,
+    pub(crate) route_id: String,
     pub(crate) packet_id: String,
     pub(crate) hop_index: u8,
     pub(crate) expires_at: u64,
@@ -109,17 +109,17 @@ impl OnionRelayTable {
             .and_then(|bindings| bindings.get(&(route_id.to_string(), hop_index)).copied())
     }
 
-    pub(crate) fn remove_route(&self, binding_token: &str) {
+    pub(crate) fn remove_route(&self, route_id: &str) {
         if let Ok(mut bindings) = self.bindings.lock() {
-            bindings.retain(|(id, _), _| id != binding_token);
+            bindings.retain(|(id, _), _| id != route_id);
         }
     }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub(crate) struct OnionDelivery {
-    pub(crate) return_binding_token: String,
-    pub(crate) return_packet_id: String,
+    pub(crate) route_id: String,
+    pub(crate) packet_id: String,
     pub(crate) payload: Vec<u8>,
 }
 
@@ -157,7 +157,7 @@ pub(crate) fn spawn_udp_relay(
             let Ok(packet) = serde_json::from_str::<OnionPacket>(payload) else {
                 continue;
             };
-            let Some(key) = table.key_for(&packet.binding_token, packet.hop_index) else {
+            let Some(key) = table.key_for(&packet.route_id, packet.hop_index) else {
                 continue;
             };
 
@@ -169,7 +169,7 @@ pub(crate) fn spawn_udp_relay(
             match peel(
                 &mut cache,
                 &packet,
-                &packet.binding_token: binding_token,
+                &packet.route_id,
                 packet.hop_index,
                 &key,
                 now,
@@ -191,7 +191,7 @@ pub(crate) fn spawn_udp_relay(
                         continue;
                     };
                     let envelope = OnionDelivery {
-                        return_binding_token: packet.binding_token.clone(),
+                        route_id: packet.route_id.clone(),
                         packet_id: packet.packet_id.clone(),
                         payload: delivery.payload,
                     };
@@ -265,16 +265,12 @@ pub(crate) fn new_route_id() -> String {
     Uuid::new_v4().to_string()
 }
 
-pub(crate) fn new_binding_token() -> String {
-    Uuid::new_v4().to_string()
-}
-
 pub(crate) fn new_packet_id() -> String {
     Uuid::new_v4().to_string()
 }
 
 fn layer_aad(
-    binding_token: &str,
+    route_id: &str,
     packet_id: &str,
     hop_index: u8,
     expires_at: u64,
@@ -283,7 +279,7 @@ fn layer_aad(
     [
         crypto::PROTOCOL,
         "onion-layer-v1",
-        binding_token,
+        route_id,
         packet_id,
         &hop_index.to_string(),
         &expires_at.to_string(),
@@ -313,39 +309,29 @@ fn encode_frame(frame: &LayerFrame) -> Result<Vec<u8>, &'static str> {
 }
 
 pub(crate) fn wrap(
+    route_id: &str,
+    packet_id: &str,
     expires_at: u64,
     payload: &[u8],
     hops: &[OnionHop],
     hop_session_ids: &[String],
     hop_session_keys: &[[u8; 32]],
-    binding_tokens: &[String],
     destination_id: &str,
     destination_address: &str,
 ) -> Result<OnionPacket, &'static str> {
     if hops.is_empty() || hops.len() > MAX_ONION_HOPS {
         return Err("invalid onion hop count");
     }
-    if hops.len() != hop_session_keys.len()
-        || hops.len() != hop_session_ids.len()
-        || hops.len() != binding_tokens.len()
-    {
+    if hops.len() != hop_session_keys.len() || hops.len() != hop_session_ids.len() {
         return Err("onion hop/session metadata count mismatch");
     }
     if hop_session_ids.iter().any(|id| id.trim().is_empty() || id.len() > 64) {
         return Err("invalid onion session id");
     }
-    if binding_tokens.iter().any(|token| token.trim().is_empty() || token.len() > 64) {
-        return Err("invalid onion binding token");
-    }
     let unique_session_ids: HashSet<&str> =
         hop_session_ids.iter().map(String::as_str).collect();
     if unique_session_ids.len() != hop_session_ids.len() {
         return Err("duplicate onion session id");
-    }
-    let unique_tokens: HashSet<&str> =
-        binding_tokens.iter().map(String::as_str).collect();
-    if unique_tokens.len() != binding_tokens.len() {
-        return Err("duplicate onion binding token");
     }
     if payload.is_empty() {
         return Err("empty onion payload");
@@ -383,29 +369,43 @@ pub(crate) fn wrap(
         };
 
         let frame_bytes = encode_frame(&frame)?;
-        let packet_id = new_packet_id();
-        let binding_token = binding_tokens[index].clone();
         let key = crypto::onion_layer_key(
             &hop_session_keys[index],
-            &binding_token,
-            &packet_id,
+            route_id,
+            packet_id,
             hop_index,
             "forward",
         )?;
-        let aad = layer_aad(
-            &binding_token,
-            &packet_id,
-            hop_index,
-            expires_at,
-            "forward",
-        );
+        let aad = layer_aad(route_id, packet_id, hop_index, expires_at, "forward");
         let (nonce, ciphertext) = crypto::encrypt(&key, &aad, &frame_bytes)?;
 
         let packet = OnionPacket {
-            vepub(crate) fn peel(
+            version: 1,
+            route_id: route_id.to_string(),
+            packet_id: packet_id.to_string(),
+            session_id: hop_session_ids[index].clone(),
+            hop_index,
+            expires_at,
+            nonce,
+            ciphertext,
+        };
+
+        let encoded_len = serde_json::to_vec(&packet)
+            .map_err(|_| "cannot size onion packet")?
+            .len();
+        if encoded_len > MAX_ONION_BYTES {
+            return Err("onion packet exceeds wire limit");
+        }
+        inner = Some(packet);
+    }
+
+    inner.ok_or("onion packet construction failed")
+}
+
+pub(crate) fn peel(
     relay: &mut OnionRelayCache,
     packet: &OnionPacket,
-    expected_binding_token: &str,
+    expected_route_id: &str,
     expected_hop_index: u8,
     hop_session_key: &[u8; 32],
     now: u64,
@@ -413,8 +413,8 @@ pub(crate) fn wrap(
     if packet.version != 1 {
         return Err("unsupported onion version");
     }
-    if packet.binding_token != expected_binding_token {
-        return Err("unexpected onion binding");
+    if packet.route_id != expected_route_id {
+        return Err("unexpected onion route");
     }
     if packet.hop_index != expected_hop_index {
         return Err("unexpected onion hop index");
@@ -427,20 +427,20 @@ pub(crate) fn wrap(
     }
 
     let cache_key = format!(
-        "{}:{}:{}",
-        packet.binding_token, packet.packet_id, packet.hop_index
+        "{}:{}:{}:{}",
+        packet.route_id, packet.packet_id, packet.session_id, packet.hop_index
     );
     relay.check_and_mark(cache_key, packet.expires_at, now)?;
 
     let key = crypto::onion_layer_key(
         hop_session_key,
-        &packet.binding_token,
+        &packet.route_id,
         &packet.packet_id,
         packet.hop_index,
         "forward",
     )?;
     let aad = layer_aad(
-        &packet.binding_token,
+        &packet.route_id,
         &packet.packet_id,
         packet.hop_index,
         packet.expires_at,
@@ -457,7 +457,8 @@ pub(crate) fn wrap(
             packet: inner,
         } => {
             if inner.version != 1
-                || inner.binding_token.trim().is_empty()
+                || inner.route_id != packet.route_id
+                || inner.packet_id != packet.packet_id
                 || inner.session_id.trim().is_empty()
                 || inner.hop_index != packet.hop_index.saturating_add(1)
                 || inner.expires_at != packet.expires_at
@@ -482,6 +483,7 @@ pub(crate) fn wrap(
     }
 }
 
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct ReverseFrame {
     previous_node_id: String,
@@ -490,7 +492,7 @@ struct ReverseFrame {
 }
 
 pub(crate) fn wrap_reverse_hop(
-    binding_token: &str,
+    route_id: &str,
     packet_id: &str,
     hop_index: u8,
     expires_at: u64,
@@ -502,10 +504,7 @@ pub(crate) fn wrap_reverse_hop(
     if payload.is_empty() {
         return Err("empty reverse onion payload");
     }
-    if binding_token.trim().is_empty()
-        || previous_node_id.is_empty()
-        || previous_address.is_empty()
-    {
+    if previous_node_id.is_empty() || previous_address.is_empty() {
         return Err("invalid reverse onion target");
     }
     let frame = ReverseFrame {
@@ -513,26 +512,19 @@ pub(crate) fn wrap_reverse_hop(
         previous_address: previous_address.to_string(),
         payload: payload.to_vec(),
     };
-    let bytes = serde_json::to_vec(&frame)
-        .map_err(|_| "cannot encode reverse onion frame")?;
+    let bytes = serde_json::to_vec(&frame).map_err(|_| "cannot encode reverse onion frame")?;
     let key = crypto::onion_layer_key(
         hop_session_key,
-        binding_token,
+        route_id,
         packet_id,
         hop_index,
         "reverse",
     )?;
-    let aad = layer_aad(
-        binding_token,
-        packet_id,
-        hop_index,
-        expires_at,
-        "reverse",
-    );
+    let aad = layer_aad(route_id, packet_id, hop_index, expires_at, "reverse");
     let (nonce, ciphertext) = crypto::encrypt(&key, &aad, &bytes)?;
     Ok(OnionReversePacket {
         version: 1,
-        binding_token: binding_token.to_string(),
+        route_id: route_id.to_string(),
         packet_id: packet_id.to_string(),
         hop_index,
         expires_at,
@@ -543,7 +535,7 @@ pub(crate) fn wrap_reverse_hop(
 
 pub(crate) fn peel_reverse(
     packet: &OnionReversePacket,
-    expected_binding_token: &str,
+    expected_route_id: &str,
     expected_hop_index: u8,
     hop_session_key: &[u8; 32],
     now: u64,
@@ -551,8 +543,8 @@ pub(crate) fn peel_reverse(
     if packet.version != 1 {
         return Err("unsupported reverse onion version");
     }
-    if packet.binding_token != expected_binding_token {
-        return Err("unexpected reverse onion binding");
+    if packet.route_id != expected_route_id {
+        return Err("unexpected reverse onion route");
     }
     if packet.hop_index != expected_hop_index {
         return Err("unexpected reverse onion hop index");
@@ -565,13 +557,13 @@ pub(crate) fn peel_reverse(
 
     let key = crypto::onion_layer_key(
         hop_session_key,
-        &packet.binding_token,
+        &packet.route_id,
         &packet.packet_id,
         packet.hop_index,
         "reverse",
     )?;
     let aad = layer_aad(
-        &packet.binding_token,
+        &packet.route_id,
         &packet.packet_id,
         packet.hop_index,
         packet.expires_at,
@@ -587,6 +579,7 @@ pub(crate) fn peel_reverse(
         payload: frame.payload,
     })
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -691,7 +684,7 @@ mod tests {
         let delivery: OnionDelivery = serde_json::from_str(payload).unwrap();
 
         assert_eq!(sender.ip(), std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST));
-        assert_eq!(delivery.binding_token: binding_token, route);
+        assert_eq!(delivery.route_id, route);
         assert_eq!(delivery.packet_id, packet_id);
         assert_eq!(delivery.payload, b"udp onion secret");
 
