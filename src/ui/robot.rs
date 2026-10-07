@@ -143,9 +143,9 @@ impl CybOs {
 
                                 self.robot_output = answer.clone();
 
-                                self.chat.push(("YOU".into(), q.clone(), true));
+                                self.push_chat_message("YOU", q.clone(), true);
 
-                                self.chat.push(("ROBOTCYB".into(), answer, false));
+                                self.push_chat_message("ROBOTCYB", answer, false);
 
                                 self.robot_input.clear();
 
