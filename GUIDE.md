@@ -174,8 +174,10 @@ The live loopback harness currently exercises:
 - wrong recipient rejection
 - lost-ACK recovery through a fresh handshake
 
-The remaining production-hardening target is an OS-process two-node adversarial
-harness with controlled fault injection.
+The production-hardening harness now also launches three real cybOS child processes
+for relay-a, relay-b and destination, performs a routed E2E delivery through those
+process boundaries, and injects replay and ciphertext-tampering packets against the
+first relay.
 
 ## 12. Operational status
 
