@@ -50,6 +50,20 @@ impl Default for CybOs {
         let store = crate::runtime::open_store();
         let node_id = crate::runtime::load_or_create_node_id(&store);
         let events = crate::runtime::load_events(&store);
+        let mut chat = store.chat_messages();
+        if chat.is_empty() {
+            chat.push((
+                "ROBOTCYB".into(),
+                "CicadaFarm is online. Your local cybOS node is ready.".into(),
+                false,
+            ));
+            store.add_chat_message(
+                "ROBOTCYB",
+                "CicadaFarm is online. Your local cybOS node is ready.",
+                false,
+            );
+        }
+
         let mut app = Self {
             store,
             page: Page::Dashboard,
@@ -58,11 +72,7 @@ impl Default for CybOs {
             robot_output: String::from("ROBOTCYB READY\n\nLOCAL AGENT ONLINE\nAwaiting request..."),
             chat_input: String::new(),
             chat_output: String::from("CYBCHAT READY\n\nLOCAL-FIRST CHANNEL\nAwaiting message..."),
-            chat: vec![(
-                "ROBOTCYB".into(),
-                "CicadaFarm is online. Your local cybOS node is ready.".into(),
-                false,
-            )],
+            chat,
             cicada_wallet: DEFAULT_CICADA_WALLET.into(),
             cicada_balance: None,
             sol_balance: None,
