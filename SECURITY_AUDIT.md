@@ -19,6 +19,8 @@ Both defects were fixed on this branch.
 - Receiver only advances its chain after successful decryption and successful next-chain derivation.
 - Inbound session state is bounded to 128 concurrent peer sessions.
 - Local Unix runtime directory is hardened to mode 0700 and the SQLite database to mode 0600 when permissions can be changed.
+- On macOS, the Ed25519 private identity is stored in the system Keychain instead of SQLite.
+- Existing macOS SQLite-backed identities are migrated to Keychain once and removed from the database.
 - README and CybChat UI no longer claim that wire-level E2E is disabled.
 - Security guide now distinguishes live transport behavior from integration-test targets.
 - AEAD AAD/ciphertext tampering tests and wrong-recipient envelope checks were added.
@@ -47,10 +49,10 @@ A new peer is now shown with its SHA-256 public-key fingerprint and requires exp
 
 Recommended next step: support out-of-band key provisioning for deployments that need stronger initial trust.
 
-### MEDIUM — Local data is not encrypted at rest
-The Ed25519 private key and chat history are stored in the local SQLite database. Unix file permissions are hardened, but the implementation does not use the macOS Keychain or database-level encryption.
+### MEDIUM — Chat history is not encrypted at rest
+On macOS, the Ed25519 private identity is now protected by the system Keychain. Chat history and other local application data remain in SQLite without application-level/database-level encryption. Unix file permissions are hardened, but a process or account-level local compromise could expose stored chat content.
 
-Recommended next step: move the private identity key to an OS-backed secure key store and separately define whether chat history should be encrypted at rest.
+Recommended next step: add encrypted-at-rest chat storage with a Keychain-backed local encryption key, then extend the same policy to other sensitive persisted data as needed.
 
 ### MEDIUM — Adversarial integration coverage is partial
 A deterministic two-node loopback UDP harness now exercises real handshake, signed delivery ACKs, sequential ratchet messages, replay injection, ciphertext tampering, and lost-ACK recovery through a fresh handshake. OS-process isolation and several remaining cases are still not covered.
@@ -72,7 +74,7 @@ The current design is a per-message HKDF chain with a monotonic counter. It is n
 
 Do not claim "production-grade secure messenger" yet.
 
-For this direct-LAN MVP, the implementation is suitable to merge after the current CI is green, with the residual risks above kept explicit in the documentation. The next security milestone should be the two-process adversarial integration harness, followed by explicit first-use fingerprint confirmation and secure at-rest key storage.
+For this direct-LAN MVP, the implementation is suitable to merge after the current CI is green, with the residual risks above kept explicit in the documentation. The next security milestone should be the two-process adversarial integration harness and encrypted-at-rest local chat storage.
 
 
 Current automated integration coverage also includes:
