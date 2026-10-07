@@ -344,7 +344,7 @@ fn test_guard() -> std::sync::MutexGuard<'static, ()> {
     INTEGRATION_TEST_LOCK
         .get_or_init(|| Mutex::new(()))
         .lock()
-        .expect("integration test lock poisoned")
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 #[cfg(test)]
@@ -3072,7 +3072,16 @@ mod tests {
             result
         );
 
-        let relay_b_exited = relay_b_guard.child.try_wait().unwrap().is_some();
+        let deadline = Instant::now() + Duration::from_secs(2);
+        let relay_b_exited = loop {
+            if relay_b_guard.child.try_wait().unwrap().is_some() {
+                break true;
+            }
+            if Instant::now() >= deadline {
+                break false;
+            }
+            thread::sleep(Duration::from_millis(20));
+        };
         assert!(relay_b_exited, "fault-injected relay process did not exit");
 
         drop(relay_b);
