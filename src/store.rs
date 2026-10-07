@@ -57,6 +57,17 @@ impl Store {
 
             CREATE INDEX IF NOT EXISTS idx_memories_text
                 ON memories(text);
+
+            CREATE TABLE IF NOT EXISTS chat_messages(
+                id TEXT PRIMARY KEY,
+                time TEXT NOT NULL,
+                who TEXT NOT NULL,
+                text TEXT NOT NULL,
+                mine INTEGER NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_chat_messages_time
+                ON chat_messages(time);
             "#,
         )
         .expect("cannot initialize database");
@@ -203,6 +214,42 @@ impl Store {
             "INSERT OR IGNORE INTO graph_links(from_id,to_id,relation)
              VALUES(?1,?2,?3)",
             params![link.from, link.to, link.relation],
+        );
+    }
+
+    pub(crate) fn chat_messages(&self) -> Vec<(String, String, bool)> {
+        let mut st = self
+            .conn
+            .prepare(
+                "SELECT who,text,mine
+                 FROM chat_messages
+                 ORDER BY rowid ASC
+                 LIMIT 500",
+            )
+            .unwrap();
+
+        st.query_map([], |r| {
+            let who: String = r.get(0)?;
+            let text: String = r.get(1)?;
+            let mine: i64 = r.get(2)?;
+            Ok((who, text, mine != 0))
+        })
+        .unwrap()
+        .filter_map(Result::ok)
+        .collect()
+    }
+
+    pub(crate) fn add_chat_message(&self, who: &str, text: &str, mine: bool) {
+        let _ = self.conn.execute(
+            "INSERT INTO chat_messages(id,time,who,text,mine)
+             VALUES(?1,?2,?3,?4,?5)",
+            params![
+                Uuid::new_v4().to_string(),
+                Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+                who,
+                text,
+                if mine { 1 } else { 0 }
+            ],
         );
     }
 
