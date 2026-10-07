@@ -186,7 +186,7 @@ impl CybOs {
         let overlay=egui::Rect::from_center_size(full.center(),Vec2::new(full.width().min(720.0),full.height().min(560.0)));
         ui.painter().rect_filled(full,0.0,Color32::from_rgba_unmultiplied(0,4,2,185));
         egui::Area::new(egui::Id::new("cicadafarm_overlay")).fixed_pos(overlay.min).show(ui.ctx(),|ui|{
-            egui::Frame::NONE.fill(panel).stroke(Stroke::new(1.0,line)).corner_radius(16.0).inner_margin(15.0).show(ui,|ui|{
+            egui::Frame::NONE.fill(panel).stroke(Stroke::new(1.0,line)).corner_radius(16).inner_margin(15.0).show(ui,|ui|{
                 ui.set_min_size(overlay.size()-Vec2::splat(30.0));
                 ui.horizontal(|ui|{
                     ui.label(RichText::new(format!("{}  {}", if name=="HIVES"{"⊙"}else{"◌"},name)).size(18.0).strong().color(neon));
@@ -215,7 +215,7 @@ impl CybOs {
         ui.add_space(8.0);
         ui.horizontal(|ui|{
             for (v,l) in [("☀","SEASON"),("4","HIVES"),("LIVE","FARM")] {
-                egui::Frame::NONE.fill(Color32::from_rgb(8,24,16)).inner_margin(10.0).corner_radius(9.0).show(ui,|ui|{
+                egui::Frame::NONE.fill(Color32::from_rgb(8,24,16)).inner_margin(10.0).corner_radius(9).show(ui,|ui|{
                     ui.label(RichText::new(v).size(16.0).strong().color(neon));
                     ui.label(RichText::new(l).size(8.0).color(ink));
                 });
@@ -240,7 +240,7 @@ impl CybOs {
         }
         ui.add_space(8.0);
         if !self.farm_knowledge.trim().is_empty() {
-            egui::Frame::NONE.fill(Color32::from_rgb(8,24,16)).inner_margin(9.0).corner_radius(9.0).show(ui,|ui|{
+            egui::Frame::NONE.fill(Color32::from_rgb(8,24,16)).inner_margin(9.0).corner_radius(9).show(ui,|ui|{
                 ui.label(RichText::new("SAVED").size(9.0).strong().color(neon));
                 ui.label(RichText::new(self.farm_knowledge.chars().take(220).collect::<String>()).size(10.0).color(ink));
             });
@@ -252,7 +252,7 @@ impl CybOs {
         ui.add_space(8.0);
         ui.horizontal(|ui|{
             for (term,label) in [("1 YEAR","RESERVE 1 YEAR"),("2 YEARS","RESERVE 2 YEARS"),("LIVE","CAMERAS")] {
-                egui::Frame::NONE.fill(Color32::from_rgb(8,24,16)).inner_margin(10.0).corner_radius(9.0).show(ui,|ui|{
+                egui::Frame::NONE.fill(Color32::from_rgb(8,24,16)).inner_margin(10.0).corner_radius(9).show(ui,|ui|{
                     ui.label(RichText::new(term).size(15.0).strong().color(neon));
                     ui.label(RichText::new(label).size(8.0).color(ink));
                 });
