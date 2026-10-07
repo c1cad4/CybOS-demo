@@ -480,7 +480,7 @@ mod tests {
     #[test]
     fn encrypted_envelope_is_not_plaintext() {
         let key = [7u8; 32];
-        let associated = aad("msg", "cyb-a", "cyb-b", 123);
+        let associated = aad("msg", "cyb-a", "cyb-b", 123, 1);
         let (nonce, ciphertext) = crypto::encrypt(&key, &associated, b"secret").unwrap();
         assert!(!ciphertext.contains("secret"));
         assert_eq!(crypto::decrypt(&key, &associated, &nonce, &ciphertext).unwrap(), b"secret");
