@@ -2195,6 +2195,89 @@ mod tests {
     }
 
     #[test]
+    fn anonymous_route_bind_does_not_expose_source_identity() {
+        let _guard = test_guard();
+        let source = NodeIdentity::generate_for_test();
+        let relay = NodeIdentity::generate_for_test();
+        let relay_socket = UdpSocket::bind(("127.0.0.1", 0)).unwrap();
+        let relay_address = relay_socket.local_addr().unwrap();
+        let source_socket = UdpSocket::bind(("127.0.0.1", 0)).unwrap();
+
+        let peer = OnionRoutePeer {
+            node_id: relay.node_id(),
+            address: relay_address.to_string(),
+            public_key_b64: STANDARD.encode(relay.public_key()),
+        };
+        let session_id = onion::new_route_id();
+        let session_key = [17u8; 32];
+        let route_id = onion::new_route_id();
+        let expires_at = now_secs() + 30;
+        let source_id = source.node_id();
+        let source_public_key = STANDARD.encode(source.public_key());
+
+        let handle = thread::spawn(move || {
+            let mut buffer = [0u8; 4096];
+            let (size, source_address) = relay_socket.recv_from(&mut buffer).unwrap();
+            let text = std::str::from_utf8(&buffer[..size]).unwrap();
+
+            assert!(text.starts_with(ONION_BIND_PREFIX));
+            assert!(!text.contains(&source_id));
+            assert!(!text.contains(&source_public_key));
+
+            let bind: OnionRouteBind = serde_json::from_str(
+                text.strip_prefix(ONION_BIND_PREFIX).unwrap().trim_start(),
+            )
+            .unwrap();
+            let frame = OnionRouteBindAckFrame { accepted: true };
+            let bytes = serde_json::to_vec(&frame).unwrap();
+            let aad = onion_bind_aad(
+                "onion-bind-ack-v1",
+                &bind.session_id,
+                &bind.route_id,
+                bind.hop_index,
+                bind.expires_at,
+            );
+            let (nonce, ciphertext) =
+                crypto::encrypt(&session_key, &aad, &bytes).unwrap();
+            let ack = OnionRouteBindAck {
+                session_id: bind.session_id,
+                route_id: bind.route_id,
+                hop_index: bind.hop_index,
+                expires_at: bind.expires_at,
+                nonce,
+                ciphertext,
+            };
+            relay_socket
+                .send_to(
+                    format!(
+                        "{} {}",
+                        ONION_BIND_ACK_PREFIX,
+                        serde_json::to_string(&ack).unwrap()
+                    )
+                    .as_bytes(),
+                    source_address,
+                )
+                .unwrap();
+        });
+
+        let result = send_onion_route_bind(
+            &source_socket,
+            &peer,
+            &session_id,
+            &session_key,
+            &route_id,
+            0,
+            &source_socket.local_addr().unwrap().to_string(),
+            "destination",
+            relay_address.to_string().as_str(),
+            expires_at,
+        );
+
+        handle.join().unwrap();
+        assert!(result.is_ok());
+    }
+
+    #[test]
     fn process_isolated_routed_onion_chat_survives_replay_and_ciphertext_tampering() {
         let _guard = test_guard();
 
