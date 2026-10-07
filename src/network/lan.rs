@@ -535,6 +535,39 @@ impl crate::state::CybOs {
         }
     }
 
+    pub(crate) fn trust_lan_peer(&mut self, peer_id: &str) {
+        let Some(peer) = self.lan_peers.iter().find(|p| p.node_id == peer_id).cloned() else {
+            self.notify("LAN PEER NOT FOUND");
+            return;
+        };
+
+        let Some(public_key) = peer.public_key.as_deref() else {
+            self.notify("PEER HAS NO AUTHENTICATED IDENTITY KEY");
+            return;
+        };
+
+        if !self.store.trust_peer_key(&peer.node_id, public_key) {
+            self.add_event("SECURITY", format!("Rejected peer key replacement for {}", peer.node_id));
+            self.notify("PEER KEY CONFLICT — TRUST REJECTED");
+            return;
+        }
+
+        if let Some(current) = self.lan_peers.iter_mut().find(|p| p.node_id == peer.node_id) {
+            current.trusted = true;
+        }
+
+        self.lan_target = Some(peer.node_id.clone());
+        self.add_event(
+            "SECURITY",
+            format!(
+                "Explicitly trusted LAN peer {} · fingerprint {}",
+                peer.node_id,
+                peer.fingerprint.as_deref().unwrap_or("UNKNOWN")
+            ),
+        );
+        self.notify(format!("TRUSTED LAN PEER {}", peer.node_id));
+    }
+
     pub(crate) fn send_lan_chat(&mut self, message: &str) {
         if self.lan_send_task.is_some() { self.notify("LAN DELIVERY ALREADY IN PROGRESS"); return; }
         let message = message.trim().to_string();
