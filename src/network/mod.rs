@@ -4,3 +4,4 @@ pub mod web_html;
 pub mod web_parse;
 pub mod web_search;
 pub mod web_fetch;
+pub mod lan;
