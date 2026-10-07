@@ -161,7 +161,10 @@ impl Store {
         }
 
         let key = self.chat_key.as_ref()?;
-        let mut parts = stored.splitn(2, ':');
+        let mut parts = stored.splitn(3, ':');
+        if parts.next() != Some("v1") {
+            return None;
+        }
         let nonce = parts.next()?;
         let ciphertext = parts.next()?;
         let aad = Self::chat_aad(id, time, who, mine);
