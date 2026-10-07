@@ -89,6 +89,8 @@ impl Default for CybOs {
 
         let identity = crate::identity::NodeIdentity::load_or_create(&store);
         let lan_events = crate::network::lan::spawn_listener(node_id.clone(), identity.clone());
+        let farm_season = store.get("cicadafarm_season").and_then(|v| v.parse::<usize>().ok()).unwrap_or(0).min(3);
+        let farm_knowledge = store.get("cicadafarm_knowledge").unwrap_or_default();
 
         let mut app = Self {
             store,
@@ -125,9 +127,9 @@ impl Default for CybOs {
             toast: None,
             camera_zone: 0,
             search_focus: false,
-            farm_season: store.get("cicadafarm_season").and_then(|v| v.parse::<usize>().ok()).unwrap_or(0).min(3),
+            farm_season,
             farm_panel: None,
-            farm_knowledge: store.get("cicadafarm_knowledge").unwrap_or_default(),
+            farm_knowledge,
 
             last_scan: None,
             lan_peers: Vec::new(),
