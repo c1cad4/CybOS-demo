@@ -13,7 +13,7 @@ use std::sync::{
     Arc, Mutex, OnceLock,
 };
 use std::thread;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
 
 const LAN_DISCOVERY_PORT: u16 = 39393;
@@ -41,6 +41,127 @@ const MAX_ONION_SESSIONS: usize = 256;
 const DELIVERED_ACK_CACHE_LIMIT: usize = 512;
 const ONION_ROUTE_ATTEMPT_LIMIT: usize = 5;
 const ONION_SESSION_TTL_SECS: u64 = 120;
+
+#[derive(Clone, Debug, Default)]
+struct OnionRelayHealth {
+    successes: u64,
+    failures: u64,
+    consecutive_failures: u32,
+    ewma_rtt_ms: Option<u64>,
+}
+
+static ONION_RELAY_HEALTH: OnceLock<Mutex<HashMap<String, OnionRelayHealth>>> = OnceLock::new();
+
+fn onion_relay_health() -> &'static Mutex<HashMap<String, OnionRelayHealth>> {
+    ONION_RELAY_HEALTH.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn record_onion_relay_outcome(
+    relays: &[OnionRoutePeer],
+    delivered: bool,
+    elapsed: Duration,
+) {
+    let Ok(mut health) = onion_relay_health().lock() else {
+        return;
+    };
+
+    let sample_ms = elapsed.as_millis().min(u128::from(u64::MAX)) as u64;
+    for relay in relays {
+        let entry = health.entry(relay.node_id.clone()).or_default();
+        if delivered {
+            entry.successes = entry.successes.saturating_add(1);
+            entry.consecutive_failures = 0;
+            entry.ewma_rtt_ms = Some(match entry.ewma_rtt_ms {
+                Some(previous) => ((previous.saturating_mul(3)).saturating_add(sample_ms)) / 4,
+                None => sample_ms,
+            });
+        } else {
+            entry.failures = entry.failures.saturating_add(1);
+            entry.consecutive_failures = entry.consecutive_failures.saturating_add(1);
+        }
+    }
+}
+
+fn mark_onion_relay_failed(relay: &OnionRoutePeer) {
+    let Ok(mut health) = onion_relay_health().lock() else {
+        return;
+    };
+    let entry = health.entry(relay.node_id.clone()).or_default();
+    entry.failures = entry.failures.saturating_add(1);
+    entry.consecutive_failures = entry.consecutive_failures.saturating_add(1);
+}
+
+fn onion_relay_rank(relay: &OnionRoutePeer) -> (u32, u64, u64, String) {
+    let health = onion_relay_health()
+        .lock()
+        .ok()
+        .and_then(|map| map.get(&relay.node_id).cloned())
+        .unwrap_or_default();
+
+    let total = health.successes.saturating_add(health.failures).max(1);
+    let failure_penalty = health
+        .failures
+        .saturating_mul(1000)
+        .saturating_div(total);
+
+    (
+        health.consecutive_failures,
+        failure_penalty,
+        health.ewma_rtt_ms.unwrap_or(0),
+        relay.node_id.clone(),
+    )
+}
+
+pub(crate) fn rank_onion_relays(relays: &[OnionRoutePeer]) -> Vec<OnionRoutePeer> {
+    let mut ranked = relays.to_vec();
+    ranked.sort_by_key(onion_relay_rank);
+    ranked
+}
+
+pub(crate) fn build_dynamic_onion_route_candidates(
+    relays: &[OnionRoutePeer],
+) -> Vec<Vec<OnionRoutePeer>> {
+    if relays.is_empty() {
+        return Vec::new();
+    }
+
+    let ranked = rank_onion_relays(relays);
+    let mut candidates: Vec<Vec<OnionRoutePeer>> = Vec::new();
+
+    let mut push_unique = |candidate: Vec<OnionRoutePeer>| {
+        if candidate.is_empty()
+            || candidate.len() > onion::MAX_ONION_HOPS
+            || candidates.iter().any(|existing| existing == &candidate)
+        {
+            return;
+        }
+        if candidates.len() < ONION_ROUTE_ATTEMPT_LIMIT {
+            candidates.push(candidate);
+        }
+    };
+
+    // Prefer the healthiest full path first, then shorter paths that can
+    // bypass a failed or unreachable relay without rebuilding the peer set.
+    push_unique(ranked.clone());
+
+    for length in 1..=ranked.len().min(2) {
+        push_unique(ranked.iter().take(length).cloned().collect());
+    }
+
+    for remove_index in 0..ranked.len() {
+        let candidate: Vec<_> = ranked
+            .iter()
+            .enumerate()
+            .filter_map(|(index, peer)| (index != remove_index).then(|| peer.clone()))
+            .collect();
+        push_unique(candidate);
+        if candidates.len() >= ONION_ROUTE_ATTEMPT_LIMIT {
+            break;
+        }
+    }
+
+    candidates
+}
 
 #[derive(Clone, Debug)]
 pub(crate) struct LanPeer {
@@ -1551,6 +1672,7 @@ fn send_onion_private_chat_with_message_id(
         match ensure_anonymous_onion_session(&socket, relay) {
             Ok(session) => relay_sessions.push(session),
             Err(reason) => {
+                mark_onion_relay_failed(relay);
                 return LanSendStatus::Failed {
                     message_id: message_id.to_string(),
                     peer_id: destination.node_id.clone(),
@@ -1600,6 +1722,7 @@ fn send_onion_private_chat_with_message_id(
             next_address,
             expires_at,
         ) {
+            mark_onion_relay_failed(relay);
             return LanSendStatus::Failed {
                 message_id: message_id.to_string(),
                 peer_id: destination.node_id.clone(),
@@ -1878,7 +2001,10 @@ fn send_onion_private_chat_with_route_fallback(
         reason: "onion route unavailable".into(),
     };
 
+    let candidates = build_dynamic_onion_route_candidates(relays);
+
     for candidate in candidates {
+        let started = Instant::now();
         let status = send_onion_private_chat_with_message_id(
             identity,
             destination,
@@ -1886,9 +2012,14 @@ fn send_onion_private_chat_with_route_fallback(
             message,
             &message_id,
         );
-        match status {
-            LanSendStatus::Delivered { .. } => return status,
+
+        match &status {
+            LanSendStatus::Delivered { .. } => {
+                record_onion_relay_outcome(&candidate, true, started.elapsed());
+                return status;
+            }
             LanSendStatus::TimedOut { .. } | LanSendStatus::Failed { .. } => {
+                record_onion_relay_outcome(&candidate, false, started.elapsed());
                 last_status = status;
             }
         }
