@@ -38,18 +38,28 @@ pub(crate) fn spawn_listener(node_id: String) {
                 continue;
             };
 
-            let expected = format!("{} {}", DISCOVERY_PREFIX, node_id);
+            let mut parts = message.split_whitespace();
 
-            if message == expected {
-                let response = format!(
-                    "{} {} {}",
-                    RESPONSE_PREFIX,
-                    node_id,
-                    APP_VERSION
-                );
-
-                let _ = socket.send_to(response.as_bytes(), peer_addr);
+            if parts.next() != Some(DISCOVERY_PREFIX) {
+                continue;
             }
+
+            let Some(sender_id) = parts.next() else {
+                continue;
+            };
+
+            if sender_id == node_id {
+                continue;
+            }
+
+            let response = format!(
+                "{} {} {}",
+                RESPONSE_PREFIX,
+                node_id,
+                APP_VERSION
+            );
+
+            let _ = socket.send_to(response.as_bytes(), peer_addr);
         }
     });
 }
