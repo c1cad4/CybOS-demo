@@ -118,6 +118,17 @@ mod tests {
     use crate::store::Store;
 
     #[test]
+    fn ratchet_is_symmetric_and_counter_bound() {
+        let root = [42u8; 32];
+        let k1 = ratchet_key(&root, 1).unwrap();
+        let next = ratchet_chain(&root, 1).unwrap();
+        let k2 = ratchet_key(&next, 2).unwrap();
+        assert_ne!(k1, k2);
+        assert_eq!(ratchet_key(&root, 1).unwrap(), k1);
+        assert_ne!(ratchet_key(&root, 2).unwrap(), k1);
+    }
+
+    #[test]
     fn x25519_handshake_roundtrips_and_encrypts() {
         let (alice_private, alice_public) = ephemeral().unwrap();
         let (bob_private, bob_public) = ephemeral().unwrap();
