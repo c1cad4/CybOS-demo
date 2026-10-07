@@ -6,7 +6,8 @@ use serde_json::{json, Value};
 
 pub(crate) const QWEN_ADDRESS: &str = "127.0.0.1:8080";
 
-pub(crate) const QWEN_CHAT_URL: &str = "http://127.0.0.1:8080/v1/chat/completions";
+pub(crate) const QWEN_CHAT_URL: &str =
+    "http://127.0.0.1:8080/v1/chat/completions";
 
 pub(crate) const QWEN_MODEL: &str =
     "mlx-community/Qwen3.5-9B-MLX-4bit";
