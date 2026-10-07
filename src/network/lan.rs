@@ -1604,7 +1604,7 @@ fn send_onion_private_chat_with_message_id(
     let timestamp = now_secs();
     let counter = destination_session.counter + 1;
     let associated = aad(
-        &message_id,
+        message_id,
         &identity.node_id(),
         &destination.node_id,
         timestamp,
@@ -1775,7 +1775,7 @@ fn send_onion_private_chat_with_message_id(
                 let ack_signed = [
                     crypto::PROTOCOL,
                     "ack",
-                    reverse.ack.message_id,
+                    reverse.ack.message_id.as_str(),
                     reverse.ack.from.as_str(),
                     reverse.ack.to.as_str(),
                 ]
