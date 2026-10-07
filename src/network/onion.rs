@@ -310,6 +310,7 @@ pub(crate) fn peel(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use base64::Engine as _;
 
     fn hop(name: &str, address: &str) -> OnionHop {
         OnionHop {
