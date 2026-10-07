@@ -531,6 +531,10 @@ impl crate::state::CybOs {
         if message.is_empty() { return; }
         let Some(target_id) = self.lan_target.clone() else { self.notify("SELECT A LAN PEER FIRST"); return };
         let Some(peer) = self.lan_peers.iter().find(|p| p.node_id == target_id).cloned() else { self.notify("LAN TARGET IS NO LONGER AVAILABLE"); return };
+        if !peer.trusted {
+            self.notify("CONFIRM PEER FINGERPRINT FIRST");
+            return;
+        }
         let Some(peer_public_key) = peer.public_key.clone() else { self.notify("PEER HAS NO AUTHENTICATED IDENTITY KEY"); return };
 
         let (tx, rx) = mpsc::channel();
