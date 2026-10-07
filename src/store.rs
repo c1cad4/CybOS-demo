@@ -83,8 +83,14 @@ impl Store {
                 time TEXT NOT NULL,
                 who TEXT NOT NULL,
                 text TEXT NOT NULL,
-                mine INTEGER NOT NULL
+                mine INTEGER NOT NULL,
+                encrypted INTEGER NOT NULL DEFAULT 0
             );
+
+        let _ = conn.execute(
+            "ALTER TABLE chat_messages ADD COLUMN encrypted INTEGER NOT NULL DEFAULT 0",
+            [],
+        );
 
             CREATE INDEX IF NOT EXISTS idx_chat_messages_time
                 ON chat_messages(time);
@@ -133,13 +139,15 @@ impl Store {
         time: &str,
         who: &str,
         mine: bool,
+        encrypted: bool,
         stored: &str,
     ) -> Option<String> {
-        let key = self.chat_key.as_ref()?;
-        let mut parts = stored.splitn(3, ':');
-        if parts.next() != Some("v1") {
+        if !encrypted {
             return Some(stored.to_string());
         }
+
+        let key = self.chat_key.as_ref()?;
+        let mut parts = stored.splitn(2, ':');
         let nonce = parts.next()?;
         let ciphertext = parts.next()?;
         let aad = Self::chat_aad(id, time, who, mine);
@@ -298,7 +306,7 @@ impl Store {
         let mut st = self
             .conn
             .prepare(
-                "SELECT id,time,who,text,mine
+                "SELECT id,time,who,text,mine,encrypted
                  FROM chat_messages
                  ORDER BY rowid ASC
                  LIMIT 500",
@@ -313,6 +321,7 @@ impl Store {
                     r.get(2)?,
                     r.get(3)?,
                     r.get::<_, i64>(4)? != 0,
+                    r.get::<_, i64>(5)? != 0,
                 ))
             })
             .unwrap()
@@ -321,17 +330,17 @@ impl Store {
 
         rows
             .into_iter()
-            .map(|(id, time, who, stored_text, mine)| {
+            .map(|(id, time, who, stored_text, mine, encrypted)| {
                 let plain =
-                    match self.decrypt_chat_text(&id, &time, &who, mine, &stored_text) {
-                        Some(text) if stored_text.starts_with("v1:") => text,
+                    match self.decrypt_chat_text(&id, &time, &who, mine, encrypted, &stored_text) {
+                        Some(text) if encrypted => text,
                         Some(text) => {
-                            if let Some(encrypted) =
+                            if let Some(encrypted_text) =
                                 self.encrypt_chat_text(&id, &time, &who, mine, &text)
                             {
                                 let _ = self.conn.execute(
-                                    "UPDATE chat_messages SET text=?1 WHERE id=?2",
-                                    params![encrypted, id],
+                                    "UPDATE chat_messages SET text=?1, encrypted=1 WHERE id=?2",
+                                    params![encrypted_text, id],
                                 );
                             }
                             text
@@ -347,18 +356,18 @@ impl Store {
     pub(crate) fn add_chat_message(&self, who: &str, text: &str, mine: bool) {
         let id = Uuid::new_v4().to_string();
         let time = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
-        let stored_text = match self.chat_key {
+        let (stored_text, encrypted) = match self.chat_key {
             Some(_) => match self.encrypt_chat_text(&id, &time, who, mine, text) {
-                Some(encrypted) => encrypted,
+                Some(encrypted_text) => (encrypted_text, 1),
                 None => return,
             },
-            None => text.to_string(),
+            None => (text.to_string(), 0),
         };
 
         let _ = self.conn.execute(
-            "INSERT INTO chat_messages(id,time,who,text,mine)
-             VALUES(?1,?2,?3,?4,?5)",
-            params![id, time, who, stored_text, if mine { 1 } else { 0 }],
+            "INSERT INTO chat_messages(id,time,who,text,mine,encrypted)
+             VALUES(?1,?2,?3,?4,?5,?6)",
+            params![id, time, who, stored_text, if mine { 1 } else { 0 }, encrypted],
         );
     }
 
@@ -437,8 +446,17 @@ mod tests {
             )
             .unwrap();
 
-        assert!(stored.starts_with("v1:"));
         assert!(!stored.contains(plaintext));
+
+        let encrypted: i64 = store
+            .conn
+            .query_row(
+                "SELECT encrypted FROM chat_messages WHERE who=?1 ORDER BY rowid DESC LIMIT 1",
+                [&who],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(encrypted, 1);
 
         let messages = store.chat_messages();
         assert!(messages
