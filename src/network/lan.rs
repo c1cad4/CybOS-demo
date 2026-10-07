@@ -6,7 +6,7 @@ use crate::network::onion;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::net::UdpSocket;
+use std::net::{SocketAddr, UdpSocket};
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
@@ -374,6 +374,199 @@ fn spawn_listener_on_addr(
                 if let Ok(body) = serde_json::to_string(&reply) {
                     let _ = socket.send_to(format!("{} {}", KEY_REPLY_PREFIX, body).as_bytes(), peer_addr);
                 }
+                continue;
+            }
+
+
+            if let Some(payload) = message.strip_prefix(ONION_PREFIX).and_then(|r| r.strip_prefix(' ')) {
+                let Ok(packet) = serde_json::from_str::<onion::OnionPacket>(payload) else { continue };
+                let Some(binding) = onion_bindings.get(&packet.route_id).cloned() else { continue };
+                let now = now_secs();
+                if packet.hop_index != binding.hop_index
+                    || packet.expires_at > binding.expires_at
+                    || packet.expires_at < now
+                {
+                    continue;
+                }
+                let Some(source_session) = sessions.get(&binding.source_id) else { continue };
+
+                match onion::peel(
+                    &mut onion_cache,
+                    &packet,
+                    &packet.route_id,
+                    binding.hop_index,
+                    &source_session.root_key,
+                    now,
+                ) {
+                    Ok(onion::PeelResult::Forward(forward)) => {
+                        if forward.next_node_id != binding.next_node_id
+                            || forward.next_address != binding.next_address
+                        {
+                            continue;
+                        }
+                        let Ok(next_addr) = forward.next_address.parse::<SocketAddr>() else { continue };
+                        let Ok(body) = serde_json::to_string(&forward.packet) else { continue };
+                        if body.as_bytes().len() > onion::MAX_ONION_BYTES {
+                            continue;
+                        }
+                        let _ = socket.send_to(
+                            format!("{} {}", ONION_PREFIX, body).as_bytes(),
+                            next_addr,
+                        );
+                    }
+                    Ok(onion::PeelResult::Deliver(deliver)) => {
+                        if deliver.destination_id != binding.next_node_id
+                            || deliver.destination_address != binding.next_address
+                        {
+                            continue;
+                        }
+                        let delivery = onion::OnionDelivery {
+                            route_id: packet.route_id.clone(),
+                            packet_id: packet.packet_id.clone(),
+                            payload: deliver.payload,
+                        };
+                        let Ok(body) = serde_json::to_string(&delivery) else { continue };
+                        if body.as_bytes().len() > MAX_WIRE_BYTES {
+                            continue;
+                        }
+                        let Ok(next_addr) = deliver.destination_address.parse::<SocketAddr>() else { continue };
+                        let _ = socket.send_to(
+                            format!("{} {}", ONION_DELIVERY_PREFIX, body).as_bytes(),
+                            next_addr,
+                        );
+                    }
+                    Err(_) => {}
+                }
+                continue;
+            }
+
+            if let Some(payload) = message.strip_prefix(ONION_DELIVERY_PREFIX).and_then(|r| r.strip_prefix(' ')) {
+                let Ok(delivery) = serde_json::from_str::<onion::OnionDelivery>(payload) else { continue };
+                if delivery.payload.len() > MAX_WIRE_BYTES {
+                    continue;
+                }
+                let Ok(envelope) = serde_json::from_slice::<WireEnvelope>(&delivery.payload) else { continue };
+                if envelope.to != node_id
+                    || envelope.from == node_id
+                    || envelope.message_id.trim().is_empty()
+                    || !fresh_timestamp(envelope.timestamp)
+                {
+                    continue;
+                }
+
+                let cutoff = now_secs().saturating_sub(REPLAY_WINDOW_SECS);
+                seen_messages.retain(|_, ts| *ts >= cutoff);
+                if seen_messages.contains_key(&envelope.message_id) {
+                    continue;
+                }
+
+                let Some(session) = sessions.get_mut(&envelope.from) else { continue };
+                if envelope.counter != session.counter + 1 {
+                    continue;
+                }
+                let signed = [
+                    crypto::PROTOCOL,
+                    "message",
+                    envelope.message_id.as_str(),
+                    envelope.from.as_str(),
+                    envelope.to.as_str(),
+                    &envelope.timestamp.to_string(),
+                    &envelope.counter.to_string(),
+                    envelope.nonce.as_str(),
+                    envelope.ciphertext.as_str(),
+                ]
+                .join("|")
+                .into_bytes();
+                let Ok(signature) = STANDARD.decode(&envelope.signature) else { continue };
+                if !crypto::verify_signature(&session.public_key, &signed, &signature) {
+                    continue;
+                }
+                let message_key = match crypto::ratchet_key(&session.key, envelope.counter) {
+                    Ok(key) => key,
+                    Err(_) => continue,
+                };
+                let associated = aad(
+                    &envelope.message_id,
+                    &envelope.from,
+                    &envelope.to,
+                    envelope.timestamp,
+                    envelope.counter,
+                );
+                let Ok(plaintext) = crypto::decrypt(
+                    &message_key,
+                    &associated,
+                    &envelope.nonce,
+                    &envelope.ciphertext,
+                ) else { continue };
+                if plaintext.len() > MAX_CHAT_BYTES {
+                    continue;
+                }
+                let Ok(text) = String::from_utf8(plaintext) else { continue };
+
+                let Ok(next) = crypto::ratchet_chain(&session.key, envelope.counter) else {
+                    continue;
+                };
+                session.key = next;
+                session.counter = envelope.counter;
+                seen_messages.insert(envelope.message_id.clone(), envelope.timestamp);
+
+                let ack_signed = [
+                    crypto::PROTOCOL,
+                    "ack",
+                    envelope.message_id.as_str(),
+                    node_id.as_str(),
+                    envelope.from.as_str(),
+                ]
+                .join("|");
+                let ack = LanAck {
+                    message_id: envelope.message_id.clone(),
+                    from: node_id.clone(),
+                    to: envelope.from.clone(),
+                    signature: STANDARD.encode(crypto::sign(&identity, ack_signed.as_bytes())),
+                };
+                if let Ok(body) = serde_json::to_string(&OnionReverseAck {
+                    route_id: delivery.route_id,
+                    packet_id: delivery.packet_id,
+                    hop_index: u8::MAX,
+                    ack,
+                }) {
+                    let _ = socket.send_to(
+                        format!("{} {}", ONION_REVERSE_PREFIX, body).as_bytes(),
+                        peer_addr,
+                    );
+                }
+                let _ = tx.send(LanEvent::Chat {
+                    message_id: envelope.message_id,
+                    node_id: envelope.from,
+                    message: text,
+                });
+                continue;
+            }
+
+            if let Some(payload) = message.strip_prefix(ONION_REVERSE_PREFIX).and_then(|r| r.strip_prefix(' ')) {
+                let Ok(mut reverse) = serde_json::from_str::<OnionReverseAck>(payload) else { continue };
+                let Some(binding) = onion_bindings.get(&reverse.route_id).cloned() else { continue };
+                if reverse.ack.to != binding.source_id
+                    || reverse.ack.message_id != reverse.packet_id
+                {
+                    continue;
+                }
+
+                let expected_incoming = if binding.hop_index == onion::MAX_ONION_HOPS as u8 {
+                    u8::MAX
+                } else {
+                    binding.hop_index
+                };
+                if reverse.hop_index != u8::MAX && reverse.hop_index != expected_incoming {
+                    continue;
+                }
+                reverse.hop_index = binding.hop_index.saturating_sub(1);
+                let Ok(body) = serde_json::to_string(&reverse) else { continue };
+                let Ok(previous_addr) = binding.previous_address.parse::<SocketAddr>() else { continue };
+                let _ = socket.send_to(
+                    format!("{} {}", ONION_REVERSE_PREFIX, body).as_bytes(),
+                    previous_addr,
+                );
                 continue;
             }
 
