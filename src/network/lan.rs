@@ -738,6 +738,48 @@ fn spawn_listener_on_addr_with_stop(
     (rx, ack_enabled, handle)
 }
 
+#[cfg(debug_assertions)]
+pub(crate) fn run_headless_test_node() -> Result<(), String> {
+    use std::io::Read;
+
+    let port: u16 = std::env::var("CYBOS_HEADLESS_TEST_PORT")
+        .map_err(|_| "missing CYBOS_HEADLESS_TEST_PORT".to_string())?
+        .parse()
+        .map_err(|_| "invalid CYBOS_HEADLESS_TEST_PORT".to_string())?;
+
+    let identity = NodeIdentity::generate_ephemeral();
+    let node_id = identity.node_id();
+    let ack_enabled = Arc::new(AtomicBool::new(
+        std::env::var("CYBOS_HEADLESS_TEST_ACK")
+            .map(|value| value != "0")
+            .unwrap_or(true),
+    ));
+    let stop = Arc::new(AtomicBool::new(true));
+
+    let (_events, _ack, handle) = spawn_listener_on_port_with_control(
+        node_id.clone(),
+        identity.clone(),
+        port,
+        ack_enabled,
+        Arc::clone(&stop),
+    );
+
+    println!(
+        "READY {} {} {}",
+        node_id,
+        STANDARD.encode(identity.public_key()),
+        port
+    );
+    let _ = std::io::stdout().flush();
+
+    let mut input = String::new();
+    let _ = std::io::stdin().read_to_string(&mut input);
+
+    stop.store(false, Ordering::Release);
+    let _ = handle.join();
+    Ok(())
+}
+
 pub(crate) fn scan(node_id: String) -> Vec<LanPeer> {
     let socket = match UdpSocket::bind(("0.0.0.0", 0)) { Ok(s) => s, Err(_) => return Vec::new() };
     if socket.set_broadcast(true).is_err() { return Vec::new(); }
