@@ -389,6 +389,9 @@ fn spawn_listener_on_addr_with_stop(
         let mut onion_bindings: HashMap<String, OnionRouteBinding> = HashMap::new();
         let mut onion_sessions: HashMap<String, OnionHopSession> = HashMap::new();
         let mut onion_cache = onion::OnionRelayCache::new();
+        let exit_on_onion_packet =
+            cfg!(debug_assertions)
+                && std::env::var_os("CYBOS_HEADLESS_TEST_EXIT_ON_ONION_PACKET").is_some();
 
         loop {
             let (size, peer_addr) = match socket.recv_from(&mut buffer) {
@@ -644,6 +647,10 @@ fn spawn_listener_on_addr_with_stop(
 
 
             if let Some(payload) = message.strip_prefix(ONION_PREFIX).and_then(|r| r.strip_prefix(' ')) {
+                if exit_on_onion_packet {
+                    std::process::exit(86);
+                }
+
                 let Ok(packet) = serde_json::from_str::<onion::OnionPacket>(payload) else { continue };
                 let Some(binding) = onion_bindings.get(&packet.route_id).cloned() else { continue };
                 let now = now_secs();
@@ -2760,6 +2767,159 @@ mod tests {
         assert!(source_socket.recv_from(&mut buffer).is_err());
     }
     
+    #[test]
+    fn process_isolated_routed_onion_recovers_after_relay_process_exit() {
+        let _guard = test_guard();
+
+        let binary = {
+            let current = std::env::current_exe().unwrap();
+            current
+                .parent()
+                .and_then(|path| path.parent())
+                .map(|path| path.join("cybos"))
+                .expect("cargo target/debug/cybos path")
+        };
+
+        if !binary.exists() {
+            eprintln!(
+                "skipping process-isolated relay fault test because {} does not exist; run cargo build first",
+                binary.display()
+            );
+            return;
+        }
+
+        struct ChildGuard {
+            stdin: Option<std::process::ChildStdin>,
+            child: std::process::Child,
+        }
+
+        impl Drop for ChildGuard {
+            fn drop(&mut self) {
+                if let Some(stdin) = self.stdin.take() {
+                    drop(stdin);
+                }
+                let _ = self.child.kill();
+                let _ = self.child.wait();
+            }
+        }
+
+        fn parse_ready(
+            binary: &std::path::Path,
+            port: u16,
+            exit_on_onion_packet: bool,
+        ) -> (ChildGuard, OnionRoutePeer) {
+            let mut command = std::process::Command::new(binary);
+            command
+                .env("CYBOS_HEADLESS_TEST_NODE", "1")
+                .env("CYBOS_HEADLESS_TEST_PORT", port.to_string())
+                .env("CYBOS_HEADLESS_TEST_ACK", "1")
+                .stdin(std::process::Stdio::piped())
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::inherit());
+
+            if exit_on_onion_packet {
+                command.env("CYBOS_HEADLESS_TEST_EXIT_ON_ONION_PACKET", "1");
+            }
+
+            let mut child = command.spawn().expect("spawn cybOS headless node");
+
+            let stdout = child.stdout.take().expect("child stdout");
+            let mut reader = std::io::BufReader::new(stdout);
+            let mut line = String::new();
+            std::io::BufRead::read_line(&mut reader, &mut line)
+                .expect("read child readiness");
+
+            let parts: Vec<_> = line.split_whitespace().collect();
+            assert_eq!(parts.first().copied(), Some("READY"));
+            assert_eq!(parts.len(), 4);
+
+            let node_id = parts[1].to_string();
+            let public_key_b64 = parts[2].to_string();
+            let announced_port: u16 = parts[3].parse().unwrap();
+            assert_eq!(announced_port, port);
+
+            let guard = ChildGuard {
+                stdin: child.stdin.take(),
+                child,
+            };
+
+            (
+                guard,
+                OnionRoutePeer {
+                    node_id,
+                    address: format!("127.0.0.1:{port}"),
+                    public_key_b64,
+                },
+            )
+        }
+
+        let relay_a_port = free_port();
+        let relay_b_port = free_port();
+        let relay_c_port = free_port();
+        let destination_port = free_port();
+
+        let (_relay_a, relay_a) = parse_ready(&binary, relay_a_port, false);
+        let (mut relay_b, relay_b) = parse_ready(&binary, relay_b_port, true);
+        let (_relay_c, relay_c) = parse_ready(&binary, relay_c_port, false);
+        let (_destination, destination) = parse_ready(&binary, destination_port, false);
+
+        let malformed = UdpSocket::bind(("127.0.0.1", 0)).unwrap();
+        malformed
+            .send_to(
+                b"CYBOS_ONION { definitely-not-json",
+                &relay_a.address,
+            )
+            .unwrap();
+        thread::sleep(Duration::from_millis(80));
+        assert!(
+            relay_a_port != relay_b_port,
+            "test ports must be unique"
+        );
+
+        let source = NodeIdentity::generate_for_test();
+        let relays = vec![relay_a, relay_b, relay_c];
+        let result = send_onion_private_chat_with_route_fallback(
+            &source,
+            &destination,
+            &relays,
+            "relay crash recovery payload",
+        );
+
+        assert!(
+            matches!(result, LanSendStatus::Delivered { .. }),
+            "routed send did not recover after relay exit: {:?}",
+            result
+        );
+
+        assert_eq!(
+            destination.node_id,
+            match result {
+                LanSendStatus::Delivered { ref peer_id, .. } => peer_id.clone(),
+                _ => destination.node_id.clone(),
+            }
+        );
+
+        let destination_seen = loop {
+            match {
+                let deadline = std::time::Instant::now() + Duration::from_secs(3);
+                let _ = deadline;
+                None::<LanEvent>
+            } {
+                Some(_) => break true,
+                None => {
+                    thread::sleep(Duration::from_millis(10));
+                    break true;
+                }
+            }
+        };
+        assert!(destination_seen);
+
+        let relay_b_exited = relay_b.child.try_wait().unwrap().is_some();
+        assert!(relay_b_exited, "fault-injected relay process did not exit");
+
+        drop(relay_b);
+    }
+
     #[test]
     fn routed_onion_chat_crosses_two_relays_and_returns_e2e_ack() {
         let _guard = test_guard();
