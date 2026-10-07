@@ -32,9 +32,7 @@ and infrastructure is not presented as live until a real connection exists.
 
 The communication design borrows the useful protocol ideas from the Cyberia CybOS
 concept: persistent node identity, explicit message addressing, bounded delivery
-and graph-oriented state. The current desktop implementation intentionally stops
-short of cryptographic private messaging until a real key and encryption layer
-is added.
+and graph-oriented state. Direct LAN CybChat now uses authenticated peer identity, X25519 key exchange, encrypted wire envelopes, signed ACKs, TOFU pinning and a per-message key ratchet.
 
 ## What is deliberately not faked
 

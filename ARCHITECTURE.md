@@ -24,4 +24,4 @@ A domain operation exposes input -> cell -> output and publishes status, heartbe
 
 LAN discovery -> peer identity -> X25519 ephemeral agreement -> HKDF-SHA256 -> ChaCha20-Poly1305 -> Ed25519 envelope authentication.
 
-The current crypto primitives are ready for integration into the direct LAN message envelope. Until that integration is complete, the existing LAN transport remains plaintext and is explicitly labelled that way.
+Direct LAN CybChat now uses authenticated peer identity, X25519 handshake, HKDF-SHA256, ChaCha20-Poly1305 encrypted envelopes, Ed25519 signatures, authenticated ACKs, TOFU peer-key pinning and a per-message key ratchet. Multi-hop onion routing remains a separate relay-key layer.
