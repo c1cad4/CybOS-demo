@@ -653,6 +653,112 @@ mod tests {
     }
 
     #[test]
+    fn live_udp_rejects_stale_timestamp_and_wrong_recipient() {
+        let alice = NodeIdentity::generate_for_test();
+        let bob = NodeIdentity::generate_for_test();
+        let bob_id = bob.node_id();
+        let bob_port = free_port();
+        let bob_events = spawn_listener_on_port(bob_id.clone(), bob.clone(), bob_port);
+        thread::sleep(Duration::from_millis(40));
+
+        let stale_id = Uuid::new_v4().to_string();
+        let stale_ts = now_secs().saturating_sub(REPLAY_WINDOW_SECS + 1);
+        let stale_signed = [
+            crypto::PROTOCOL,
+            "message",
+            stale_id.as_str(),
+            alice.node_id().as_str(),
+            bob_id.as_str(),
+            &stale_ts.to_string(),
+            "1",
+            "invalid-nonce",
+            "invalid-ciphertext",
+        ].join("|");
+        let stale = WireEnvelope {
+            message_id: stale_id,
+            from: alice.node_id(),
+            to: bob_id.clone(),
+            timestamp: stale_ts,
+            counter: 1,
+            nonce: "invalid-nonce".into(),
+            ciphertext: "invalid-ciphertext".into(),
+            signature: STANDARD.encode(crypto::sign(&alice, stale_signed.as_bytes())),
+        };
+
+        let socket = UdpSocket::bind(("127.0.0.1", 0)).unwrap();
+        socket
+            .send_to(
+                format!("{} {}", CHAT_PREFIX, serde_json::to_string(&stale).unwrap()).as_bytes(),
+                ("127.0.0.1", bob_port),
+            )
+            .unwrap();
+        assert!(bob_events.recv_timeout(Duration::from_millis(250)).is_err());
+
+        let wrong_id = Uuid::new_v4().to_string();
+        let wrong_ts = now_secs();
+        let wrong_to = "cyb-wrong-recipient".to_string();
+        let wrong_signed = [
+            crypto::PROTOCOL,
+            "message",
+            wrong_id.as_str(),
+            alice.node_id().as_str(),
+            wrong_to.as_str(),
+            &wrong_ts.to_string(),
+            "1",
+            "invalid-nonce",
+            "invalid-ciphertext",
+        ].join("|");
+        let wrong = WireEnvelope {
+            message_id: wrong_id,
+            from: alice.node_id(),
+            to: wrong_to,
+            timestamp: wrong_ts,
+            counter: 1,
+            nonce: "invalid-nonce".into(),
+            ciphertext: "invalid-ciphertext".into(),
+            signature: STANDARD.encode(crypto::sign(&alice, wrong_signed.as_bytes())),
+        };
+
+        socket
+            .send_to(
+                format!("{} {}", CHAT_PREFIX, serde_json::to_string(&wrong).unwrap()).as_bytes(),
+                ("127.0.0.1", bob_port),
+            )
+            .unwrap();
+        assert!(bob_events.recv_timeout(Duration::from_millis(250)).is_err());
+    }
+
+    #[test]
+    fn forged_ack_signature_is_rejected() {
+        let alice = NodeIdentity::generate_for_test();
+        let bob = NodeIdentity::generate_for_test();
+        let message_id = Uuid::new_v4().to_string();
+
+        let signed = [
+            crypto::PROTOCOL,
+            "ack",
+            message_id.as_str(),
+            bob.node_id().as_str(),
+            alice.node_id().as_str(),
+        ]
+        .join("|");
+
+        let forged = crypto::sign(&alice, signed.as_bytes());
+        assert!(!crypto::verify_signature(
+            bob.public_key(),
+            signed.as_bytes(),
+            &forged,
+        ));
+
+        let valid = crypto::sign(&bob, signed.as_bytes());
+        assert!(crypto::verify_signature(
+            bob.public_key(),
+            signed.as_bytes(),
+            &valid,
+        ));
+    }
+
+    #[test]
     fn live_udp_replay_and_ciphertext_tampering_are_rejected() {
         let alice = NodeIdentity::generate_for_test();
         let bob = NodeIdentity::generate_for_test();
