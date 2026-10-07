@@ -15,6 +15,7 @@ mod assets;
 mod ui;
 mod shell;
 mod app;
+mod theme;
 
 pub(crate) use app::{CybOs, Icon, Page};
 use crate::models::TokenMarket;
