@@ -12,7 +12,6 @@ impl CybOs {
     fn fetch_token_market(name: &str, mint: &str) -> TokenMarket {
         let mut result = TokenMarket {
             name: name.into(),
-            mint: mint.into(),
             ..Default::default()
         };
 
