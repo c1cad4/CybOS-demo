@@ -305,34 +305,43 @@ impl Store {
             )
             .unwrap();
 
-        st.query_map([], |r| {
-            let id: String = r.get(0)?;
-            let time: String = r.get(1)?;
-            let who: String = r.get(2)?;
-            let stored_text: String = r.get(3)?;
-            let mine: i64 = r.get(4)?;
+        let rows: Vec<(String, String, String, String, bool)> = st
+            .query_map([], |r| {
+                Ok((
+                    r.get(0)?,
+                    r.get(1)?,
+                    r.get(2)?,
+                    r.get(3)?,
+                    r.get::<_, i64>(4)? != 0,
+                ))
+            })
+            .unwrap()
+            .filter_map(Result::ok)
+            .collect();
 
-            let plain = match self.decrypt_chat_text(&id, &time, &who, mine != 0, &stored_text) {
-                Some(text) if stored_text.starts_with("v1:") => text,
-                Some(text) => {
-                    if let Some(encrypted) =
-                        self.encrypt_chat_text(&id, &time, &who, mine != 0, &text)
-                    {
-                        let _ = self.conn.execute(
-                            "UPDATE chat_messages SET text=?1 WHERE id=?2",
-                            params![encrypted, id],
-                        );
-                    }
-                    text
-                }
-                None => "[encrypted message unavailable]".to_string(),
-            };
+        rows
+            .into_iter()
+            .map(|(id, time, who, stored_text, mine)| {
+                let plain =
+                    match self.decrypt_chat_text(&id, &time, &who, mine, &stored_text) {
+                        Some(text) if stored_text.starts_with("v1:") => text,
+                        Some(text) => {
+                            if let Some(encrypted) =
+                                self.encrypt_chat_text(&id, &time, &who, mine, &text)
+                            {
+                                let _ = self.conn.execute(
+                                    "UPDATE chat_messages SET text=?1 WHERE id=?2",
+                                    params![encrypted, id],
+                                );
+                            }
+                            text
+                        }
+                        None => "[encrypted message unavailable]".to_string(),
+                    };
 
-            Ok((who, plain, mine != 0))
-        })
-        .unwrap()
-        .filter_map(Result::ok)
-        .collect()
+                (who, plain, mine)
+            })
+            .collect()
     }
 
     pub(crate) fn add_chat_message(&self, who: &str, text: &str, mine: bool) {
@@ -409,6 +418,33 @@ fn dirs_fallback() -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn encrypted_chat_roundtrip_hides_plaintext_at_rest() {
+        let store = Store::open();
+        store.configure_chat_key([7u8; 32]);
+        let who = format!("TEST-ENCRYPT-{}", Uuid::new_v4());
+        let plaintext = "secret chat storage payload";
+
+        store.add_chat_message(&who, plaintext, true);
+
+        let stored: String = store
+            .conn
+            .query_row(
+                "SELECT text FROM chat_messages WHERE who=?1 ORDER BY rowid DESC LIMIT 1",
+                [&who],
+                |r| r.get(0),
+            )
+            .unwrap();
+
+        assert!(stored.starts_with("v1:"));
+        assert!(!stored.contains(plaintext));
+
+        let messages = store.chat_messages();
+        assert!(messages
+            .iter()
+            .any(|(entry_who, text, mine)| entry_who == &who && text == plaintext && *mine));
+    }
 
     #[test]
     fn tofu_rejects_peer_key_replacement() {
