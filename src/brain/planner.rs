@@ -1,4 +1,5 @@
 use crate::CybOs;
+use crate::network::web_urls;
 use serde_json::json;
 use super::web_intent;
 
@@ -343,7 +344,7 @@ Return ONLY valid JSON.
         if let Some(web_query) = forced_web_query {
             let search_result = self.tool_web_search(&web_query);
 
-            let urls = Self::web_urls_from_result(&search_result);
+            let urls = web_urls::web_urls_from_result(&search_result);
 
             if urls.is_empty() {
                 return "Веб-поиск не нашёл подходящих источников.".into();
@@ -415,7 +416,7 @@ Return ONLY valid JSON.
             // If the planner itself selected web_search,
             // immediately fetch the best candidate.
             if tool == "web_search" {
-                let urls = Self::web_urls_from_result(&result);
+                let urls = web_urls::web_urls_from_result(&result);
 
                 for url in urls {
                     let fetched = self.tool_web_fetch(&url);
