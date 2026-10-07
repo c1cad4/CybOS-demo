@@ -65,6 +65,7 @@ pub(crate) fn signing_key(identity: &NodeIdentity) -> signature::Ed25519KeyPair 
 mod tests {
     use super::{hex, verify_node_id};
     use ring::{digest, rand, signature};
+    use ring::signature::KeyPair;
 
     #[test]
     fn identity_id_is_derived_from_public_key() {
