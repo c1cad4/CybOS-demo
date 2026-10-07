@@ -42,10 +42,10 @@ Both defects were fixed on this branch.
 
 ## Residual risks / next hardening
 
-### MEDIUM — TOFU is automatic
-The first authenticated-looking key observed for a new node ID is automatically pinned. This is valid TOFU behavior, but the first contact is not independently authenticated against a known fingerprint or operator approval. A malicious LAN participant can therefore appear as a new peer under its own identity. The cryptographic handshake prevents that participant from impersonating an already-pinned peer, but the design does not solve first-contact trust.
+### MEDIUM — First contact still depends on operator trust
+A new peer is now shown with its SHA-256 public-key fingerprint and requires explicit "TRUST KEY" confirmation. This makes first-contact trust visible, but it is still TOFU: the operator should compare the fingerprint through an independent channel when identity authenticity matters.
 
-Recommended next step: show the peer fingerprint and require explicit confirmation for first-use, or provision trusted keys out of band.
+Recommended next step: support out-of-band key provisioning for deployments that need stronger initial trust.
 
 ### MEDIUM — Local data is not encrypted at rest
 The Ed25519 private key and chat history are stored in the local SQLite database. Unix file permissions are hardened, but the implementation does not use the macOS Keychain or database-level encryption.
