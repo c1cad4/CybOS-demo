@@ -10,6 +10,15 @@ impl CybOs {
         let neon = Color32::from_rgb(0, 255, 150);
         let dim = Color32::from_rgb(55, 145, 105);
         let panel = Color32::from_rgb(5, 18, 13);
+        let onion_relay_count = self
+            .lan_peers
+            .iter()
+            .filter(|peer| {
+                peer.trusted
+                    && self.lan_target.as_deref() != Some(peer.node_id.as_str())
+            })
+            .count()
+            .min(crate::network::onion::MAX_ONION_HOPS);
 
         ui.vertical(|ui| {
             ui.label(RichText::new("∴  CYBCHAT").size(24.0).strong().color(neon));
@@ -276,15 +285,6 @@ impl CybOs {
 
                         let can_send_lan =
                             self.lan_target.is_some() && self.lan_send_task.is_none();
-                        let onion_relay_count = self
-                            .lan_peers
-                            .iter()
-                            .filter(|peer| {
-                                peer.trusted
-                                    && self.lan_target.as_deref() != Some(peer.node_id.as_str())
-                            })
-                            .count()
-                            .min(crate::network::onion::MAX_ONION_HOPS);
                         let can_send_onion =
                             self.lan_target.is_some()
                                 && onion_relay_count > 0
