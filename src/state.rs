@@ -69,8 +69,12 @@ pub(crate) struct CybOs {
 
 impl Default for CybOs {
     fn default() -> Self {
-        let store = crate::runtime::open_store();
+        let mut store = crate::runtime::open_store();
         let identity = crate::identity::NodeIdentity::load_or_create(&store);
+
+        #[cfg(target_os = "macos")]
+        store.configure_chat_key(crate::crypto::local_storage_key(identity.pkcs8()));
+
         let node_id = crate::runtime::load_or_create_node_id(&store, &identity);
         let events = crate::runtime::load_events(&store);
 
