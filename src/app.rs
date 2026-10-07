@@ -9,7 +9,9 @@ use eframe::egui::{self, Color32, RichText, Stroke, Vec2};
 
 pub(crate) use crate::state::CybOs;
 
-pub(crate) use crate::navigation::{Icon, Page};\n\nimpl CybOs {
+pub(crate) use crate::navigation::{Icon, Page};
+
+impl CybOs {
     fn fetch_token_market(name: &str, mint: &str) -> TokenMarket {
         let mut result = TokenMarket {
             name: name.into(),
