@@ -479,6 +479,83 @@ mod tests {
     }
 
     #[test]
+    fn legacy_plaintext_chat_row_is_migrated_on_read() {
+        let mut store = Store::open();
+        store.configure_chat_key([8u8; 32]);
+        let who = format!("TEST-MIGRATE-{}", Uuid::new_v4());
+        let id = Uuid::new_v4().to_string();
+        let time = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        let plaintext = "legacy plaintext message";
+
+        store
+            .conn
+            .execute(
+                "INSERT INTO chat_messages(id,time,who,text,mine,encrypted)
+                 VALUES(?1,?2,?3,?4,1,0)",
+                params![id, time, who, plaintext],
+            )
+            .unwrap();
+
+        let messages = store.chat_messages();
+        assert!(messages
+            .iter()
+            .any(|(entry_who, text, mine)| entry_who == &who && text == plaintext && *mine));
+
+        let (stored, encrypted): (String, i64) = store
+            .conn
+            .query_row(
+                "SELECT text,encrypted FROM chat_messages WHERE id=?1",
+                [&id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+
+        assert_eq!(encrypted, 1);
+        assert!(!stored.contains(plaintext));
+    }
+
+    #[test]
+    fn tampered_encrypted_chat_row_is_not_returned_as_plaintext() {
+        let mut store = Store::open();
+        store.configure_chat_key([9u8; 32]);
+        let who = format!("TEST-TAMPER-{}", Uuid::new_v4());
+        let plaintext = "tamper detection payload";
+
+        store.add_chat_message(&who, plaintext, true);
+
+        let id: String = store
+            .conn
+            .query_row(
+                "SELECT id FROM chat_messages WHERE who=?1 ORDER BY rowid DESC LIMIT 1",
+                [&who],
+                |row| row.get(0),
+            )
+            .unwrap();
+
+        store
+            .conn
+            .execute(
+                "UPDATE chat_messages
+                 SET text='AAAA:AAAA',encrypted=1
+                 WHERE id=?1",
+                [&id],
+            )
+            .unwrap();
+
+        let messages = store.chat_messages();
+        assert!(messages
+            .iter()
+            .any(|(entry_who, text, mine)| {
+                entry_who == &who
+                    && text == "[encrypted message unavailable]"
+                    && *mine
+            }));
+        assert!(!messages
+            .iter()
+            .any(|(_, text, _)| text == plaintext));
+    }
+
+    #[test]
     fn tofu_rejects_peer_key_replacement() {
         let store = Store::open();
         let node_id = format!("test-peer-{}", Uuid::new_v4());
