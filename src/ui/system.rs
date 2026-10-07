@@ -1,4 +1,5 @@
-use crate::{CybOs, APP_VERSION};
+use crate::config::APP_VERSION;
+use crate::CybOs;
 use eframe::egui;
 use egui::{Color32, RichText};
 use std::process::Command;
