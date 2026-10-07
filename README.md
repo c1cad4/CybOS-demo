@@ -12,6 +12,7 @@ not a browser wrapper.
 - Cybergraph with nodes, links, zoom/pan and inspector
 - Persistent SQLite event, memory and graph storage
 - macOS Keychain-backed Ed25519 node identity with one-time migration from legacy SQLite identity storage
+- macOS CybChat history encrypted at rest with ChaCha20-Poly1305 and automatic migration of legacy plaintext chat rows
 - Search/navigation shell with native page routing
 - Local Qwen runtime shared by planner, learning, RobotCYB and web answers
 - Real local LAN peer discovery with UDP broadcast and node/version reporting
@@ -41,7 +42,7 @@ but the MVP does not claim them as connected. LAN discovery is implemented as a
 real local peer-discovery channel. Discovery is broadcast-only; CybChat messages
 are directed to a selected peer and acknowledged within a bounded timeout. The
 CybChat direct-LAN payloads are encrypted with the authenticated wire envelope
-and are only reported as delivered after a verified signed ACK. Local chat history remains stored in SQLite as application data; chat-history at-rest encryption is not part of this milestone.
+and are only reported as delivered after a verified signed ACK. CybChat history remains stored in SQLite as encrypted application data on macOS; other local datasets are not yet encrypted at rest.
 
 
 ## One-click macOS launch
