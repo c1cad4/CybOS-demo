@@ -107,7 +107,8 @@ pub(crate) fn hex(bytes: &[u8]) -> String {
 }
 
 pub(crate) fn fingerprint(public_key: &[u8]) -> String {
-    hex(public_key)
+    let hash = digest::digest(&digest::SHA256, public_key);
+    hex(hash.as_ref())
 }
 
 pub(crate) fn node_id_from_public_key(public_key: &[u8]) -> String {
