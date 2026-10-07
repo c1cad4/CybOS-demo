@@ -1,7 +1,6 @@
 use crate::{CybOs, Icon};
 use eframe::egui;
 use egui::{Color32, RichText, Stroke, Vec2};
-use std::time::Instant;
 
 impl CybOs {
     pub(crate) fn network(&mut self, ui: &mut egui::Ui) {
