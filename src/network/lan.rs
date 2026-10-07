@@ -1347,15 +1347,15 @@ fn send_onion_private_chat(
     let packet_id = onion::new_packet_id();
     let expires_at = now_secs() + 60;
 
-    let mut relay_sessions = Vec::with_capacity(relays.len());
+    let mut relay_sessions: Vec<(String, [u8; 32])> = Vec::with_capacity(relays.len());
     for relay in relays {
-        match ensure_onion_session(&socket, identity, relay) {
+        match ensure_anonymous_onion_session(&socket, relay) {
             Ok(session) => relay_sessions.push(session),
             Err(reason) => {
                 return LanSendStatus::Failed {
                     message_id,
                     peer_id: destination.node_id.clone(),
-                    reason: format!("relay session {}: {}", relay.node_id, reason),
+                    reason: format!("anonymous relay session {}: {}", relay.node_id, reason),
                 }
             }
         }
@@ -1377,11 +1377,6 @@ fn send_onion_private_chat(
         .unwrap_or_else(|_| "127.0.0.1:0".into());
 
     for (index, relay) in relays.iter().enumerate() {
-        let previous_node_id = if index == 0 {
-            identity.node_id()
-        } else {
-            relays[index - 1].node_id.clone()
-        };
         let previous_address = if index == 0 {
             source_socket_address.as_str()
         } else {
@@ -1397,14 +1392,15 @@ fn send_onion_private_chat(
         } else {
             &destination.address
         };
+        let (session_id, session_key) = &relay_sessions[index];
 
         if let Err(reason) = send_onion_route_bind(
             &socket,
-            identity,
             relay,
+            session_id,
+            session_key,
             &route_id,
             index as u8,
-            &previous_node_id,
             previous_address,
             next_node_id,
             next_address,
@@ -1496,14 +1492,17 @@ fn send_onion_private_chat(
             address: peer.address.clone(),
         })
         .collect();
+    let relay_session_ids: Vec<String> =
+        relay_sessions.iter().map(|(id, _)| id.clone()).collect();
     let relay_keys: Vec<[u8; 32]> =
-        relay_sessions.iter().map(|session| session.root_key).collect();
+        relay_sessions.iter().map(|(_, key)| *key).collect();
     let packet = match onion::wrap(
         &route_id,
         &packet_id,
         expires_at,
         &e2e_payload,
         &hops,
+        &relay_session_ids,
         &relay_keys,
         &destination.node_id,
         &destination.address,
