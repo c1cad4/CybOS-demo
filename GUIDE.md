@@ -107,25 +107,37 @@ LAN discovery
  -> decrypt + authenticate + replay check
  -> signed ACK
 
-## 9. Onion / relay boundary
+## 9. Multi-hop onion transport
 
-The current implementation deliberately does not claim full onion routing.
+The branch now contains the first real onion-routing transport layer.
 
-A secure multi-hop onion layer requires a stable authenticated encryption key for every relay. The current direct handshake deliberately uses one-shot X25519 ephemeral keys. The ring API exposes those ephemeral keys as single-use objects, which is desirable for direct forward secrecy but is not a persistent relay encryption identity.
+The design keeps the persistent node identity on Ed25519. Each adjacent relay
+link is represented by an authenticated X25519-derived session root, and the
+onion layer derives a separate ChaCha20-Poly1305 key from that root using a
+route ID, packet ID, hop index and direction context.
 
-The correct next layer is:
-1. create a separate persistent X25519 relay identity;
-2. protect its private material with the local keystore;
-3. bind its X25519 public key to the existing Ed25519 node identity;
-4. pin both identities;
-5. establish per-hop relay sessions;
-6. build nested authenticated relay layers;
-7. make each relay decrypt only its own layer;
-8. forward only the remaining opaque layer;
-9. prevent route/path manipulation and replay;
-10. rotate relay/session keys independently.
+For each packet:
 
-Do not implement onion routing by encrypting a route list with the Ed25519 public key. Ed25519 is used here for signatures, not public-key encryption.
+1. The source creates a unique route ID and packet ID.
+2. The end-to-end payload is wrapped in one encrypted layer per relay.
+3. The outer layer exposes only the current route metadata and the current hop index.
+4. After decryption, a relay learns only its immediate next node/address and an opaque inner packet.
+5. The next packet remains encrypted under the next relay's distinct layer key.
+6. Each relay enforces route ID, hop index, packet lineage and a bounded expiration window.
+7. A per-relay replay cache rejects reuse of the same route/packet/hop tuple.
+8. Unknown route bindings are rejected by the UDP relay listener.
+
+The relay listener is a real UDP forwarder. A live three-relay loopback test
+now exercises relay-a → relay-b → relay-c → destination forwarding.
+
+The current milestone intentionally does not claim the full routed CybChat feature
+set yet. Automatic route establishment between arbitrary peers, reverse onion
+ACK delivery, and UI route selection still need to be connected to the existing
+authenticated CybChat session layer.
+
+The current relay-layer choice also avoids introducing a persistent X25519 private
+identity. Ed25519 remains the long-term node identity; X25519 session material is
+ephemeral and the onion layer derives fresh per-route/per-packet keys from it.
 
 ## 10. Cryptographic boundaries
 
