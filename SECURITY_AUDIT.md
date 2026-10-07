@@ -52,10 +52,10 @@ The Ed25519 private key and chat history are stored in the local SQLite database
 
 Recommended next step: move the private identity key to an OS-backed secure key store and separately define whether chat history should be encrypted at rest.
 
-### MEDIUM — Wire-level adversarial integration coverage is incomplete
-Unit tests cover the primitives and several transcript checks, but two-real-process integration tests are still needed for packet mutation, duplicate delivery, stale timestamps, wrong recipient, TOFU replacement, ACK forgery, and lost-ACK recovery.
+### MEDIUM — Adversarial integration coverage is partial
+A deterministic two-node loopback UDP harness now exercises real handshake, signed delivery ACKs, sequential ratchet messages, replay injection and ciphertext tampering. OS-process isolation and several remaining cases are still not covered.
 
-Recommended next step: add a deterministic two-node integration harness that uses real UDP sockets on loopback.
+Recommended next step: add an OS-process harness and cover stale timestamps, wrong recipient, TOFU replacement, forged ACKs, and lost-ACK recovery under controlled fault injection.
 
 ### LOW — Discovery address is not cryptographically bound
 The signed discovery response authenticates node ID, version and public key, but not the observed source address. A valid discovery response can therefore be replayed from a different address. The subsequent signed handshake prevents identity impersonation, but stale/misrouted discovery can still cause connection failure or denial of service.
