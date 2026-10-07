@@ -64,7 +64,11 @@ impl CybOs {
                                 let selected = self.lan_target.as_deref() == Some(peer.node_id.as_str());
 
                                 ui.horizontal(|ui| {
-                                    ui.label(RichText::new("◈").size(16.0).color(neon));
+                                    ui.label(
+                                        RichText::new(if peer.trusted { "◈" } else { "◇" })
+                                            .size(16.0)
+                                            .color(neon),
+                                    );
 
                                     ui.vertical(|ui| {
                                         ui.label(
@@ -83,23 +87,57 @@ impl CybOs {
                                             .size(8.0)
                                             .color(dim),
                                         );
+
+                                        let fingerprint = peer
+                                            .fingerprint
+                                            .as_deref()
+                                            .unwrap_or("UNKNOWN");
+                                        let fingerprint_short = if fingerprint.len() > 24 {
+                                            format!("{}…", &fingerprint[..24])
+                                        } else {
+                                            fingerprint.to_string()
+                                        };
+                                        ui.label(
+                                            RichText::new(format!(
+                                                "{} · {}",
+                                                if peer.trusted { "TRUSTED" } else { "NEW KEY" },
+                                                fingerprint_short
+                                            ))
+                                            .size(7.5)
+                                            .color(if peer.trusted { neon } else { dim }),
+                                        );
                                     });
 
-                                    let label = if selected { "TARGET" } else { "SELECT" };
-                                    if ui
+                                    if peer.trusted {
+                                        let label = if selected { "TARGET" } else { "SELECT" };
+                                        if ui
+                                            .add(
+                                                egui::Button::new(
+                                                    RichText::new(label)
+                                                        .size(8.0)
+                                                        .strong()
+                                                        .color(neon),
+                                                )
+                                                .min_size(Vec2::new(58.0, 24.0)),
+                                            )
+                                            .clicked()
+                                        {
+                                            self.lan_target = Some(peer.node_id.clone());
+                                            self.notify(format!("LAN TARGET: {}", peer.node_id));
+                                        }
+                                    } else if ui
                                         .add(
                                             egui::Button::new(
-                                                RichText::new(label)
+                                                RichText::new("TRUST KEY")
                                                     .size(8.0)
                                                     .strong()
                                                     .color(neon),
                                             )
-                                            .min_size(Vec2::new(58.0, 24.0)),
+                                            .min_size(Vec2::new(82.0, 24.0)),
                                         )
                                         .clicked()
                                     {
-                                        self.lan_target = Some(peer.node_id.clone());
-                                        self.notify(format!("LAN TARGET: {}", peer.node_id));
+                                        self.trust_lan_peer(&peer.node_id);
                                     }
                                 });
 
