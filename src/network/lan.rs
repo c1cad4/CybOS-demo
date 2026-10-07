@@ -198,6 +198,24 @@ fn signed_key_reply(from: &str, to: &str, init_eph: &str, reply_eph: &str, times
     [crypto::PROTOCOL, "key-reply", from, to, init_eph, reply_eph, &timestamp.to_string()].join("|").into_bytes()
 }
 
+fn signed_onion_route_bind(bind: &OnionRouteBind) -> Vec<u8> {
+    [
+        crypto::PROTOCOL,
+        "onion-bind",
+        bind.route_id.as_str(),
+        &bind.hop_index.to_string(),
+        bind.source_id.as_str(),
+        bind.source_public_key.as_str(),
+        bind.previous_node_id.as_str(),
+        bind.previous_address.as_str(),
+        bind.next_node_id.as_str(),
+        bind.next_address.as_str(),
+        &bind.expires_at.to_string(),
+    ]
+    .join("|")
+    .into_bytes()
+}
+
 fn session_transcript(from: &str, to: &str, init_eph: &[u8], reply_eph: &[u8]) -> Vec<u8> {
     [crypto::PROTOCOL.as_bytes(), from.as_bytes(), to.as_bytes(), init_eph, reply_eph].concat()
 }
