@@ -73,6 +73,8 @@ impl Default for CybOs {
         let identity = crate::identity::NodeIdentity::load_or_create(&store);
         let node_id = identity.node_id();
         let events = crate::runtime::load_events(&store);
+        let farm_knowledge = store.get("cicadafarm_knowledge").unwrap_or_default();
+        let farm_season = store.get("cicadafarm_season").and_then(|v| v.parse::<usize>().ok()).filter(|v| *v < 4).unwrap_or(1);
 
         let mut chat = store.chat_messages();
         if chat.is_empty() {
@@ -135,9 +137,9 @@ impl Default for CybOs {
             lan_delivery_status: "NO DIRECT LAN MESSAGE YET".into(),
 
             remember_note: String::new(),
-            farm_season: 1,
+            farm_season,
             farm_panel: None,
-            farm_knowledge: store.get("cicadafarm_knowledge").unwrap_or_default(),
+            farm_knowledge,
         };
 
         app.initialize_graph();
