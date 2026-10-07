@@ -109,35 +109,37 @@ LAN discovery
 
 ## 9. Multi-hop onion transport
 
-The branch now contains the first real onion-routing transport layer.
+The routed CybChat path uses a real UDP onion transport with a separate anonymous
+X25519 session for each relay hop.
 
-The design keeps the persistent node identity on Ed25519. Each adjacent relay
-link is represented by an authenticated X25519-derived session root, and the
-onion layer derives a separate ChaCha20-Poly1305 key from that root using a
-route ID, packet ID, hop index and direction context.
+The persistent node identity remains Ed25519. It is used to authenticate a relay's
+ephemeral onion session reply, but the source node identity is deliberately not
+included in the onion session-init message or the route-binding payload sent to
+that relay.
 
-For each packet:
+For each relay hop:
 
-1. The source creates a unique route ID and packet ID.
-2. The end-to-end payload is wrapped in one encrypted layer per relay.
-3. The outer layer exposes only the current route metadata and the current hop index.
-4. After decryption, a relay learns only its immediate next node/address and an opaque inner packet.
-5. The next packet remains encrypted under the next relay's distinct layer key.
-6. Each relay enforces route ID, hop index, packet lineage and a bounded expiration window.
-7. A per-relay replay cache rejects reuse of the same route/packet/hop tuple.
-8. Unknown route bindings are rejected by the UDP relay listener.
+1. The source generates a fresh random onion session ID and an ephemeral X25519 key.
+2. The relay authenticates its signed session reply with its known Ed25519 public key.
+3. Both sides derive a per-hop session key with X25519 + HKDF-SHA256.
+4. The source sends the route binding encrypted with that hop key. The bind contains only route ID, hop index, expiry, the previous/next transport addresses and the next node ID needed by that relay.
+5. The relay stores the route binding against the anonymous session ID and accepts data packets only from the same source endpoint observed during the session setup.
+6. The actual CybChat end-to-end payload remains inside the existing authenticated destination envelope; each relay only peels its own ChaCha20-Poly1305 onion layer.
+7. Each nested layer carries its own hop session ID, route ID, packet ID and hop index, so a relay cannot reuse one hop's key as another hop's layer key.
+8. Reverse delivery acknowledgements travel back through the established route. The destination's signed ACK is verified end-to-end by the source.
 
-The relay listener is a real UDP forwarder. A live three-relay loopback test
-now exercises relay-a → relay-b → relay-c → destination forwarding.
+The onion packet therefore exposes only the metadata necessary for the current hop.
+A relay does not receive the source Ed25519 public key as part of route setup, and
+it does not decrypt the end-to-end CybChat payload.
 
-The current milestone intentionally does not claim the full routed CybChat feature
-set yet. Automatic route establishment between arbitrary peers, reverse onion
-ACK delivery, and UI route selection are now connected to the existing
-authenticated CybChat session layer.
+The relay listener is a real UDP forwarder. Live loopback and process-isolated tests
+exercise multi-hop forwarding, replay rejection, ciphertext tampering, route-binding
+authentication and routed ACK delivery.
 
-The current relay-layer choice also avoids introducing a persistent X25519 private
-identity. Ed25519 remains the long-term node identity; X25519 session material is
-ephemeral and the onion layer derives fresh per-route/per-packet keys from it.
+This is routed encrypted transport, not a complete anonymity network. Network
+endpoints, timing, packet size and route participation remain visible to relevant
+network observers. The design also does not introduce a persistent X25519 private
+relay identity; onion hop material is ephemeral and scoped to the route/session.
 
 ## 10. Cryptographic boundaries
 
