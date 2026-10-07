@@ -292,7 +292,7 @@ impl CybOs {
                         }
 
                         ui.label(
-                            RichText::new("LOCAL-FIRST · ACKNOWLEDGED · E2E CRYPTO READY · LAN ENVELOPE NEXT")
+                            RichText::new("LOCAL-FIRST · AUTHENTICATED PEERS · X25519 HANDSHAKE · ENCRYPTED WIRE · REPLAY WINDOW")
                                 .size(8.0)
                                 .color(dim),
                         );
