@@ -1,4 +1,5 @@
-use crate::{CybOs, CICADAFARM_MINT, ROBOTCYB_MINT};
+use crate::config::{CICADAFARM_MINT, ROBOTCYB_MINT};
+use crate::CybOs;
 use eframe::egui;
 use egui::{Color32, RichText, Stroke};
 
