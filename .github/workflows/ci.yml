@@ -61,5 +61,36 @@ jobs:
       - name: macOS release build
         run: cargo build --release --locked
 
+      - name: Package macOS app
+        run: |
+          rm -rf cybOS.app cybOS-macos-test.zip
+          mkdir -p cybOS.app/Contents/MacOS cybOS.app/Contents/Resources
+          cp target/release/cybos cybOS.app/Contents/MacOS/cybOS
+          cat > cybOS.app/Contents/Info.plist <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+          <key>CFBundleName</key><string>cybOS</string>
+          <key>CFBundleDisplayName</key><string>cybOS — CicadaFarm + RobotCYB</string>
+          <key>CFBundleIdentifier</key><string>to.cicada.cybos</string>
+          <key>CFBundleVersion</key><string>0.7.0</string>
+          <key>CFBundleShortVersionString</key><string>0.7.0</string>
+          <key>CFBundleExecutable</key><string>cybOS</string>
+          <key>CFBundlePackageType</key><string>APPL</string>
+          <key>LSMinimumSystemVersion</key><string>11.0</string>
+          <key>NSHighResolutionCapable</key><true/>
+          </dict></plist>
+          PLIST
+          chmod +x cybOS.app/Contents/MacOS/cybOS
+          codesign --force --deep --sign - cybOS.app
+          ditto -c -k --sequesterRsrc --keepParent cybOS.app cybOS-macos-test.zip
+
+      - name: Upload macOS test app
+        uses: actions/upload-artifact@v4
+        with:
+          name: cybOS-macos-test
+          path: cybOS-macos-test.zip
+          if-no-files-found: error
+
       - name: Diff whitespace check
         run: git diff --check
