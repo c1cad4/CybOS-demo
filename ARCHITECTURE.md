@@ -17,7 +17,7 @@ domain services, local persistence and page-oriented UI.
 - Network — src/network/ owns web discovery, fetch, parsing and source
   handling.
 - Assets — src/assets/ owns Solana balances and market data; network refreshes run in background workers.
-- LAN — src/network/lan.rs provides local UDP discovery and peer reporting.
+- LAN — src/network/lan.rs provides local UDP discovery and explicit peer-to-peer chat broadcast.
 - UI pages — src/ui/ contains dashboard, graph, brain, farm, robot,
   chat, network, cameras, assets and system views.
 - CybChat history is persisted in SQLite and restored at startup.
@@ -29,7 +29,7 @@ domain services, local persistence and page-oriented UI.
 The application does not pretend that unavailable infrastructure is live.
 BLE, P2P, Nostr and camera feeds are represented as ready/adaptor states until a
 real transport is connected. LAN node discovery is a real UDP broadcast service;
-it does not claim application-level chat connectivity.
+it does not claim application-level chat connectivity. LAN chat is explicitly user-triggered and unencrypted.
 
 SQLite persists the local node identity, events, memories and graph state.
 
