@@ -45,7 +45,9 @@ Both defects were fixed on this branch.
 - UUID replay suppression plus a five-minute timestamp window.
 - Signed delivery ACK before reporting E2E delivery.
 - Direct forward secrecy from one-shot X25519 session keys.
-- Explicit non-claim of full multi-hop onion routing.
+- Routed CybChat is implemented as a bounded UDP onion transport; it is not an
+  anonymity network and does not hide traffic metadata, route membership or
+  network endpoints from every observer.
 
 ## Residual risks / next hardening
 
