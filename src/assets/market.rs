@@ -2,8 +2,12 @@
 
 use crate::models::TokenMarket;
 use crate::state::CybOs;
-use crate::{CICADAFARM_MINT, ROBOTCYB_MINT, TOKEN_MARKET_CACHE};
+use crate::config::{CICADAFARM_MINT, ROBOTCYB_MINT};
+use std::sync::{Mutex, OnceLock};
+use std::time::{Duration, Instant};
 use eframe::egui::{self, Color32, RichText, Stroke, Vec2};
+
+static TOKEN_MARKET_CACHE: OnceLock<Mutex<(Instant, Vec<TokenMarket>)>> = OnceLock::new();
 
 impl CybOs {
     fn fetch_token_market(name: &str, mint: &str) -> TokenMarket {
@@ -125,17 +129,17 @@ impl CybOs {
 
     fn token_markets(&self) -> Vec<TokenMarket> {
         let cache = TOKEN_MARKET_CACHE.get_or_init(|| {
-            std::sync::Mutex::new((
-                std::time::Instant::now()
-                    .checked_sub(std::time::Duration::from_secs(120))
-                    .unwrap_or_else(std::time::Instant::now),
+            Mutex::new((
+                Instant::now()
+                    .checked_sub(Duration::from_secs(120))
+                    .unwrap_or_else(Instant::now),
                 Vec::new(),
             ))
         });
 
         let mut guard = cache.lock().unwrap();
 
-        if guard.1.is_empty() || guard.0.elapsed() >= std::time::Duration::from_secs(60) {
+        if guard.1.is_empty() || guard.0.elapsed() >= Duration::from_secs(60) {
             let markets = vec![
                 Self::fetch_token_market("$CICADAFARM", CICADAFARM_MINT),
                 Self::fetch_token_market("$ROBOTCYB", ROBOTCYB_MINT),
