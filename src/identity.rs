@@ -6,6 +6,11 @@ use crate::store::Store;
 
 const STORE_KEY: &str = "identity_ed25519_pkcs8_v1";
 
+#[cfg(target_os = "macos")]
+const KEYCHAIN_SERVICE: &str = "to.cicada.cybos";
+#[cfg(target_os = "macos")]
+const KEYCHAIN_ACCOUNT: &str = "identity-ed25519-pkcs8-v1";
+
 #[derive(Clone)]
 pub(crate) struct NodeIdentity {
     pkcs8: Vec<u8>,
@@ -14,23 +19,61 @@ pub(crate) struct NodeIdentity {
 
 impl NodeIdentity {
     pub(crate) fn load_or_create(store: &Store) -> Self {
-        if let Some(encoded) = store.get(STORE_KEY) {
-            if let Ok(pkcs8) = STANDARD.decode(encoded) {
-                if let Ok(pair) = signature::Ed25519KeyPair::from_pkcs8(&pkcs8) {
-                    return Self { pkcs8, public_key: pair.public_key().as_ref().to_vec() };
+        #[cfg(target_os = "macos")]
+        {
+            if let Some(pkcs8) = keychain_load().expect("cannot read cybOS identity from macOS Keychain") {
+                return Self::from_pkcs8(pkcs8);
+            }
+
+            // One-time migration from the legacy SQLite-backed identity.
+            if let Some(encoded) = store.get(STORE_KEY) {
+                if let Ok(pkcs8) = STANDARD.decode(encoded) {
+                    let identity = Self::from_pkcs8(pkcs8.clone());
+                    keychain_store(&pkcs8).expect("cannot migrate cybOS identity into macOS Keychain");
+                    store.delete(STORE_KEY);
+                    return identity;
                 }
             }
+
+            let identity = Self::generate();
+            keychain_store(&identity.pkcs8).expect("cannot persist cybOS identity in macOS Keychain");
+            return identity;
         }
 
+        #[cfg(not(target_os = "macos"))]
+        {
+            if let Some(encoded) = store.get(STORE_KEY) {
+                if let Ok(pkcs8) = STANDARD.decode(encoded) {
+                    if let Ok(pair) = signature::Ed25519KeyPair::from_pkcs8(&pkcs8) {
+                        return Self {
+                            pkcs8,
+                            public_key: pair.public_key().as_ref().to_vec(),
+                        };
+                    }
+                }
+            }
+
+            let identity = Self::generate();
+            store.set(STORE_KEY, &STANDARD.encode(&identity.pkcs8));
+            identity
+        }
+    }
+
+    fn generate() -> Self {
         let rng = rand::SystemRandom::new();
         let document = signature::Ed25519KeyPair::generate_pkcs8(&rng)
             .expect("OS random source must be available for cybOS identity");
-        let pkcs8 = document.as_ref().to_vec();
-        let pair = signature::Ed25519KeyPair::from_pkcs8(&pkcs8)
-            .expect("generated Ed25519 key must parse");
-        store.set(STORE_KEY, &STANDARD.encode(&pkcs8));
+        Self::from_pkcs8(document.as_ref().to_vec())
+    }
 
-        Self { pkcs8, public_key: pair.public_key().as_ref().to_vec() }
+    fn from_pkcs8(pkcs8: Vec<u8>) -> Self {
+        let pair = signature::Ed25519KeyPair::from_pkcs8(&pkcs8)
+            .expect("stored cybOS identity must remain a valid Ed25519 PKCS#8 key");
+
+        Self {
+            pkcs8,
+            public_key: pair.public_key().as_ref().to_vec(),
+        }
     }
 
     pub(crate) fn node_id(&self) -> String {
@@ -43,17 +86,27 @@ impl NodeIdentity {
 
     #[cfg(test)]
     pub(crate) fn generate_for_test() -> Self {
-        let rng = rand::SystemRandom::new();
-        let document = signature::Ed25519KeyPair::generate_pkcs8(&rng)
-            .expect("test Ed25519 generation must succeed");
-        let pkcs8 = document.as_ref().to_vec();
-        let pair = signature::Ed25519KeyPair::from_pkcs8(&pkcs8)
-            .expect("test Ed25519 key must parse");
-        Self {
-            pkcs8,
-            public_key: pair.public_key().as_ref().to_vec(),
-        }
+        Self::generate()
     }
+}
+
+#[cfg(target_os = "macos")]
+fn keychain_load() -> Result<Option<Vec<u8>>, String> {
+    use security_framework::passwords::{generic_password, PasswordOptions};
+
+    match generic_password(PasswordOptions::new_generic_password(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT)) {
+        Ok(bytes) => Ok(Some(bytes)),
+        Err(error) if error.code() == -25300 => Ok(None), // errSecItemNotFound
+        Err(error) => Err(format!("macOS Keychain read failed with status {}", error.code())),
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn keychain_store(pkcs8: &[u8]) -> Result<(), String> {
+    use security_framework::passwords::set_generic_password;
+
+    set_generic_password(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT, pkcs8)
+        .map_err(|error| format!("macOS Keychain write failed with status {}", error.code()))
 }
 
 pub(crate) fn verify_node_id(node_id: &str, public_key: &[u8]) -> bool {
@@ -77,7 +130,7 @@ pub(crate) fn signing_key(identity: &NodeIdentity) -> signature::Ed25519KeyPair 
 
 #[cfg(test)]
 mod tests {
-    use super::{hex, verify_node_id};
+    use super::{hex, verify_node_id, NodeIdentity};
     use ring::{digest, rand, signature};
     use ring::signature::KeyPair;
 
@@ -89,5 +142,12 @@ mod tests {
         let hash = digest::digest(&digest::SHA256, pair.public_key().as_ref());
         let id = format!("cyb-{}", hex(&hash.as_ref()[..12]));
         assert!(verify_node_id(&id, pair.public_key().as_ref()));
+    }
+
+    #[test]
+    fn generated_identity_has_stable_node_id() {
+        let identity = NodeIdentity::generate_for_test();
+        assert_eq!(identity.node_id(), identity.node_id());
+        assert!(verify_node_id(&identity.node_id(), identity.public_key()));
     }
 }
