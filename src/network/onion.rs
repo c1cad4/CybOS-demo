@@ -33,6 +33,7 @@ pub(crate) struct OnionPacket {
     pub(crate) version: u8,
     pub(crate) route_id: String,
     pub(crate) packet_id: String,
+    pub(crate) session_id: String,
     pub(crate) hop_index: u8,
     pub(crate) expires_at: u64,
     pub(crate) nonce: String,
@@ -313,6 +314,7 @@ pub(crate) fn wrap(
     expires_at: u64,
     payload: &[u8],
     hops: &[OnionHop],
+    hop_session_ids: &[String],
     hop_session_keys: &[[u8; 32]],
     destination_id: &str,
     destination_address: &str,
@@ -320,8 +322,11 @@ pub(crate) fn wrap(
     if hops.is_empty() || hops.len() > MAX_ONION_HOPS {
         return Err("invalid onion hop count");
     }
-    if hops.len() != hop_session_keys.len() {
-        return Err("onion hop/session key count mismatch");
+    if hops.len() != hop_session_keys.len() || hops.len() != hop_session_ids.len() {
+        return Err("onion hop/session metadata count mismatch");
+    }
+    if hop_session_ids.iter().any(|id| id.trim().is_empty()) {
+        return Err("invalid onion session id");
     }
     if payload.is_empty() {
         return Err("empty onion payload");
@@ -373,6 +378,7 @@ pub(crate) fn wrap(
             version: 1,
             route_id: route_id.to_string(),
             packet_id: packet_id.to_string(),
+            session_id: hop_session_ids[index].clone(),
             hop_index,
             expires_at,
             nonce,
@@ -416,8 +422,8 @@ pub(crate) fn peel(
     }
 
     let cache_key = format!(
-        "{}:{}:{}",
-        packet.route_id, packet.packet_id, packet.hop_index
+        "{}:{}:{}:{}",
+        packet.route_id, packet.packet_id, packet.session_id, packet.hop_index
     );
     relay.check_and_mark(cache_key, packet.expires_at, now)?;
 
@@ -448,6 +454,7 @@ pub(crate) fn peel(
             if inner.version != 1
                 || inner.route_id != packet.route_id
                 || inner.packet_id != packet.packet_id
+                || inner.session_id.trim().is_empty()
                 || inner.hop_index != packet.hop_index.saturating_add(1)
                 || inner.expires_at != packet.expires_at
             {
@@ -647,6 +654,7 @@ mod tests {
             expires,
             b"udp onion secret",
             &hops,
+            &vec!["s-a".into(), "s-b".into(), "s-c".into()],
             &keys,
             "cyb-destination",
             &format!("127.0.0.1:{}", destination_port),
