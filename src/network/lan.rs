@@ -42,6 +42,75 @@ const DELIVERED_ACK_CACHE_LIMIT: usize = 512;
 const ONION_ROUTE_ATTEMPT_LIMIT: usize = 5;
 const ONION_SESSION_TTL_SECS: u64 = 120;
 
+#[derive(Clone, Debug)]
+pub(crate) struct LanPeer {
+    pub(crate) node_id: String,
+    pub(crate) address: String,
+    pub(crate) version: String,
+    pub(crate) public_key: Option<String>,
+    pub(crate) fingerprint: Option<String>,
+    pub(crate) trusted: bool,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) enum LanEvent {
+    Chat { message_id: String, node_id: String, message: String },
+}
+
+#[derive(Clone, Debug)]
+pub(crate) enum LanSendStatus {
+    Delivered { message_id: String, peer_id: String },
+    TimedOut { message_id: String, peer_id: String },
+    Failed { message_id: String, peer_id: String, reason: String },
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct KeyInit {
+    from: String,
+    to: String,
+    public_key: String,
+    ephemeral_public_key: String,
+    timestamp: u64,
+    signature: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct KeyReply {
+    from: String,
+    to: String,
+    initiator_ephemeral_public_key: String,
+    responder_ephemeral_public_key: String,
+    timestamp: u64,
+    signature: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct WireEnvelope {
+    message_id: String,
+    from: String,
+    to: String,
+    timestamp: u64,
+    counter: u64,
+    nonce: String,
+    ciphertext: String,
+    signature: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct LanAck {
+    message_id: String,
+    from: String,
+    to: String,
+    signature: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct OnionRoutePeer {
+    pub(crate) node_id: String,
+    pub(crate) address: String,
+    pub(crate) public_key_b64: String,
+}
+
 #[derive(Clone, Debug, Default)]
 struct OnionRelayHealth {
     successes: u64,
@@ -142,8 +211,6 @@ pub(crate) fn build_dynamic_onion_route_candidates(
     let ranked = rank_onion_relays(relays);
     let mut candidates: Vec<Vec<OnionRoutePeer>> = Vec::new();
 
-    // Prefer the healthiest full path first, then shorter paths that can
-    // bypass a failed or unreachable relay without rebuilding the peer set.
     push_candidate(&mut candidates, ranked.clone());
 
     for length in 1..=ranked.len().min(2) {
@@ -166,6 +233,204 @@ pub(crate) fn build_dynamic_onion_route_candidates(
     }
 
     candidates
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct OnionSessionInit {
+    session_id: String,
+    to_node_id: String,
+    ephemeral_public_key: String,
+    timestamp: u64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct OnionSessionReply {
+    session_id: String,
+    relay_id: String,
+    initiator_ephemeral_public_key: String,
+    responder_ephemeral_public_key: String,
+    timestamp: u64,
+    signature: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct OnionRouteBind {
+    session_id: String,
+    route_id: String,
+    hop_index: u8,
+    expires_at: u64,
+    nonce: String,
+    ciphertext: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct OnionRouteBindFrame {
+    route_id: String,
+    hop_index: u8,
+    previous_address: String,
+    next_node_id: String,
+    next_address: String,
+    expires_at: u64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct OnionRouteBindAck {
+    session_id: String,
+    route_id: String,
+    hop_index: u8,
+    expires_at: u64,
+    nonce: String,
+    ciphertext: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct OnionRouteBindAckFrame {
+    accepted: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct OnionReverseAck {
+    route_id: String,
+    packet_id: String,
+    message_id: String,
+    hop_index: u8,
+    ack: LanAck,
+}
+
+#[derive(Clone, Debug)]
+struct OnionRouteBinding {
+    session_id: String,
+    hop_index: u8,
+    previous_address: String,
+    next_node_id: String,
+    next_address: String,
+    expires_at: u64,
+}
+
+#[derive(Clone, Debug)]
+struct OnionHopSession {
+    key: [u8; 32],
+    control_peer: SocketAddr,
+    expires_at: u64,
+}
+
+#[derive(Clone)]
+struct Session {
+    root_key: [u8; 32],
+    key: [u8; 32],
+    public_key: Vec<u8>,
+    counter: u64,
+}
+
+static SEND_SESSIONS: OnceLock<Mutex<HashMap<String, Session>>> = OnceLock::new();
+
+#[cfg(test)]
+static LAST_SENT_WIRE: OnceLock<Mutex<Option<String>>> = OnceLock::new();
+#[cfg(test)]
+static INTEGRATION_TEST_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
+fn send_sessions() -> &'static Mutex<HashMap<String, Session>> {
+    SEND_SESSIONS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn clear_send_session(peer_id: &str) {
+    if let Ok(mut sessions) = send_sessions().lock() {
+        sessions.remove(peer_id);
+    }
+}
+
+#[cfg(test)]
+fn test_guard() -> std::sync::MutexGuard<'static, ()> {
+    INTEGRATION_TEST_LOCK
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .expect("integration test lock poisoned")
+}
+
+#[cfg(test)]
+fn last_sent_wire() -> Option<String> {
+    LAST_SENT_WIRE.get_or_init(|| Mutex::new(None)).lock().ok().and_then(|v| v.clone())
+}
+
+#[cfg(test)]
+fn remember_sent_wire(wire: &str) {
+    if let Ok(mut value) = LAST_SENT_WIRE.get_or_init(|| Mutex::new(None)).lock() {
+        *value = Some(wire.to_string());
+    }
+}
+
+fn now_secs() -> u64 {
+    SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs()
+}
+
+fn fresh_timestamp(ts: u64) -> bool {
+    now_secs().abs_diff(ts) <= REPLAY_WINDOW_SECS
+}
+
+fn signed_key_init(from: &str, to: &str, public_key: &str, eph: &str, timestamp: u64) -> Vec<u8> {
+    [crypto::PROTOCOL, "key-init", from, to, public_key, eph, &timestamp.to_string()].join("|").into_bytes()
+}
+
+fn signed_key_reply(from: &str, to: &str, init_eph: &str, reply_eph: &str, timestamp: u64) -> Vec<u8> {
+    [crypto::PROTOCOL, "key-reply", from, to, init_eph, reply_eph, &timestamp.to_string()].join("|").into_bytes()
+}
+
+fn signed_onion_session_reply(reply: &OnionSessionReply) -> Vec<u8> {
+    [
+        crypto::PROTOCOL,
+        "onion-session-reply",
+        reply.session_id.as_str(),
+        reply.relay_id.as_str(),
+        reply.initiator_ephemeral_public_key.as_str(),
+        reply.responder_ephemeral_public_key.as_str(),
+        &reply.timestamp.to_string(),
+    ]
+    .join("|")
+    .into_bytes()
+}
+
+fn onion_session_transcript(
+    session_id: &str,
+    relay_id: &str,
+    initiator_ephemeral: &[u8],
+    responder_ephemeral: &[u8],
+) -> Vec<u8> {
+    [
+        crypto::PROTOCOL.as_bytes(),
+        b"onion-session-v1",
+        session_id.as_bytes(),
+        relay_id.as_bytes(),
+        initiator_ephemeral,
+        responder_ephemeral,
+    ]
+    .concat()
+}
+
+fn onion_bind_aad(
+    kind: &str,
+    session_id: &str,
+    route_id: &str,
+    hop_index: u8,
+    expires_at: u64,
+) -> Vec<u8> {
+    [
+        crypto::PROTOCOL,
+        kind,
+        session_id,
+        route_id,
+        &hop_index.to_string(),
+        &expires_at.to_string(),
+    ]
+    .join("|")
+    .into_bytes()
+}
+
+fn session_transcript(from: &str, to: &str, init_eph: &[u8], reply_eph: &[u8]) -> Vec<u8> {
+    [crypto::PROTOCOL.as_bytes(), from.as_bytes(), to.as_bytes(), init_eph, reply_eph].concat()
+}
+
+fn aad(message_id: &str, from: &str, to: &str, timestamp: u64, counter: u64) -> Vec<u8> {
+    [crypto::PROTOCOL, "aead", message_id, from, to, &timestamp.to_string(), &counter.to_string()].join("|").into_bytes()
 }
 
 pub(crate) fn spawn_listener(node_id: String, identity: NodeIdentity) -> Receiver<LanEvent> {
@@ -1739,9 +2004,7 @@ fn send_onion_private_chat_with_route_fallback(
         reason: "onion route unavailable".into(),
     };
 
-    let candidates = build_dynamic_onion_route_candidates(relays);
-
-    for candidate in candidates {
+    for candidate in build_dynamic_onion_route_candidates(relays) {
         let started = Instant::now();
         let status = send_onion_private_chat_with_message_id(
             identity,
@@ -1750,7 +2013,6 @@ fn send_onion_private_chat_with_route_fallback(
             message,
             &message_id,
         );
-
         match &status {
             LanSendStatus::Delivered { .. } => {
                 record_onion_relay_outcome(&candidate, true, started.elapsed());
