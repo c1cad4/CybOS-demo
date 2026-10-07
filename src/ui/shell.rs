@@ -3,7 +3,7 @@ use crate::state::CybOs;
 use crate::Icon;
 use eframe::egui::{self, Color32, RichText, Stroke, Vec2};
 
-use crate::APP_VERSION;
+use crate::config::APP_VERSION;
 use std::time::Duration;
 
 impl CybOs {
