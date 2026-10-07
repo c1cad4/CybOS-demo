@@ -14,7 +14,7 @@ Core release for the native local-first cybOS runtime.
 - background token-market refreshes;
 - background Solana balance refreshes;
 - real local LAN peer discovery;
-- explicit LAN CybChat broadcast;
+- explicit directed LAN CybChat delivery with bounded ACK;
 - thin eframe shell with native UI composition;
 - planner JSON tests and navigation/configuration tests;
 - Linux and macOS CI coverage.
