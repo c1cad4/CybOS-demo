@@ -8,6 +8,13 @@
 use crate::crypto;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
+use std::net::{SocketAddr, UdpSocket};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc, Mutex,
+};
+use std::thread;
+use std::time::Duration;
 use uuid::Uuid;
 
 pub(crate) const MAX_ONION_HOPS: usize = 4;
@@ -50,6 +57,141 @@ pub(crate) struct DeliverPacket {
 pub(crate) enum PeelResult {
     Forward(ForwardPacket),
     Deliver(DeliverPacket),
+}
+
+#[derive(Clone, Debug, Default)]
+pub(crate) struct OnionRelayTable {
+    bindings: Arc<Mutex<HashMap<(String, u8), [u8; 32]>>>,
+}
+
+impl OnionRelayTable {
+    pub(crate) fn new() -> Self {
+        Self::default()
+    }
+
+    pub(crate) fn bind_route(
+        &self,
+        route_id: &str,
+        hop_index: u8,
+        session_key: [u8; 32],
+    ) -> Result<(), &'static str> {
+        let mut bindings = self.bindings.lock().map_err(|_| "relay table poisoned")?;
+        if bindings.len() >= 256 && !bindings.contains_key(&(route_id.to_string(), hop_index)) {
+            return Err("relay route table full");
+        }
+        bindings.insert((route_id.to_string(), hop_index), session_key);
+        Ok(())
+    }
+
+    fn key_for(&self, route_id: &str, hop_index: u8) -> Option<[u8; 32]> {
+        self.bindings
+            .lock()
+            .ok()
+            .and_then(|bindings| bindings.get(&(route_id.to_string(), hop_index)).copied())
+    }
+
+    pub(crate) fn remove_route(&self, route_id: &str) {
+        if let Ok(mut bindings) = self.bindings.lock() {
+            bindings.retain(|(id, _), _| id != route_id);
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub(crate) struct OnionDelivery {
+    pub(crate) route_id: String,
+    pub(crate) packet_id: String,
+    pub(crate) payload: Vec<u8>,
+}
+
+pub(crate) const ONION_PREFIX: &str = "CYBOS_ONION";
+pub(crate) const ONION_DELIVERY_PREFIX: &str = "CYBOS_ONION_DELIVERY";
+
+pub(crate) fn spawn_udp_relay(
+    bind_addr: SocketAddr,
+    table: OnionRelayTable,
+    stop: Arc<AtomicBool>,
+) -> std::io::Result<thread::JoinHandle<()>> {
+    let socket = UdpSocket::bind(bind_addr)?;
+    socket.set_read_timeout(Some(Duration::from_millis(100)))?;
+
+    let handle = thread::spawn(move || {
+        let mut cache = OnionRelayCache::new();
+        let mut buffer = [0u8; MAX_ONION_BYTES + 1024];
+
+        while stop.load(Ordering::Acquire) {
+            let Ok((size, peer_addr)) = socket.recv_from(&mut buffer) else {
+                continue;
+            };
+            if size > MAX_ONION_BYTES + 512 {
+                continue;
+            }
+            let Ok(text) = std::str::from_utf8(&buffer[..size]) else {
+                continue;
+            };
+            let Some(payload) = text
+                .strip_prefix(ONION_PREFIX)
+                .and_then(|rest| rest.strip_prefix(' '))
+            else {
+                continue;
+            };
+            let Ok(packet) = serde_json::from_str::<OnionPacket>(payload) else {
+                continue;
+            };
+            let Some(key) = table.key_for(&packet.route_id, packet.hop_index) else {
+                continue;
+            };
+
+            let now = match std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) {
+                Ok(value) => value.as_secs(),
+                Err(_) => continue,
+            };
+
+            match peel(
+                &mut cache,
+                &packet,
+                &packet.route_id,
+                packet.hop_index,
+                &key,
+                now,
+            ) {
+                Ok(PeelResult::Forward(forward)) => {
+                    let Ok(next_addr) = forward.next_address.parse::<SocketAddr>() else {
+                        continue;
+                    };
+                    let Ok(body) = serde_json::to_string(&forward.packet) else {
+                        continue;
+                    };
+                    let _ = socket.send_to(
+                        format!("{} {}", ONION_PREFIX, body).as_bytes(),
+                        next_addr,
+                    );
+                }
+                Ok(PeelResult::Deliver(delivery)) => {
+                    let Ok(destination) = delivery.destination_address.parse::<SocketAddr>() else {
+                        continue;
+                    };
+                    let envelope = OnionDelivery {
+                        route_id: packet.route_id.clone(),
+                        packet_id: packet.packet_id.clone(),
+                        payload: delivery.payload,
+                    };
+                    let Ok(body) = serde_json::to_string(&envelope) else {
+                        continue;
+                    };
+                    let _ = socket.send_to(
+                        format!("{} {}", ONION_DELIVERY_PREFIX, body).as_bytes(),
+                        destination,
+                    );
+                }
+                Err(_) => {
+                    let _ = peer_addr;
+                }
+            }
+        }
+    });
+
+    Ok(handle)
 }
 
 #[derive(Clone, Debug)]
@@ -316,6 +458,105 @@ mod tests {
         OnionHop {
             node_id: name.to_string(),
             address: address.to_string(),
+        }
+    }
+
+    fn free_port() -> u16 {
+        UdpSocket::bind(("127.0.0.1", 0))
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port()
+    }
+
+    #[test]
+    fn three_hop_udp_relay_forwards_only_through_bound_routes() {
+        let route = new_route_id();
+        let packet_id = new_packet_id();
+        let expires = 1_000_000_100;
+        let keys = [[11u8; 32], [12u8; 32], [13u8; 32]];
+        let relay_ports = [free_port(), free_port(), free_port()];
+        let destination_port = free_port();
+        let hops = vec![
+            hop("relay-a", &format!("127.0.0.1:{}", relay_ports[0])),
+            hop("relay-b", &format!("127.0.0.1:{}", relay_ports[1])),
+            hop("relay-c", &format!("127.0.0.1:{}", relay_ports[2])),
+        ];
+
+        let tables = [
+            OnionRelayTable::new(),
+            OnionRelayTable::new(),
+            OnionRelayTable::new(),
+        ];
+        for index in 0..3 {
+            tables[index]
+                .bind_route(&route, index as u8, keys[index])
+                .unwrap();
+        }
+
+        let stops = [
+            Arc::new(AtomicBool::new(true)),
+            Arc::new(AtomicBool::new(true)),
+            Arc::new(AtomicBool::new(true)),
+        ];
+        let mut handles = Vec::new();
+        for index in 0..3 {
+            handles.push(
+                spawn_udp_relay(
+                    format!("127.0.0.1:{}", relay_ports[index])
+                        .parse()
+                        .unwrap(),
+                    tables[index].clone(),
+                    stops[index].clone(),
+                )
+                .unwrap(),
+            );
+        }
+
+        let destination = UdpSocket::bind(("127.0.0.1", destination_port)).unwrap();
+        destination
+            .set_read_timeout(Some(Duration::from_secs(2)))
+            .unwrap();
+
+        let packet = wrap(
+            &route,
+            &packet_id,
+            expires,
+            b"udp onion secret",
+            &hops,
+            &keys,
+            "cyb-destination",
+            &format!("127.0.0.1:{}", destination_port),
+        )
+        .unwrap();
+
+        let source = UdpSocket::bind(("127.0.0.1", 0)).unwrap();
+        let body = serde_json::to_string(&packet).unwrap();
+        source
+            .send_to(
+                format!("{} {}", ONION_PREFIX, body).as_bytes(),
+                format!("127.0.0.1:{}", relay_ports[0]),
+            )
+            .unwrap();
+
+        let mut buffer = [0u8; 8192];
+        let (size, sender) = destination.recv_from(&mut buffer).unwrap();
+        let text = std::str::from_utf8(&buffer[..size]).unwrap();
+        let payload = text.strip_prefix(ONION_DELIVERY_PREFIX)
+            .and_then(|rest| rest.strip_prefix(' '))
+            .unwrap();
+        let delivery: OnionDelivery = serde_json::from_str(payload).unwrap();
+
+        assert_eq!(sender.ip(), std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST));
+        assert_eq!(delivery.route_id, route);
+        assert_eq!(delivery.packet_id, packet_id);
+        assert_eq!(delivery.payload, b"udp onion secret");
+
+        for stop in stops {
+            stop.store(false, Ordering::Release);
+        }
+        for handle in handles {
+            let _ = handle.join();
         }
     }
 
