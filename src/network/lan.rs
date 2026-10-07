@@ -23,6 +23,8 @@ const KEY_INIT_PREFIX: &str = "CYBOS_KEY_INIT";
 const KEY_REPLY_PREFIX: &str = "CYBOS_KEY_REPLY";
 const CHAT_PREFIX: &str = "CYBOS_CHAT";
 const ACK_PREFIX: &str = "CYBOS_ACK";
+const ONION_SESSION_INIT_PREFIX: &str = "CYBOS_ONION_SESSION_INIT";
+const ONION_SESSION_REPLY_PREFIX: &str = "CYBOS_ONION_SESSION_REPLY";
 const ONION_BIND_PREFIX: &str = "CYBOS_ONION_BIND";
 const ONION_BIND_ACK_PREFIX: &str = "CYBOS_ONION_BIND_ACK";
 const ONION_PREFIX: &str = onion::ONION_PREFIX;
@@ -35,6 +37,8 @@ const KEY_TIMEOUT: Duration = Duration::from_millis(900);
 const REPLAY_WINDOW_SECS: u64 = 300;
 const MAX_SESSIONS: usize = 128;
 const MAX_ONION_ROUTES: usize = 256;
+const MAX_ONION_SESSIONS: usize = 256;
+const ONION_SESSION_TTL_SECS: u64 = 120;
 
 #[derive(Clone, Debug)]
 pub(crate) struct LanPeer {
@@ -105,32 +109,57 @@ pub(crate) struct OnionRoutePeer {
     pub(crate) public_key_b64: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
-struct OnionRouteBind {
-    route_id: String,
-    hop_index: u8,
-    source_id: String,
-    source_public_key: String,
-    previous_node_id: String,
-    previous_address: String,
-    next_node_id: String,
-    next_address: String,
-    expires_at: u64,
+#[derive(Debug, Serialize, Deserialize)]
+struct OnionSessionInit {
+    session_id: String,
+    to_node_id: String,
+    ephemeral_public_key: String,
+    timestamp: u64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct OnionSessionReply {
+    session_id: String,
+    relay_id: String,
+    initiator_ephemeral_public_key: String,
+    responder_ephemeral_public_key: String,
+    timestamp: u64,
     signature: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-struct OnionRouteBindAck {
+struct OnionRouteBind {
+    session_id: String,
     route_id: String,
     hop_index: u8,
-    source_id: String,
-    relay_id: String,
-    previous_node_id: String,
+    expires_at: u64,
+    nonce: String,
+    ciphertext: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct OnionRouteBindFrame {
+    route_id: String,
+    hop_index: u8,
     previous_address: String,
     next_node_id: String,
     next_address: String,
     expires_at: u64,
-    signature: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct OnionRouteBindAck {
+    session_id: String,
+    route_id: String,
+    hop_index: u8,
+    expires_at: u64,
+    nonce: String,
+    ciphertext: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct OnionRouteBindAckFrame {
+    accepted: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -144,12 +173,18 @@ struct OnionReverseAck {
 
 #[derive(Clone, Debug)]
 struct OnionRouteBinding {
-    source_id: String,
+    session_id: String,
     hop_index: u8,
-    previous_node_id: String,
     previous_address: String,
     next_node_id: String,
     next_address: String,
+    expires_at: u64,
+}
+
+#[derive(Clone, Debug)]
+struct OnionHopSession {
+    key: [u8; 32],
+    control_peer: SocketAddr,
     expires_at: u64,
 }
 
@@ -214,37 +249,51 @@ fn signed_key_reply(from: &str, to: &str, init_eph: &str, reply_eph: &str, times
     [crypto::PROTOCOL, "key-reply", from, to, init_eph, reply_eph, &timestamp.to_string()].join("|").into_bytes()
 }
 
-fn signed_onion_route_bind(bind: &OnionRouteBind) -> Vec<u8> {
+fn signed_onion_session_reply(reply: &OnionSessionReply) -> Vec<u8> {
     [
         crypto::PROTOCOL,
-        "onion-bind",
-        bind.route_id.as_str(),
-        &bind.hop_index.to_string(),
-        bind.source_id.as_str(),
-        bind.source_public_key.as_str(),
-        bind.previous_node_id.as_str(),
-        bind.previous_address.as_str(),
-        bind.next_node_id.as_str(),
-        bind.next_address.as_str(),
-        &bind.expires_at.to_string(),
+        "onion-session-reply",
+        reply.session_id.as_str(),
+        reply.relay_id.as_str(),
+        reply.initiator_ephemeral_public_key.as_str(),
+        reply.responder_ephemeral_public_key.as_str(),
+        &reply.timestamp.to_string(),
     ]
     .join("|")
     .into_bytes()
 }
 
-fn signed_onion_route_bind_ack(ack: &OnionRouteBindAck) -> Vec<u8> {
+fn onion_session_transcript(
+    session_id: &str,
+    relay_id: &str,
+    initiator_ephemeral: &[u8],
+    responder_ephemeral: &[u8],
+) -> Vec<u8> {
+    [
+        crypto::PROTOCOL.as_bytes(),
+        b"onion-session-v1",
+        session_id.as_bytes(),
+        relay_id.as_bytes(),
+        initiator_ephemeral,
+        responder_ephemeral,
+    ]
+    .concat()
+}
+
+fn onion_bind_aad(
+    kind: &str,
+    session_id: &str,
+    route_id: &str,
+    hop_index: u8,
+    expires_at: u64,
+) -> Vec<u8> {
     [
         crypto::PROTOCOL,
-        "onion-bind-ack",
-        ack.route_id.as_str(),
-        &ack.hop_index.to_string(),
-        ack.source_id.as_str(),
-        ack.relay_id.as_str(),
-        ack.previous_node_id.as_str(),
-        ack.previous_address.as_str(),
-        ack.next_node_id.as_str(),
-        ack.next_address.as_str(),
-        &ack.expires_at.to_string(),
+        kind,
+        session_id,
+        route_id,
+        &hop_index.to_string(),
+        &expires_at.to_string(),
     ]
     .join("|")
     .into_bytes()
