@@ -1465,21 +1465,21 @@ fn send_onion_private_chat_with_message_id(
 ) -> LanSendStatus {
     if message.trim().is_empty() {
         return LanSendStatus::Failed {
-            message_id,
+            message_id: message_id.to_string(),
             peer_id: destination.node_id.clone(),
             reason: "empty message".into(),
         };
     }
     if message.as_bytes().len() > MAX_CHAT_BYTES {
         return LanSendStatus::Failed {
-            message_id,
+            message_id: message_id.to_string(),
             peer_id: destination.node_id.clone(),
             reason: format!("message exceeds {} bytes", MAX_CHAT_BYTES),
         };
     }
     if relays.is_empty() || relays.len() > onion::MAX_ONION_HOPS {
         return LanSendStatus::Failed {
-            message_id,
+            message_id: message_id.to_string(),
             peer_id: destination.node_id.clone(),
             reason: "invalid onion relay count".into(),
         };
@@ -1489,14 +1489,14 @@ fn send_onion_private_chat_with_message_id(
     for peer in relays.iter().chain(std::iter::once(destination)) {
         if peer.node_id == identity.node_id() || !seen_ids.insert(peer.node_id.clone()) {
             return LanSendStatus::Failed {
-                message_id,
+                message_id: message_id.to_string(),
                 peer_id: destination.node_id.clone(),
                 reason: "onion route contains duplicate node identity".into(),
             };
         }
         if peer.address.parse::<SocketAddr>().is_err() {
             return LanSendStatus::Failed {
-                message_id,
+                message_id: message_id.to_string(),
                 peer_id: destination.node_id.clone(),
                 reason: "onion route contains invalid address".into(),
             };
@@ -1507,7 +1507,7 @@ fn send_onion_private_chat_with_message_id(
         Ok(socket) => socket,
         Err(e) => {
             return LanSendStatus::Failed {
-                message_id,
+                message_id: message_id.to_string(),
                 peer_id: destination.node_id.clone(),
                 reason: e.to_string(),
             }
@@ -1523,7 +1523,7 @@ fn send_onion_private_chat_with_message_id(
             Ok(session) => relay_sessions.push(session),
             Err(reason) => {
                 return LanSendStatus::Failed {
-                    message_id,
+                    message_id: message_id.to_string(),
                     peer_id: destination.node_id.clone(),
                     reason: format!("anonymous relay session {}: {}", relay.node_id, reason),
                 }
@@ -1534,7 +1534,7 @@ fn send_onion_private_chat_with_message_id(
         Ok(session) => session,
         Err(reason) => {
             return LanSendStatus::Failed {
-                message_id,
+                message_id: message_id.to_string(),
                 peer_id: destination.node_id.clone(),
                 reason: format!("destination session: {}", reason),
             }
@@ -1572,7 +1572,7 @@ fn send_onion_private_chat_with_message_id(
             expires_at,
         ) {
             return LanSendStatus::Failed {
-                message_id,
+                message_id: message_id.to_string(),
                 peer_id: destination.node_id.clone(),
                 reason: format!("relay bind {}: {}", relay.node_id, reason),
             };
@@ -1592,7 +1592,7 @@ fn send_onion_private_chat_with_message_id(
         Ok(key) => key,
         Err(reason) => {
             return LanSendStatus::Failed {
-                message_id,
+                message_id: message_id.to_string(),
                 peer_id: destination.node_id.clone(),
                 reason: reason.into(),
             }
@@ -1603,7 +1603,7 @@ fn send_onion_private_chat_with_message_id(
             Ok(value) => value,
             Err(reason) => {
                 return LanSendStatus::Failed {
-                    message_id,
+                    message_id: message_id.to_string(),
                     peer_id: destination.node_id.clone(),
                     reason: reason.into(),
                 }
@@ -1612,7 +1612,7 @@ fn send_onion_private_chat_with_message_id(
     let signed = [
         crypto::PROTOCOL,
         "message",
-        message_id.as_str(),
+        message_id,
         identity.node_id().as_str(),
         destination.node_id.as_str(),
         &timestamp.to_string(),
@@ -1623,7 +1623,7 @@ fn send_onion_private_chat_with_message_id(
     .join("|")
     .into_bytes();
     let envelope = WireEnvelope {
-        message_id: message_id.clone(),
+        message_id: message_id.to_string(),
         from: identity.node_id(),
         to: destination.node_id.clone(),
         timestamp,
@@ -1636,14 +1636,14 @@ fn send_onion_private_chat_with_message_id(
         Ok(body) if body.len() <= MAX_WIRE_BYTES => body,
         Ok(_) => {
             return LanSendStatus::Failed {
-                message_id,
+                message_id: message_id.to_string(),
                 peer_id: destination.node_id.clone(),
                 reason: "encrypted envelope exceeds wire limit".into(),
             }
         }
         Err(e) => {
             return LanSendStatus::Failed {
-                message_id,
+                message_id: message_id.to_string(),
                 peer_id: destination.node_id.clone(),
                 reason: e.to_string(),
             }
@@ -1675,7 +1675,7 @@ fn send_onion_private_chat_with_message_id(
         Ok(packet) => packet,
         Err(reason) => {
             return LanSendStatus::Failed {
-                message_id,
+                message_id: message_id.to_string(),
                 peer_id: destination.node_id.clone(),
                 reason: reason.into(),
             }
@@ -1685,14 +1685,14 @@ fn send_onion_private_chat_with_message_id(
         Ok(body) if body.len() <= onion::MAX_ONION_BYTES => body,
         Ok(_) => {
             return LanSendStatus::Failed {
-                message_id,
+                message_id: message_id.to_string(),
                 peer_id: destination.node_id.clone(),
                 reason: "onion packet exceeds wire limit".into(),
             }
         }
         Err(e) => {
             return LanSendStatus::Failed {
-                message_id,
+                message_id: message_id.to_string(),
                 peer_id: destination.node_id.clone(),
                 reason: e.to_string(),
             }
@@ -1708,7 +1708,7 @@ fn send_onion_private_chat_with_message_id(
         &relays[0].address,
     ) {
         return LanSendStatus::Failed {
-            message_id,
+            message_id: message_id.to_string(),
             peer_id: destination.node_id.clone(),
             reason: e.to_string(),
         };
@@ -1718,7 +1718,7 @@ fn send_onion_private_chat_with_message_id(
         Ok(key) => key,
         Err(_) => {
             return LanSendStatus::Failed {
-                message_id,
+                message_id: message_id.to_string(),
                 peer_id: destination.node_id.clone(),
                 reason: "invalid destination identity key".into(),
             }
@@ -1753,7 +1753,7 @@ fn send_onion_private_chat_with_message_id(
                 let ack_signed = [
                     crypto::PROTOCOL,
                     "ack",
-                    reverse.ack.message_id.as_str(),
+                    reverse.ack.message_id,
                     reverse.ack.from.as_str(),
                     reverse.ack.to.as_str(),
                 ]
@@ -1769,7 +1769,7 @@ fn send_onion_private_chat_with_message_id(
                     crypto::ratchet_chain(&destination_session.key, counter)
                 else {
                     return LanSendStatus::Failed {
-                        message_id,
+                        message_id: message_id.to_string(),
                         peer_id: destination.node_id.clone(),
                         reason: "cannot advance destination ratchet".into(),
                     };
@@ -1780,14 +1780,14 @@ fn send_onion_private_chat_with_message_id(
                     sessions.insert(destination.node_id.clone(), destination_session.clone());
                 }
                 return LanSendStatus::Delivered {
-                    message_id,
+                    message_id: message_id.to_string(),
                     peer_id: destination.node_id.clone(),
                 };
             }
             Err(_) => {
                 clear_send_session(&destination.node_id);
                 return LanSendStatus::TimedOut {
-                    message_id,
+                    message_id: message_id.to_string(),
                     peer_id: destination.node_id.clone(),
                 };
             }
