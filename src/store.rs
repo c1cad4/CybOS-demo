@@ -6,11 +6,13 @@ use std::{fs, path::PathBuf};
 use std::os::unix::fs::PermissionsExt;
 use uuid::Uuid;
 
+use crate::crypto;
 use crate::models::{Event, GraphLink, GraphNode, Memory};
 
 pub(crate) struct Store {
     pub(crate) path: PathBuf,
     conn: Connection,
+    chat_key: Option<[u8; 32]>,
 }
 impl Store {
     pub(crate) fn open() -> Self {
@@ -89,8 +91,62 @@ impl Store {
             "#,
         )
         .expect("cannot initialize database");
-        Self { path, conn }
+        Self {
+            path,
+            conn,
+            chat_key: None,
+        }
     }
+
+    pub(crate) fn configure_chat_key(&mut self, key: [u8; 32]) {
+        self.chat_key = Some(key);
+    }
+
+    fn chat_aad(id: &str, time: &str, who: &str, mine: bool) -> Vec<u8> {
+        [
+            b"cybOS/chat-storage/v1".as_slice(),
+            id.as_bytes(),
+            time.as_bytes(),
+            who.as_bytes(),
+            if mine { b"1".as_slice() } else { b"0".as_slice() },
+        ]
+        .concat()
+    }
+
+    fn encrypt_chat_text(
+        &self,
+        id: &str,
+        time: &str,
+        who: &str,
+        mine: bool,
+        text: &str,
+    ) -> Option<String> {
+        let key = self.chat_key.as_ref()?;
+        let aad = Self::chat_aad(id, time, who, mine);
+        let (nonce, ciphertext) = crypto::encrypt(key, &aad, text.as_bytes()).ok()?;
+        Some(format!("v1:{nonce}:{ciphertext}"))
+    }
+
+    fn decrypt_chat_text(
+        &self,
+        id: &str,
+        time: &str,
+        who: &str,
+        mine: bool,
+        stored: &str,
+    ) -> Option<String> {
+        let key = self.chat_key.as_ref()?;
+        let mut parts = stored.splitn(3, ':');
+        if parts.next() != Some("v1") {
+            return Some(stored.to_string());
+        }
+        let nonce = parts.next()?;
+        let ciphertext = parts.next()?;
+        let aad = Self::chat_aad(id, time, who, mine);
+        let plaintext = crypto::decrypt(key, &aad, nonce, ciphertext).ok()?;
+        String::from_utf8(plaintext).ok()
+    }
+
     pub(crate) fn get(&self, key: &str) -> Option<String> {
         self.conn
             .query_row("SELECT value FROM kv WHERE key=?1", [key], |r| r.get(0))
@@ -242,7 +298,7 @@ impl Store {
         let mut st = self
             .conn
             .prepare(
-                "SELECT who,text,mine
+                "SELECT id,time,who,text,mine
                  FROM chat_messages
                  ORDER BY rowid ASC
                  LIMIT 500",
@@ -250,10 +306,29 @@ impl Store {
             .unwrap();
 
         st.query_map([], |r| {
-            let who: String = r.get(0)?;
-            let text: String = r.get(1)?;
-            let mine: i64 = r.get(2)?;
-            Ok((who, text, mine != 0))
+            let id: String = r.get(0)?;
+            let time: String = r.get(1)?;
+            let who: String = r.get(2)?;
+            let stored_text: String = r.get(3)?;
+            let mine: i64 = r.get(4)?;
+
+            let plain = match self.decrypt_chat_text(&id, &time, &who, mine != 0, &stored_text) {
+                Some(text) if stored_text.starts_with("v1:") => text,
+                Some(text) => {
+                    if let Some(encrypted) =
+                        self.encrypt_chat_text(&id, &time, &who, mine != 0, &text)
+                    {
+                        let _ = self.conn.execute(
+                            "UPDATE chat_messages SET text=?1 WHERE id=?2",
+                            params![encrypted, id],
+                        );
+                    }
+                    text
+                }
+                None => "[encrypted message unavailable]".to_string(),
+            };
+
+            Ok((who, plain, mine != 0))
         })
         .unwrap()
         .filter_map(Result::ok)
@@ -261,16 +336,20 @@ impl Store {
     }
 
     pub(crate) fn add_chat_message(&self, who: &str, text: &str, mine: bool) {
+        let id = Uuid::new_v4().to_string();
+        let time = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        let stored_text = match self.chat_key {
+            Some(_) => match self.encrypt_chat_text(&id, &time, who, mine, text) {
+                Some(encrypted) => encrypted,
+                None => return,
+            },
+            None => text.to_string(),
+        };
+
         let _ = self.conn.execute(
             "INSERT INTO chat_messages(id,time,who,text,mine)
              VALUES(?1,?2,?3,?4,?5)",
-            params![
-                Uuid::new_v4().to_string(),
-                Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
-                who,
-                text,
-                if mine { 1 } else { 0 }
-            ],
+            params![id, time, who, stored_text, if mine { 1 } else { 0 }],
         );
     }
 
