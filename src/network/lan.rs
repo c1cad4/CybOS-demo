@@ -1558,8 +1558,27 @@ impl crate::state::CybOs {
                         None => Some(peer),
                     }
                 }).collect();
-                let target_still_exists = self.lan_target.as_deref().map(|target| self.lan_peers.iter().any(|peer| peer.node_id == target)).unwrap_or(false);
-                if !target_still_exists { self.lan_target = self.lan_peers.first().map(|peer| peer.node_id.clone()); }
+                let target_still_exists = self
+                    .lan_target
+                    .as_deref()
+                    .map(|target| self.lan_peers.iter().any(|peer| peer.node_id == target))
+                    .unwrap_or(false);
+                if !target_still_exists {
+                    self.lan_target = self.lan_peers.first().map(|peer| peer.node_id.clone());
+                }
+
+                let target_id = self.lan_target.clone();
+                let trusted_relay_ids: Vec<String> = self
+                    .lan_peers
+                    .iter()
+                    .filter(|peer| peer.trusted)
+                    .map(|peer| peer.node_id.clone())
+                    .collect();
+                self.lan_onion_relays.retain(|relay_id| {
+                    target_id.as_deref() != Some(relay_id.as_str())
+                        && trusted_relay_ids.iter().any(|id| id == relay_id)
+                });
+
                 self.lan_scan = None;
                 self.last_scan = Some(std::time::Instant::now());
                 self.add_event("NETWORK", format!("LAN scan completed: {} authenticated peer(s) discovered", self.lan_peers.len()));
