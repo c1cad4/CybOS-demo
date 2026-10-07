@@ -18,6 +18,9 @@ Both defects were fixed on this branch.
 
 - Node ID is now always derived from the persistent Ed25519 public key.
 - Sender-side ratchet session is dropped after an ACK timeout so the next send performs a fresh X25519 handshake.
+- Routed sends can preserve one message ID across bounded fallback route attempts.
+- Recently delivered message IDs retain signed ACKs in a bounded cache so a recovered route can acknowledge a duplicate without re-delivering the chat payload.
+- A recovered destination session advances its ratchet counter when accepting a valid duplicate envelope, keeping both sides synchronized.
 - Receiver only advances its chain after successful decryption and successful next-chain derivation.
 - Inbound session state is bounded to 128 concurrent peer sessions.
 - Local Unix runtime directory is hardened to mode 0700 and the SQLite database to mode 0600 when permissions can be changed.
@@ -91,6 +94,8 @@ Current automated integration coverage also includes:
 - live UDP rejection of wrong-recipient envelopes
 - forged ACK signature rejection
 - persistent TOFU key replacement rejection
+- routed fallback after an unavailable relay
+- idempotent duplicate-delivery ACK recovery
 
 
 ### Multi-hop onion transport
@@ -118,10 +123,12 @@ Completed:
 - automatic anonymous per-hop X25519 session establishment;
 - encrypted route binding;
 - reverse routed signed destination ACK delivery;
+- bounded fallback through shorter selected relay paths;
+- idempotent duplicate-delivery ACK recovery with ratchet resynchronization;
 - explicit route selection and ordered relay hops in CybChat UI.
 
 Still to harden:
-- relay crash/failure recovery during an active route;
+- relay crash/failure recovery after a packet has already entered an active route;
 - route-expiry refresh under long-lived sessions;
-- malformed route-binding and packet-drop fault injection across process boundaries;
+- broader malformed route-binding and packet-drop fault injection across process boundaries;
 - broader traffic-analysis and endpoint privacy protections.
