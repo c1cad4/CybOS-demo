@@ -122,6 +122,7 @@ struct OnionRouteBind {
 struct OnionReverseAck {
     route_id: String,
     packet_id: String,
+    message_id: String,
     hop_index: u8,
     ack: LanAck,
 }
@@ -536,6 +537,7 @@ fn spawn_listener_on_addr(
                 if let Ok(body) = serde_json::to_string(&OnionReverseAck {
                     route_id: delivery.route_id,
                     packet_id: delivery.packet_id,
+                    message_id: envelope.message_id.clone(),
                     hop_index: u8::MAX,
                     ack,
                 }) {
@@ -556,7 +558,7 @@ fn spawn_listener_on_addr(
                 let Ok(mut reverse) = serde_json::from_str::<OnionReverseAck>(payload) else { continue };
                 let Some(binding) = onion_bindings.get(&reverse.route_id).cloned() else { continue };
                 if reverse.ack.to != binding.source_id
-                    || reverse.ack.message_id != reverse.packet_id
+                    || reverse.ack.message_id != reverse.message_id
                     || peer_addr.to_string() != binding.next_address
                 {
                     continue;
@@ -1113,6 +1115,7 @@ fn send_onion_private_chat(
                 };
                 if reverse.route_id != route_id
                     || reverse.packet_id != packet_id
+                    || reverse.message_id != message_id
                     || reverse.hop_index != 0
                     || reverse.ack.message_id != message_id
                     || reverse.ack.to != identity.node_id()
