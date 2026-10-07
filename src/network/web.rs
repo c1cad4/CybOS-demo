@@ -45,64 +45,30 @@ SOURCE-GROUNDED RULES:
 Return only the final user-facing answer.
 "#;
 
-        let payload = json!({
-            "model": "mlx-community/Qwen3.5-9B-MLX-4bit",
-            "messages": [
-                {
-                    "role": "system",
-                    "content": system_prompt
-                },
-                {
-                    "role": "user",
-                    "content": format!(
-                        "USER REQUEST:\n{}\n\nWEB SOURCE:\n{}",
-                        user_request,
-                        source_result
-                    )
+        let value =
+            match self.qwen_chat_json_with_temperature(
+                system_prompt,
+                &format!(
+                    "USER REQUEST:\n{}\n\nWEB SOURCE:\n{}",
+                    user_request,
+                    source_result
+                ),
+                350,
+                0.0,
+            ) {
+                Ok(value) => value,
+                Err(error) => {
+                    return format!(
+                        "Источник найден и прочитан, но Qwen не смог подготовить ответ.\n\nОшибка: {}",
+                        error
+                    );
                 }
-            ],
-            "max_tokens": 350,
-            "temperature": 0.0,
-            "chat_template_kwargs": {
-                "enable_thinking": false
-            }
-        });
-
-        let response = match ureq::post(url)
-            .header("Content-Type", "application/json")
-            .send_json(&payload)
-        {
-            Ok(response) => response,
-            Err(error) => {
-                return format!(
-                    "Источник найден и прочитан, но Qwen не смог подготовить ответ.\n\nОшибка: {}",
-                    error
-                );
-            }
-        };
-
-        let body = match response.into_body().read_to_string() {
-            Ok(body) => body,
-            Err(error) => {
-                return format!(
-                    "Источник найден и прочитан, но ответ Qwen не удалось получить.\n\nОшибка: {}",
-                    error
-                );
-            }
-        };
-
-        let value: serde_json::Value = match serde_json::from_str(&body) {
-            Ok(value) => value,
-            Err(error) => {
-                return format!(
-                    "Источник найден и прочитан, но Qwen вернул некорректный ответ.\n\nОшибка: {}",
-                    error
-                );
-            }
-        };
+            };
 
         let answer = match Self::qwen_visible_content(&value) {
-            Some(content) if !content.trim().is_empty() => content.trim().to_string(),
+            Some(content) if !content.trim().is_empty() => {
+                content.trim().to_string()
+            }
             _ => {
                 return "Источник был прочитан, но Qwen не вернул итоговый ответ.".into();
             }

@@ -8,7 +8,7 @@ use std::{
 
 impl CybOs {
     pub(crate) fn ensure_qwen(&mut self) {
-        let address = "127.0.0.1:8080";
+        let address = QWEN_ADDRESS;
 
         // Qwen уже работает — ничего не запускаем повторно.
         if let Ok(addr) = address.parse() {
@@ -49,7 +49,7 @@ impl CybOs {
         match Command::new(&executable)
             .args([
                 "--model",
-                "mlx-community/Qwen3.5-9B-MLX-4bit",
+                QWEN_MODEL,
                 "--host",
                 "127.0.0.1",
                 "--port",
@@ -69,30 +69,6 @@ impl CybOs {
                 self.status = "LOCAL-FIRST · QWEN ERROR".into();
             }
         }
-    }
-
-    pub(crate) fn qwen_visible_content<'a>(value: &'a serde_json::Value) -> Option<&'a str> {
-        let message = &value["choices"][0]["message"];
-
-        if let Some(content) = message["content"].as_str() {
-            if !content.trim().is_empty() {
-                return Some(content.trim());
-            }
-        }
-
-        if let Some(reasoning) = message["reasoning"].as_str() {
-            if !reasoning.trim().is_empty() {
-                return Some(reasoning.trim());
-            }
-        }
-
-        if let Some(text) = value["choices"][0]["text"].as_str() {
-            if !text.trim().is_empty() {
-                return Some(text.trim());
-            }
-        }
-
-        None
     }
 
     pub(crate) fn robot_answer(&self, q: &str) -> String {
@@ -151,62 +127,21 @@ Reply in the same language as the user.
             brain_context, tool_context
         );
 
-        let payload = json!({
-            "model": "mlx-community/Qwen3.5-9B-MLX-4bit",
-            "messages": [
-                {
-                    "role": "system",
-                    "content": system_prompt
-                },
-                {
-                    "role": "user",
-                    "content": q
+        match self.qwen_chat_json_with_temperature(
+            &system_prompt,
+            q,
+            400,
+            0.7,
+        ) {
+            Ok(value) => match Self::qwen_visible_content(&value) {
+                Some(content) if !content.trim().is_empty() => {
+                    content.to_string()
                 }
-            ],
-            "max_tokens": 400,
-            "temperature": 0.7,
-            "chat_template_kwargs": {
-                "enable_thinking": false
-            }
-        });
-
-        match ureq::post(url)
-            .header("Content-Type", "application/json")
-            .send_json(&payload)
-        {
-            Ok(resp) => match resp.into_body().read_to_string() {
-                Ok(body) => match serde_json::from_str::<serde_json::Value>(&body) {
-                    Ok(value) => {
-                        let message = &value["choices"][0]["message"];
-
-                        if let Some(content) = message["content"].as_str() {
-                            if !content.trim().is_empty() {
-                                return content.to_string();
-                            }
-                        }
-
-                        if let Some(reasoning) = message["reasoning"].as_str() {
-                            if !reasoning.trim().is_empty() {
-                                return reasoning.to_string();
-                            }
-                        }
-
-                        if let Some(text) = value["choices"][0]["text"].as_str() {
-                            if !text.trim().is_empty() {
-                                return text.to_string();
-                            }
-                        }
-
-                        "Qwen returned no visible answer.".to_string()
-                    }
-                    Err(e) => format!("Qwen returned invalid JSON: {}", e),
-                },
-                Err(e) => format!("Failed to read Qwen response: {}", e),
+                _ => "Qwen returned no visible answer.".to_string(),
             },
-            Err(e) => format!(
+            Err(error) => format!(
                 "Qwen is offline. Start mlx_lm.server on 127.0.0.1:8080.\n\nError: {}",
-                e
+                error
             ),
         }
-    }
 }
