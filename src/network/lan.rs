@@ -253,7 +253,6 @@ pub(crate) fn send_private_chat(
     if message.as_bytes().len() > MAX_CHAT_BYTES {
         return LanSendStatus::Failed { message_id, peer_id: peer_id.to_string(), reason: format!("message exceeds {} bytes", MAX_CHAT_BYTES) };
     }
-
     let peer_public_key = match STANDARD.decode(peer_public_key_b64) {
         Ok(k) if crypto::node_id_from_public_key(&k) == peer_id => k,
         _ => return LanSendStatus::Failed { message_id, peer_id: peer_id.to_string(), reason: "peer identity key is invalid".into() },
@@ -262,65 +261,80 @@ pub(crate) fn send_private_chat(
         Ok(s) => s,
         Err(e) => return LanSendStatus::Failed { message_id, peer_id: peer_id.to_string(), reason: e.to_string() },
     };
-    let _ = socket.set_read_timeout(Some(KEY_TIMEOUT));
-    let (private, init_public) = match crypto::ephemeral() {
-        Ok(v) => v,
-        Err(e) => return LanSendStatus::Failed { message_id, peer_id: peer_id.to_string(), reason: e.into() },
-    };
-    let init_public_b64 = STANDARD.encode(&init_public);
-    let timestamp = now_secs();
-    let init = KeyInit {
-        from: identity.node_id(),
-        to: peer_id.to_string(),
-        public_key: STANDARD.encode(identity.public_key()),
-        ephemeral_public_key: init_public_b64.clone(),
-        timestamp,
-        signature: STANDARD.encode(crypto::sign(identity, &signed_key_init(&identity.node_id(), peer_id, &STANDARD.encode(identity.public_key()), &init_public_b64, timestamp))),
-    };
     let target = format!("{}:{}", peer_address, LAN_DISCOVERY_PORT);
-    let body = match serde_json::to_string(&init) {
-        Ok(v) => v,
-        Err(e) => return LanSendStatus::Failed { message_id, peer_id: peer_id.to_string(), reason: e.to_string() },
-    };
-    if let Err(e) = socket.send_to(format!("{} {}", KEY_INIT_PREFIX, body).as_bytes(), &target) {
-        return LanSendStatus::Failed { message_id, peer_id: peer_id.to_string(), reason: e.to_string() };
+    let mut session = send_sessions().lock().ok().and_then(|g| g.get(peer_id).cloned());
+
+    if session.is_none() {
+        let _ = socket.set_read_timeout(Some(KEY_TIMEOUT));
+        let (private, init_public) = match crypto::ephemeral() {
+            Ok(v) => v,
+            Err(e) => return LanSendStatus::Failed { message_id, peer_id: peer_id.to_string(), reason: e.into() },
+        };
+        let init_public_b64 = STANDARD.encode(&init_public);
+        let identity_public_b64 = STANDARD.encode(identity.public_key());
+        let timestamp = now_secs();
+        let init = KeyInit {
+            from: identity.node_id(),
+            to: peer_id.to_string(),
+            public_key: identity_public_b64.clone(),
+            ephemeral_public_key: init_public_b64.clone(),
+            timestamp,
+            signature: STANDARD.encode(crypto::sign(identity, &signed_key_init(
+                &identity.node_id(), peer_id, &identity_public_b64, &init_public_b64, timestamp,
+            ))),
+        };
+        let body = match serde_json::to_string(&init) {
+            Ok(v) => v,
+            Err(e) => return LanSendStatus::Failed { message_id, peer_id: peer_id.to_string(), reason: e.to_string() },
+        };
+        if let Err(e) = socket.send_to(format!("{} {}", KEY_INIT_PREFIX, body).as_bytes(), &target) {
+            return LanSendStatus::Failed { message_id, peer_id: peer_id.to_string(), reason: e.to_string() };
+        }
+        let mut buffer = [0u8; 8192];
+        let reply = loop {
+            match socket.recv_from(&mut buffer) {
+                Ok((size, _)) => {
+                    let Ok(text) = std::str::from_utf8(&buffer[..size]) else { continue };
+                    let Some(payload) = text.strip_prefix(KEY_REPLY_PREFIX).and_then(|r| r.strip_prefix(' ')) else { continue };
+                    let Ok(reply) = serde_json::from_str::<KeyReply>(payload) else { continue };
+                    if reply.from != peer_id || reply.to != identity.node_id()
+                        || !fresh_timestamp(reply.timestamp)
+                        || reply.initiator_ephemeral_public_key != init_public_b64 { continue; }
+                    let Ok(sig) = STANDARD.decode(&reply.signature) else { continue };
+                    let signed = signed_key_reply(&reply.from, &reply.to, &reply.initiator_ephemeral_public_key, &reply.responder_ephemeral_public_key, reply.timestamp);
+                    if crypto::verify_signature(&peer_public_key, &signed, &sig) { break reply; }
+                }
+                Err(_) => return LanSendStatus::TimedOut { message_id, peer_id: peer_id.to_string() },
+            }
+        };
+        let reply_public = match STANDARD.decode(&reply.responder_ephemeral_public_key) {
+            Ok(v) => v,
+            Err(_) => return LanSendStatus::Failed { message_id, peer_id: peer_id.to_string(), reason: "invalid key reply".into() },
+        };
+        let transcript = session_transcript(&identity.node_id(), peer_id, &init_public, &reply_public);
+        let key = match crypto::derive_session_key(private, &reply_public, &transcript) {
+            Ok(k) => k,
+            Err(e) => return LanSendStatus::Failed { message_id, peer_id: peer_id.to_string(), reason: e.into() },
+        };
+        session = Some(Session { key, public_key: peer_public_key.clone(), counter: 0 });
     }
 
-    let mut buffer = [0u8; 8192];
-    let reply = loop {
-        match socket.recv_from(&mut buffer) {
-            Ok((size, _)) => {
-                let Ok(text) = std::str::from_utf8(&buffer[..size]) else { continue };
-                let Some(payload) = text.strip_prefix(KEY_REPLY_PREFIX).and_then(|r| r.strip_prefix(' ')) else { continue };
-                let Ok(reply) = serde_json::from_str::<KeyReply>(payload) else { continue };
-                if reply.from != peer_id || reply.to != identity.node_id() || !fresh_timestamp(reply.timestamp)
-                    || reply.initiator_ephemeral_public_key != init_public_b64 { continue; }
-                let Ok(sig) = STANDARD.decode(&reply.signature) else { continue };
-                let signed = signed_key_reply(&reply.from, &reply.to, &reply.initiator_ephemeral_public_key, &reply.responder_ephemeral_public_key, reply.timestamp);
-                if !crypto::verify_signature(&peer_public_key, &signed, &sig) { continue; }
-                break reply;
-            }
-            Err(_) => return LanSendStatus::TimedOut { message_id, peer_id: peer_id.to_string() },
-        }
-    };
-
-    let reply_public = match STANDARD.decode(&reply.responder_ephemeral_public_key) {
-        Ok(v) => v,
-        Err(_) => return LanSendStatus::Failed { message_id, peer_id: peer_id.to_string(), reason: "invalid key reply".into() },
-    };
-    let transcript = session_transcript(&identity.node_id(), peer_id, &init_public, &reply_public);
-    let key = match crypto::derive_session_key(private, &reply_public, &transcript) {
+    let mut session = session.expect("session initialized");
+    let counter = session.counter + 1;
+    let timestamp = now_secs();
+    let associated = aad(&message_id, &identity.node_id(), peer_id, timestamp, counter);
+    let message_key = match crypto::ratchet_key(&session.key, counter) {
         Ok(k) => k,
         Err(e) => return LanSendStatus::Failed { message_id, peer_id: peer_id.to_string(), reason: e.into() },
     };
-
-    let timestamp = now_secs();
-    let associated = aad(&message_id, &identity.node_id(), peer_id, timestamp);
-    let (nonce, ciphertext) = match crypto::encrypt(&key, &associated, message.as_bytes()) {
+    let (nonce, ciphertext) = match crypto::encrypt(&message_key, &associated, message.as_bytes()) {
         Ok(v) => v,
         Err(e) => return LanSendStatus::Failed { message_id, peer_id: peer_id.to_string(), reason: e.into() },
     };
-    let signed = crypto::envelope_bytes(&message_id, &identity.node_id(), peer_id, timestamp, &nonce, &ciphertext);
+    let signed = [
+        crypto::PROTOCOL, "message", message_id.as_str(), identity.node_id().as_str(),
+        peer_id, &timestamp.to_string(), &counter.to_string(), nonce.as_str(), ciphertext.as_str()
+    ].join("|").into_bytes();
     let envelope = WireEnvelope {
         message_id: message_id.clone(),
         from: identity.node_id(),
@@ -328,6 +342,7 @@ pub(crate) fn send_private_chat(
         timestamp,
         nonce,
         ciphertext,
+        counter,
         signature: STANDARD.encode(crypto::sign(identity, &signed)),
     };
     let body = match serde_json::to_string(&envelope) {
@@ -341,21 +356,25 @@ pub(crate) fn send_private_chat(
     if let Err(e) = socket.send_to(format!("{} {}", CHAT_PREFIX, body).as_bytes(), &target) {
         return LanSendStatus::Failed { message_id, peer_id: peer_id.to_string(), reason: e.to_string() };
     }
-
+    let mut buffer = [0u8; 8192];
     loop {
         match socket.recv_from(&mut buffer) {
             Ok((size, _)) => {
-                let Ok(ack) = std::str::from_utf8(&buffer[..size]) else { continue };
-                let mut parts = ack.split_whitespace();
-                if parts.next() == Some(ACK_PREFIX) {
-                    let Some(body) = parts.next() else { continue };
-                    let Ok(ack) = serde_json::from_str::<LanAck>(body) else { continue };
-                    if ack.message_id != message_id || ack.from != peer_id || ack.to != identity.node_id() { continue; }
-                    let Ok(sig) = STANDARD.decode(&ack.signature) else { continue };
-                    let signed = [crypto::PROTOCOL, "ack", ack.message_id.as_str(), ack.from.as_str(), ack.to.as_str()].join("|");
-                    if crypto::verify_signature(&peer_public_key, signed.as_bytes(), &sig) {
-                        return LanSendStatus::Delivered { message_id, peer_id: peer_id.to_string() };
+                let Ok(ack_text) = std::str::from_utf8(&buffer[..size]) else { continue };
+                let mut parts = ack_text.split_whitespace();
+                if parts.next() != Some(ACK_PREFIX) { continue; }
+                let Some(ack_body) = parts.next() else { continue };
+                let Ok(ack) = serde_json::from_str::<LanAck>(ack_body) else { continue };
+                if ack.message_id != message_id || ack.from != peer_id || ack.to != identity.node_id() { continue; }
+                let Ok(sig) = STANDARD.decode(&ack.signature) else { continue };
+                let ack_signed = [crypto::PROTOCOL, "ack", ack.message_id.as_str(), ack.from.as_str(), ack.to.as_str()].join("|");
+                if crypto::verify_signature(&peer_public_key, ack_signed.as_bytes(), &sig) {
+                    if let Ok(next) = crypto::ratchet_chain(&session.key, counter) {
+                        session.key = next;
+                        session.counter = counter;
+                        if let Ok(mut sessions) = send_sessions().lock() { sessions.insert(peer_id.to_string(), session.clone()); }
                     }
+                    return LanSendStatus::Delivered { message_id, peer_id: peer_id.to_string() };
                 }
             }
             Err(_) => return LanSendStatus::TimedOut { message_id, peer_id: peer_id.to_string() },

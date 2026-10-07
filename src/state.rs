@@ -60,21 +60,13 @@ pub(crate) struct CybOs {
     pub(crate) lan_delivery_status: String,
 
     pub(crate) remember_note: String,
-
-    // CicadaFarm web-experience state
-    pub(crate) farm_season: usize,
-    pub(crate) farm_panel: Option<String>,
-    pub(crate) farm_knowledge: String,
 }
 
 impl Default for CybOs {
     fn default() -> Self {
         let store = crate::runtime::open_store();
-        let identity = crate::identity::NodeIdentity::load_or_create(&store);
-        let node_id = identity.node_id();
+        let node_id = crate::runtime::load_or_create_node_id(&store);
         let events = crate::runtime::load_events(&store);
-        let farm_knowledge = store.get("cicadafarm_knowledge").unwrap_or_default();
-        let farm_season = store.get("cicadafarm_season").and_then(|v| v.parse::<usize>().ok()).filter(|v| *v < 4).unwrap_or(1);
 
         let mut chat = store.chat_messages();
         if chat.is_empty() {
@@ -90,6 +82,7 @@ impl Default for CybOs {
             );
         }
 
+        let identity = crate::identity::NodeIdentity::load_or_create(&store);
         let lan_events = crate::network::lan::spawn_listener(node_id.clone(), identity.clone());
 
         let mut app = Self {
@@ -137,9 +130,6 @@ impl Default for CybOs {
             lan_delivery_status: "NO DIRECT LAN MESSAGE YET".into(),
 
             remember_note: String::new(),
-            farm_season,
-            farm_panel: None,
-            farm_knowledge,
         };
 
         app.initialize_graph();

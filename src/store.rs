@@ -253,6 +253,21 @@ impl Store {
         );
     }
 
+    pub(crate) fn peer_pin(&self, node_id: &str) -> Option<String> {
+        self.get(&format!("peer_pin:{node_id}"))
+    }
+
+    pub(crate) fn trust_peer_key(&self, node_id: &str, public_key_b64: &str) -> bool {
+        let key = format!("peer_pin:{node_id}");
+        match self.get(&key) {
+            Some(existing) => existing == public_key_b64,
+            None => {
+                self.set(&key, public_key_b64);
+                true
+            }
+        }
+    }
+
     pub(crate) fn events(&self) -> Vec<Event> {
         let mut st = self
             .conn

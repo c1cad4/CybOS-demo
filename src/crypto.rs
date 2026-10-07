@@ -198,3 +198,26 @@ pub(crate) fn verify_envelope(message: &EncryptedMessage, expected_peer_id: &str
     ].join("|").into_bytes();
     verify_signature(&public_key, &signed, &sig)
 }
+
+
+pub(crate) fn ratchet_key(chain_key: &[u8; 32], counter: u64) -> Result<[u8; 32], &'static str> {
+    let salt = hkdf::Salt::new(hkdf::HKDF_SHA256, b"cybOS/cybchat/ratchet/v1");
+    let prk = salt.extract(chain_key);
+    let info = format!("message-key:{counter}");
+    let refs: [&[u8]; 1] = [info.as_bytes()];
+    let okm = prk.expand(&refs, &aead::CHACHA20_POLY1305).map_err(|_| "ratchet HKDF failed")?;
+    let mut key = [0u8; 32];
+    okm.fill(&mut key).map_err(|_| "ratchet output failed")?;
+    Ok(key)
+}
+
+pub(crate) fn ratchet_chain(chain_key: &[u8; 32], counter: u64) -> Result<[u8; 32], &'static str> {
+    let salt = hkdf::Salt::new(hkdf::HKDF_SHA256, b"cybOS/cybchat/ratchet-chain/v1");
+    let prk = salt.extract(chain_key);
+    let info = format!("chain-key:{counter}");
+    let refs: [&[u8]; 1] = [info.as_bytes()];
+    let okm = prk.expand(&refs, &aead::CHACHA20_POLY1305).map_err(|_| "chain HKDF failed")?;
+    let mut key = [0u8; 32];
+    okm.fill(&mut key).map_err(|_| "chain output failed")?;
+    Ok(key)
+}
