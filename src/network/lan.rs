@@ -1626,16 +1626,26 @@ impl crate::state::CybOs {
             return;
         };
 
-        let relays: Vec<_> = self
-            .lan_peers
-            .iter()
-            .filter(|peer| peer.trusted && peer.node_id != target_id)
-            .take(crate::network::onion::MAX_ONION_HOPS)
-            .cloned()
-            .collect();
+        let mut relays = Vec::new();
+        for relay_id in &self.lan_onion_relays {
+            if relays.len() >= crate::network::onion::MAX_ONION_HOPS {
+                break;
+            }
+            if relay_id == &target_id {
+                continue;
+            }
+            if let Some(peer) = self
+                .lan_peers
+                .iter()
+                .find(|peer| peer.node_id == *relay_id && peer.trusted)
+                .cloned()
+            {
+                relays.push(peer);
+            }
+        }
 
         if relays.is_empty() {
-            self.notify("ONION ROUTING NEEDS AT LEAST ONE TRUSTED RELAY");
+            self.notify("SELECT AT LEAST ONE TRUSTED ONION RELAY");
             return;
         }
 
