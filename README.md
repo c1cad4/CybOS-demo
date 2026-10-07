@@ -17,7 +17,7 @@ not a browser wrapper.
 - Local Qwen runtime shared by planner, learning, RobotCYB and web answers
 - Real local LAN peer discovery with UDP broadcast and node/version reporting
 - Directed LAN CybChat with explicit recipient identity, message IDs and bounded delivery acknowledgements
-- Multi-hop onion transport core with layered ChaCha20-Poly1305 relay packets, route-scoped key derivation, replay cache and bounded UDP relay forwarding
+- Multi-hop onion transport with anonymous per-hop X25519 sessions, encrypted route binding, layered ChaCha20-Poly1305 relay packets, replay cache and bounded UDP relay forwarding
 - Background market and Solana balance refreshes that do not block UI rendering
 - Public $CICADAFARM and $ROBOTCYB mint identifiers
 - Rust CI checks for push and pull requests
@@ -34,7 +34,7 @@ and infrastructure is not presented as live until a real connection exists.
 
 The communication design borrows the useful protocol ideas from the Cyberia CybOS
 concept: persistent node identity, explicit message addressing, bounded delivery
-and graph-oriented state. Direct LAN CybChat uses authenticated peer identity, X25519 key exchange, encrypted wire envelopes, signed ACKs, TOFU pinning and a per-message key ratchet. Routed CybChat adds authenticated per-hop sessions, signed route binding, nested relay layers, route/packet IDs, hop binding, replay suppression, reverse routed ACKs and a real UDP forwarding path. The CybChat UI exposes explicit relay selection and preserves the selected hop order.
+and graph-oriented state. Direct LAN CybChat uses authenticated peer identity, X25519 key exchange, encrypted wire envelopes, signed ACKs, TOFU pinning and a per-message key ratchet. Routed CybChat establishes a fresh anonymous X25519 session per relay, authenticates each relay through its Ed25519-signed session reply, then sends the route binding encrypted inside that hop session. Onion layers carry per-hop session IDs, route/packet IDs, hop lineage and AEAD-protected next-hop metadata; replay suppression and reverse routed ACKs complete the implemented UDP path. The CybChat UI exposes explicit relay selection and preserves the selected hop order.
 
 ## What is deliberately not faked
 
