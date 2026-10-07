@@ -47,6 +47,24 @@ impl CybOs {
         self.notify(format!("NO MATCH FOR “{}”", self.search.trim()));
     }
 
+    pub(crate) fn push_chat_message(
+        &mut self,
+        who: impl Into<String>,
+        message: impl Into<String>,
+        mine: bool,
+    ) {
+        let who = who.into();
+        let message = message.into();
+
+        self.store.add_chat_message(&who, &message, mine);
+        self.chat.push((who, message, mine));
+
+        if self.chat.len() > 500 {
+            let excess = self.chat.len() - 500;
+            self.chat.drain(0..excess);
+        }
+    }
+
     pub(crate) fn add_event(&mut self, kind: &str, text: impl Into<String>) {
         let text = text.into();
         self.store.add_event(kind, &text);
