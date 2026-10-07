@@ -75,6 +75,14 @@ struct WireEnvelope {
     signature: String,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+struct LanAck {
+    message_id: String,
+    from: String,
+    to: String,
+    signature: String,
+}
+
 #[derive(Clone)]
 struct Session {
     key: [u8; 32],
@@ -182,7 +190,16 @@ pub(crate) fn spawn_listener(node_id: String, identity: NodeIdentity) -> Receive
                 let Ok(text) = String::from_utf8(plaintext) else { continue };
 
                 seen_messages.insert(envelope.message_id.clone(), envelope.timestamp);
-                let _ = socket.send_to(format!("{} {} {}", ACK_PREFIX, envelope.message_id, node_id).as_bytes(), peer_addr);
+                let ack_signed = [crypto::PROTOCOL, "ack", envelope.message_id.as_str(), node_id.as_str(), envelope.from.as_str()].join("|");
+                let ack = LanAck {
+                    message_id: envelope.message_id.clone(),
+                    from: node_id.clone(),
+                    to: envelope.from.clone(),
+                    signature: STANDARD.encode(crypto::sign(&identity, ack_signed.as_bytes())),
+                };
+                if let Ok(body) = serde_json::to_string(&ack) {
+                    let _ = socket.send_to(format!("{} {}", ACK_PREFIX, body).as_bytes(), peer_addr);
+                }
                 let _ = tx.send(LanEvent::Chat { message_id: envelope.message_id, node_id: envelope.from, message: text });
             }
         }
@@ -330,8 +347,15 @@ pub(crate) fn send_private_chat(
             Ok((size, _)) => {
                 let Ok(ack) = std::str::from_utf8(&buffer[..size]) else { continue };
                 let mut parts = ack.split_whitespace();
-                if parts.next() == Some(ACK_PREFIX) && parts.next() == Some(message_id.as_str()) && parts.next() == Some(peer_id) {
-                    return LanSendStatus::Delivered { message_id, peer_id: peer_id.to_string() };
+                if parts.next() == Some(ACK_PREFIX) {
+                    let Some(body) = parts.next() else { continue };
+                    let Ok(ack) = serde_json::from_str::<LanAck>(body) else { continue };
+                    if ack.message_id != message_id || ack.from != peer_id || ack.to != identity.node_id() { continue; }
+                    let Ok(sig) = STANDARD.decode(&ack.signature) else { continue };
+                    let signed = [crypto::PROTOCOL, "ack", ack.message_id.as_str(), ack.from.as_str(), ack.to.as_str()].join("|");
+                    if crypto::verify_signature(&peer_public_key, signed.as_bytes(), &sig) {
+                        return LanSendStatus::Delivered { message_id, peer_id: peer_id.to_string() };
+                    }
                 }
             }
             Err(_) => return LanSendStatus::TimedOut { message_id, peer_id: peer_id.to_string() },
