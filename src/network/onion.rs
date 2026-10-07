@@ -1,4 +1,3 @@
-use base64::Engine as _;
 //! Multi-hop onion packet construction and relay peeling for CybChat.
 //!
 //! Long-term node identity remains Ed25519. Each adjacent hop uses its own
@@ -6,6 +5,7 @@ use base64::Engine as _;
 //! layer key from that root for the route packet. A relay learns only its
 //! immediate next hop and never the end-to-end payload.
 
+use base64::Engine as _;
 use crate::crypto;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet, VecDeque};
