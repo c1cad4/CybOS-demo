@@ -1941,35 +1941,6 @@ mod tests {
             }
         }
 
-        fn spawn_node(binary: &std::path::Path, port: u16) -> ChildGuard {
-            let mut child = std::process::Command::new(binary)
-                .env("CYBOS_HEADLESS_TEST_NODE", "1")
-                .env("CYBOS_HEADLESS_TEST_PORT", port.to_string())
-                .env("CYBOS_HEADLESS_TEST_ACK", "1")
-                .stdin(std::process::Stdio::piped())
-                .stdout(std::process::Stdio::piped())
-                .stderr(std::process::Stdio::inherit())
-                .spawn()
-                .expect("spawn cybOS headless node");
-
-            let stdout = child.stdout.take().expect("child stdout");
-            let mut reader = std::io::BufReader::new(stdout);
-            let mut line = String::new();
-            std::io::BufRead::read_line(&mut reader, &mut line)
-                .expect("read child readiness");
-            let parts: Vec<_> = line.split_whitespace().collect();
-            assert_eq!(parts.first().copied(), Some("READY"));
-            assert_eq!(parts.len(), 4);
-            assert_eq!(parts[3], port.to_string());
-
-            child.stdout = None;
-            child.stdin.as_ref().expect("child stdin available");
-            ChildGuard {
-                stdin: child.stdin.take(),
-                child,
-            }
-        }
-
         fn parse_ready(
             binary: &std::path::Path,
             port: u16,
@@ -2048,6 +2019,7 @@ mod tests {
         let payload = wire.strip_prefix(&prefix).expect("onion wire prefix");
         let mut packet: onion::OnionPacket =
             serde_json::from_str(payload).expect("captured onion packet");
+        packet.packet_id = onion::new_packet_id();
         let mut ciphertext = STANDARD.decode(&packet.ciphertext).unwrap();
         ciphertext[0] ^= 0x01;
         packet.ciphertext = STANDARD.encode(ciphertext);
