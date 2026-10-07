@@ -29,6 +29,15 @@ pub(crate) use state::CybOs;
 use eframe::egui;
 
 fn main() -> eframe::Result {
+    #[cfg(debug_assertions)]
+    if std::env::var_os("CYBOS_HEADLESS_TEST_NODE").is_some() {
+        if let Err(error) = network::lan::run_headless_test_node() {
+            eprintln!("cybOS headless test node failed: {error}");
+            std::process::exit(2);
+        }
+        return Ok(());
+    }
+
     let opts = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title("cybOS — CicadaFarm + RobotCYB")
