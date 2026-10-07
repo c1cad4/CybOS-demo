@@ -1550,6 +1550,62 @@ mod tests {
     }
 
     #[test]
+    fn routed_onion_chat_crosses_two_relays_and_returns_e2e_ack() {
+        let _guard = test_guard();
+
+        let source = NodeIdentity::generate_for_test();
+        let relay_a = NodeIdentity::generate_for_test();
+        let relay_b = NodeIdentity::generate_for_test();
+        let destination = NodeIdentity::generate_for_test();
+
+        let relay_a_port = free_port();
+        let relay_b_port = free_port();
+        let destination_port = free_port();
+
+        let _relay_a_events =
+            spawn_listener_on_port(relay_a.node_id(), relay_a.clone(), relay_a_port);
+        let _relay_b_events =
+            spawn_listener_on_port(relay_b.node_id(), relay_b.clone(), relay_b_port);
+        let destination_events = spawn_listener_on_port(
+            destination.node_id(),
+            destination.clone(),
+            destination_port,
+        );
+        thread::sleep(Duration::from_millis(60));
+
+        let destination_peer = OnionRoutePeer {
+            node_id: destination.node_id(),
+            address: format!("127.0.0.1:{destination_port}"),
+            public_key_b64: STANDARD.encode(destination.public_key()),
+        };
+        let relays = vec![
+            OnionRoutePeer {
+                node_id: relay_a.node_id(),
+                address: format!("127.0.0.1:{relay_a_port}"),
+                public_key_b64: STANDARD.encode(relay_a.public_key()),
+            },
+            OnionRoutePeer {
+                node_id: relay_b.node_id(),
+                address: format!("127.0.0.1:{relay_b_port}"),
+                public_key_b64: STANDARD.encode(relay_b.public_key()),
+            },
+        ];
+
+        let result = send_onion_private_chat(
+            &source,
+            &destination_peer,
+            &relays,
+            "hello through the onion",
+        );
+        assert!(matches!(
+            result,
+            LanSendStatus::Delivered { .. }
+        ));
+
+        wait_for_chat(&destination_events, "hello through the onion");
+    }
+
+    #[test]
     fn live_udp_rejects_stale_timestamp_and_wrong_recipient() {
         let _guard = test_guard();
         let alice = NodeIdentity::generate_for_test();
