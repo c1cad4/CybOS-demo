@@ -7,7 +7,6 @@
 
 use crate::config::APP_VERSION;
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 use std::net::UdpSocket;
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::thread;
