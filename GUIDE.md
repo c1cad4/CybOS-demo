@@ -132,7 +132,7 @@ now exercises relay-a → relay-b → relay-c → destination forwarding.
 
 The current milestone intentionally does not claim the full routed CybChat feature
 set yet. Automatic route establishment between arbitrary peers, reverse onion
-ACK delivery, and UI route selection still need to be connected to the existing
+ACK delivery, and UI route selection are now connected to the existing
 authenticated CybChat session layer.
 
 The current relay-layer choice also avoids introducing a persistent X25519 private
