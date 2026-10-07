@@ -4,6 +4,8 @@ use egui::{Color32, RichText, Vec2};
 
 impl CybOs {
     pub(crate) fn chat_page(&mut self, ui: &mut egui::Ui) {
+        self.poll_lan_scan();
+
         let neon = Color32::from_rgb(0, 255, 150);
         let dim = Color32::from_rgb(55, 145, 105);
         let panel = Color32::from_rgb(5, 18, 13);
@@ -26,21 +28,18 @@ impl CybOs {
                     .corner_radius(egui::CornerRadius::same(12))
                     .inner_margin(12.0)
                     .show(ui, |ui| {
-                        ui.set_min_width(190.0);
+                        ui.set_min_width(220.0);
 
                         ui.label(RichText::new("∴ PEERS").size(11.0).strong().color(neon));
-
                         ui.add_space(8.0);
 
                         for (symbol, name, status) in [
-                            ("◉", "CICADA NODE", "ONLINE"),
-                            ("◉", "ROBOTCYB", "LOCAL"),
-                            ("⌬", "FARM NODE", "LOCAL"),
-                            ("Ψ", "BRAIN", "LOCAL"),
+                            ("◉", "LOCAL NODE", self.node_id.as_str()),
+                            ("◉", "ROBOTCYB", "LOCAL AGENT"),
+                            ("Ψ", "BRAIN", self.qwen_status.as_str()),
                         ] {
                             ui.horizontal(|ui| {
                                 ui.label(RichText::new(symbol).size(16.0).color(neon));
-
                                 ui.vertical(|ui| {
                                     ui.label(
                                         RichText::new(name)
@@ -48,11 +47,37 @@ impl CybOs {
                                             .strong()
                                             .color(Color32::from_rgb(175, 235, 205)),
                                     );
-
                                     ui.label(RichText::new(status).size(8.0).color(dim));
                                 });
                             });
+                            ui.add_space(7.0);
+                        }
 
+                        for peer in &self.lan_peers {
+                            ui.horizontal(|ui| {
+                                ui.label(RichText::new("◈").size(16.0).color(neon));
+                                ui.vertical(|ui| {
+                                    ui.label(
+                                        RichText::new("LAN PEER")
+                                            .size(10.0)
+                                            .strong()
+                                            .color(Color32::from_rgb(175, 235, 205)),
+                                    );
+                                    ui.label(
+                                        RichText::new(&peer.node_id)
+                                            .size(9.0)
+                                            .color(neon),
+                                    );
+                                    ui.label(
+                                        RichText::new(format!(
+                                            "{} · v{}",
+                                            peer.address, peer.version
+                                        ))
+                                        .size(8.0)
+                                        .color(dim),
+                                    );
+                                });
+                            });
                             ui.add_space(7.0);
                         }
                     });
@@ -68,25 +93,16 @@ impl CybOs {
                         ui.set_min_width(190.0);
 
                         ui.label(RichText::new("⟷ TRANSPORT").size(11.0).strong().color(neon));
-
                         ui.add_space(8.0);
 
-                        for (symbol, name, status) in [
-                            ("⌂", "LOCAL", "READY"),
-                            ("◌", "BLE", "READY"),
-                            ("⟷", "LAN", "READY"),
-                            ("↔", "P2P", "READY"),
-                            ("∴", "NOSTR", "READY"),
-                        ] {
-                            ui.horizontal(|ui| {
-                                ui.label(RichText::new(symbol).size(15.0).color(neon));
-                                ui.label(
-                                    RichText::new(format!("{} · {}", name, status))
-                                        .size(9.0)
-                                        .color(Color32::from_rgb(150, 215, 180)),
-                                );
-                            });
-                        }
+                        ui.label(
+                            RichText::new(format!(
+                                "⌂ LOCAL · READY\n⟷ LAN · {} PEER(S)\n◌ BLE · ADAPTER ONLY\n↔ P2P · ADAPTER ONLY\n∴ NOSTR · ADAPTER ONLY",
+                                self.lan_peers.len()
+                            ))
+                            .size(9.0)
+                            .color(Color32::from_rgb(150, 215, 180)),
+                        );
                     });
             });
 
