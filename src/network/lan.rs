@@ -916,7 +916,7 @@ fn send_onion_private_chat(
         let previous_node_id = if index == 0 {
             identity.node_id()
         } else {
-            &relays[index - 1].node_id
+            relays[index - 1].node_id
         };
         let previous_address = if index == 0 {
             source_socket_address.as_str()
