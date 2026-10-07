@@ -430,7 +430,7 @@ mod tests {
 
     #[test]
     fn encrypted_chat_roundtrip_hides_plaintext_at_rest() {
-        let store = Store::open();
+        let mut store = Store::open();
         store.configure_chat_key([7u8; 32]);
         let who = format!("TEST-ENCRYPT-{}", Uuid::new_v4());
         let plaintext = "secret chat storage payload";
