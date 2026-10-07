@@ -127,6 +127,8 @@ For each relay hop:
 6. The actual CybChat end-to-end payload remains inside the existing authenticated destination envelope; each relay only peels its own ChaCha20-Poly1305 onion layer.
 7. Each nested layer carries its own hop session ID, route ID, packet ID and hop index, so a relay cannot reuse one hop's key as another hop's layer key.
 8. Reverse delivery acknowledgements travel back through the established route. The destination's signed ACK is verified end-to-end by the source.
+9. A routed send keeps one message ID across recovery attempts. If the selected route cannot establish or complete delivery, cybOS can retry through shorter variants of the selected relay list rather than inventing unrelated relays.
+10. The destination keeps a bounded cache of signed ACKs for recently delivered message IDs. A valid duplicate envelope can receive the cached ACK without delivering the chat payload again; when a fresh destination session is used for recovery, the destination advances that session's ratchet counter to keep the sender and receiver synchronized.
 
 The onion packet therefore exposes only the metadata necessary for the current hop.
 A relay does not receive the source Ed25519 public key as part of route setup, and
@@ -178,9 +180,10 @@ The live loopback harness currently exercises:
 - lost-ACK recovery through a fresh handshake
 
 The current harness also exercises a full live source → relay-a → relay-b →
-destination route with reverse ACK delivery, plus a standalone headless onion
-smoke test. Process-isolated fault injection remains a separate future hardening
-milestone.
+destination route with reverse ACK delivery, route rebuild after an unavailable
+relay, and duplicate-delivery ACK recovery, plus a standalone headless onion
+smoke test. Process-isolated active-relay crash, expiry-refresh and malformed
+packet fault injection remain separate hardening milestones.
 
 ## 12. Operational status
 
