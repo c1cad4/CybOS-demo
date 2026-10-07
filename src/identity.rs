@@ -1,6 +1,7 @@
 //! Cryptographic node identity for cybOS.
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use ring::{digest, rand, signature};
+use ring::signature::KeyPair;
 use crate::store::Store;
 
 const STORE_KEY: &str = "identity_ed25519_pkcs8_v1";
