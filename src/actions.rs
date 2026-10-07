@@ -1,4 +1,5 @@
-use crate::app::{CybOs, Page};
+use crate::navigation::Page;
+use crate::state::CybOs;
 use std::time::Instant;
 
 impl CybOs {

@@ -1,4 +1,5 @@
-use crate::app::{CybOs, Page};
+use crate::navigation::Page;
+use crate::state::CybOs;
 use crate::Icon;
 use eframe::egui::{self, Color32, RichText, Stroke, Vec2};
 

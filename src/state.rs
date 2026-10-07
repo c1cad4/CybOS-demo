@@ -2,7 +2,7 @@
 //!
 //! Owns the central application state and its default lifecycle.
 
-use crate::app::Page;
+use crate::navigation::Page;
 use crate::models::{Event, GraphLink, GraphNode};
 use crate::store::Store;
 

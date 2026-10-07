@@ -5,7 +5,6 @@ mod store;
 
 mod actions;
 mod ai;
-mod app;
 mod assets;
 mod brain;
 mod cameras;
@@ -22,7 +21,8 @@ mod theme;
 mod ui;
 
 use crate::models::TokenMarket;
-pub(crate) use app::{CybOs, Icon, Page};
+pub(crate) use navigation::{Icon, Page};
+pub(crate) use state::CybOs;
 
 use eframe::egui;
 const CICADAFARM_MINT: &str = "9QLCEL7Xo9VTwgBeAYU1PWX7JJ8joKxQCYw3msjUpump";

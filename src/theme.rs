@@ -1,4 +1,5 @@
-use crate::app::{CybOs, Icon};
+use crate::navigation::Icon;
+use crate::state::CybOs;
 use eframe::egui::{self, Color32, RichText, Stroke, Vec2};
 
 impl CybOs {
