@@ -636,19 +636,26 @@ fn spawn_listener_on_addr_with_stop(
                 let Some(binding) = onion_bindings.get(&packet.route_id).cloned() else { continue };
                 let now = now_secs();
                 if packet.hop_index != binding.hop_index
+                    || packet.session_id != binding.session_id
                     || packet.expires_at > binding.expires_at
                     || packet.expires_at < now
                 {
                     continue;
                 }
-                let Some(source_session) = sessions.get(&binding.source_id) else { continue };
+
+                let Some(hop_session) = onion_sessions.get(&packet.session_id).cloned() else {
+                    continue;
+                };
+                if hop_session.expires_at < now {
+                    continue;
+                }
 
                 match onion::peel(
                     &mut onion_cache,
                     &packet,
                     &packet.route_id,
                     binding.hop_index,
-                    &source_session.root_key,
+                    &hop_session.key,
                     now,
                 ) {
                     Ok(onion::PeelResult::Forward(forward)) => {
