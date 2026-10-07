@@ -15,6 +15,7 @@ const LAN_DISCOVERY_PORT: u16 = 39393;
 const DISCOVERY_PREFIX: &str = "CYBOS_DISCOVER";
 const RESPONSE_PREFIX: &str = "CYBOS_PEER";
 const CHAT_PREFIX: &str = "CYBOS_CHAT";
+const MAX_CHAT_BYTES: usize = 1800;
 
 #[derive(Clone, Debug)]
 pub(crate) struct LanPeer {
@@ -93,7 +94,9 @@ pub(crate) fn spawn_listener(node_id: String) -> Receiver<LanEvent> {
                 continue;
             };
 
-            if chat_message.trim().is_empty() {
+            if chat_message.trim().is_empty()
+                || chat_message.as_bytes().len() > MAX_CHAT_BYTES
+            {
                 continue;
             }
 
@@ -175,6 +178,10 @@ pub(crate) fn scan(node_id: String) -> Vec<LanPeer> {
 }
 
 pub(crate) fn send_chat(node_id: &str, message: &str) -> bool {
+    if message.as_bytes().len() > MAX_CHAT_BYTES {
+        return false;
+    }
+
     let socket = match UdpSocket::bind(("0.0.0.0", 0)) {
         Ok(socket) => socket,
         Err(_) => return false,
