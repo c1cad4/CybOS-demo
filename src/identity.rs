@@ -66,6 +66,11 @@ impl NodeIdentity {
         Self::from_pkcs8(document.as_ref().to_vec())
     }
 
+    #[cfg(debug_assertions)]
+    pub(crate) fn generate_ephemeral() -> Self {
+        Self::generate()
+    }
+
     fn from_pkcs8(pkcs8: Vec<u8>) -> Self {
         let pair = signature::Ed25519KeyPair::from_pkcs8(&pkcs8)
             .expect("stored cybOS identity must remain a valid Ed25519 PKCS#8 key");
