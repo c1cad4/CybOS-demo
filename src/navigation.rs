@@ -70,17 +70,25 @@ impl Page {
     pub(crate) fn matches_query(self, q: &str) -> bool {
         let keys = match self {
             Page::Dashboard => "dashboard home core sigma live node activity",
-            Page::Robot => "robot robotcyb agent qwen ai",
-            Page::Farm => "farm cicadafarm hive chicken goat honey eggs environment",
-            Page::Chat => "chat cybchat message peer",
-            Page::Graph => "graph cybergraph nodes links",
-            Page::Brain => "brain memory knowledge qwen",
-            Page::Network => "network lan p2p ble nostr",
-            Page::Assets => "assets tokens cicadafarm robotcyb mint solana",
+            Page::Robot => "robot robotcyb agent qwen ai робот",
+            Page::Farm => "farm cicadafarm hive chicken goat honey eggs environment ферма улей пасека",
+            Page::Chat => "chat cybchat message peer чат",
+            Page::Graph => "graph cybergraph nodes links граф",
+            Page::Brain => "brain memory knowledge qwen мозг память знания",
+            Page::Network => "network lan p2p ble nostr сеть",
+            Page::Assets => "assets tokens cicadafarm robotcyb mint solana токены токен",
             Page::Cameras => "cameras camera rtsp farm live",
             Page::System => "system energy battery node database",
         };
 
-        keys.contains(q) || self.title().to_lowercase().contains(q)
+        if q.is_empty() {
+            return false;
+        }
+
+        if self.title().to_lowercase().contains(q) {
+            return true;
+        }
+
+        keys.split_whitespace().any(|key| key == q)
     }
 }
