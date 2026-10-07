@@ -62,6 +62,7 @@ pub(crate) struct CybOs {
     pub(crate) lan_send_task:
         Option<std::sync::mpsc::Receiver<crate::network::lan::LanSendStatus>>,
     pub(crate) lan_target: Option<String>,
+    pub(crate) lan_onion_relays: Vec<String>,
     pub(crate) lan_delivery_status: String,
 
     pub(crate) remember_note: String,
@@ -141,6 +142,7 @@ impl Default for CybOs {
             lan_events,
             lan_send_task: None,
             lan_target: None,
+            lan_onion_relays: Vec::new(),
             lan_delivery_status: "NO DIRECT LAN MESSAGE YET".into(),
 
             remember_note: String::new(),
