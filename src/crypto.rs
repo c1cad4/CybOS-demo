@@ -89,6 +89,32 @@ pub(crate) fn decrypt(
     Ok(plaintext.to_vec())
 }
 
+pub(crate) fn onion_layer_key(
+    hop_session_key: &[u8; 32],
+    route_id: &str,
+    packet_id: &str,
+    hop_index: u8,
+    direction: &str,
+) -> Result<[u8; 32], &'static str> {
+    let salt = hkdf::Salt::new(hkdf::HKDF_SHA256, b"cybOS/cybchat/onion/v1");
+    let prk = salt.extract(hop_session_key);
+    let info = [
+        b"onion-layer-key".as_slice(),
+        route_id.as_bytes(),
+        packet_id.as_bytes(),
+        &hop_index.to_be_bytes(),
+        direction.as_bytes(),
+    ]
+    .concat();
+    let refs: [&[u8]; 1] = [&info];
+    let okm = prk
+        .expand(&refs, &aead::CHACHA20_POLY1305)
+        .map_err(|_| "onion HKDF failed")?;
+    let mut key = [0u8; 32];
+    okm.fill(&mut key).map_err(|_| "onion HKDF output failed")?;
+    Ok(key)
+}
+
 pub(crate) fn local_storage_key(secret: &[u8]) -> [u8; 32] {
     let salt = hkdf::Salt::new(hkdf::HKDF_SHA256, b"cybOS/local-storage/v1");
     let prk = salt.extract(secret);
@@ -169,6 +195,20 @@ mod tests {
         bytes[0] ^= 0x01;
         let tampered_ciphertext = STANDARD.encode(bytes);
         assert!(decrypt(&key, b"aad", &nonce, &tampered_ciphertext).is_err());
+    }
+
+    #[test]
+    fn onion_layer_key_is_scoped_and_directional() {
+        let root = [21u8; 32];
+        let a = onion_layer_key(&root, "route-a", "packet-a", 0, "forward").unwrap();
+        let b = onion_layer_key(&root, "route-a", "packet-a", 0, "forward").unwrap();
+        let c = onion_layer_key(&root, "route-a", "packet-a", 1, "forward").unwrap();
+        let d = onion_layer_key(&root, "route-a", "packet-a", 0, "reverse").unwrap();
+        let e = onion_layer_key(&root, "route-b", "packet-a", 0, "forward").unwrap();
+        assert_eq!(a, b);
+        assert_ne!(a, c);
+        assert_ne!(a, d);
+        assert_ne!(a, e);
     }
 
     #[test]
