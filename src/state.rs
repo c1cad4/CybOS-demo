@@ -5,6 +5,7 @@
 use crate::navigation::Page;
 use crate::models::{Event, GraphLink, GraphNode};
 use crate::store::Store;
+use crate::config::DEFAULT_CICADA_WALLET;
 
 use eframe::egui::Vec2;
 use std::process::Child;
@@ -62,7 +63,7 @@ impl Default for CybOs {
                 "CicadaFarm is online. Your local cybOS node is ready.".into(),
                 false,
             )],
-            cicada_wallet: String::from("AHBz386tP36ZrABN7STzxV66u1f7CwnaqrFBnevb4ff8"),
+            cicada_wallet: DEFAULT_CICADA_WALLET.into(),
             cicada_balance: None,
             sol_balance: None,
             payment_uri: String::new(),
