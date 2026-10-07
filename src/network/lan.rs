@@ -287,10 +287,50 @@ fn spawn_listener_on_addr(
     listen_port: u16,
     ack_enabled: Arc<AtomicBool>,
 ) -> (Receiver<LanEvent>, Arc<AtomicBool>) {
+    let stop = Arc::new(AtomicBool::new(true));
+    let (rx, ack_enabled, _handle) = spawn_listener_on_addr_with_stop(
+        node_id,
+        identity,
+        listen_addr,
+        listen_port,
+        ack_enabled,
+        stop,
+    );
+    (rx, ack_enabled)
+}
+
+#[cfg(debug_assertions)]
+fn spawn_listener_on_port_with_control(
+    node_id: String,
+    identity: NodeIdentity,
+    listen_port: u16,
+    ack_enabled: Arc<AtomicBool>,
+    stop: Arc<AtomicBool>,
+) -> (Receiver<LanEvent>, Arc<AtomicBool>, thread::JoinHandle<()>) {
+    spawn_listener_on_addr_with_stop(
+        node_id,
+        identity,
+        "127.0.0.1",
+        listen_port,
+        ack_enabled,
+        stop,
+    )
+}
+
+fn spawn_listener_on_addr_with_stop(
+    node_id: String,
+    identity: NodeIdentity,
+    listen_addr: &'static str,
+    listen_port: u16,
+    ack_enabled: Arc<AtomicBool>,
+    stop: Arc<AtomicBool>,
+) -> (Receiver<LanEvent>, Arc<AtomicBool>, thread::JoinHandle<()>) {
     let (tx, rx) = mpsc::channel();
     let ack_state = Arc::clone(&ack_enabled);
-    thread::spawn(move || {
+    let stop_state = Arc::clone(&stop);
+    let handle = thread::spawn(move || {
         let socket = match UdpSocket::bind((listen_addr, listen_port)) { Ok(s) => s, Err(_) => return };
+        let _ = socket.set_read_timeout(Some(Duration::from_millis(100)));
         let mut buffer = [0u8; 8192];
         let mut sessions: HashMap<String, Session> = HashMap::new();
         let mut seen_messages: HashMap<String, u64> = HashMap::new();
@@ -298,7 +338,17 @@ fn spawn_listener_on_addr(
         let mut onion_cache = onion::OnionRelayCache::new();
 
         loop {
-            let Ok((size, peer_addr)) = socket.recv_from(&mut buffer) else { break };
+            let (size, peer_addr) = match socket.recv_from(&mut buffer) {
+                Ok(packet) => packet,
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock
+                    || error.kind() == std::io::ErrorKind::TimedOut => {
+                    if stop_state.load(Ordering::Acquire) {
+                        continue;
+                    }
+                    break;
+                }
+                Err(_) => break,
+            };
             if size > MAX_WIRE_BYTES { continue; }
             let Ok(message) = std::str::from_utf8(&buffer[..size]) else { continue };
 
@@ -685,7 +735,7 @@ fn spawn_listener_on_addr(
             }
         }
     });
-    (rx, ack_enabled)
+    (rx, ack_enabled, handle)
 }
 
 pub(crate) fn scan(node_id: String) -> Vec<LanPeer> {
