@@ -1,4 +1,4 @@
-# cybOS 0.6 — CicadaFarm + RobotCYB + CybChat
+# cybOS 0.7 — CicadaFarm + RobotCYB + CybChat
 
 Native macOS-first desktop MVP. The goal is a fast local-first application,
 not a browser wrapper.
@@ -8,11 +8,12 @@ not a browser wrapper.
 - Native egui/eframe desktop UI
 - CicadaFarm dashboard and farm event log
 - RobotCYB local contextual assistant
-- CybChat local conversation shell
+- CybChat local conversation shell with persistent SQLite history
 - Cybergraph with nodes, links, zoom/pan and inspector
 - Persistent SQLite event, memory, graph and node-identity storage
 - Search/navigation shell with native page routing
 - Local Qwen runtime shared by planner, learning, RobotCYB and web answers
+- Background market and Solana balance refreshes that do not block UI rendering
 - Public $CICADAFARM and $ROBOTCYB mint identifiers
 - No private keys
 - Rust CI checks for push and pull requests
