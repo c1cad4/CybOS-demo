@@ -1,0 +1,157 @@
+# cybOS Secure CybChat Guide
+
+## 1. Security model
+
+cybOS uses a local persistent Ed25519 node identity.
+
+A node ID is derived from SHA-256(public_key):
+
+cyb-<first-12-bytes-of-sha256(public-key)>
+
+The private Ed25519 key remains local to the node.
+
+Peer discovery is authenticated. A peer announces its node ID, application version, Ed25519 public key and a signature binding those values.
+
+The receiver verifies that the public key derives the announced node ID and verifies the signature.
+
+## 2. Peer key exchange
+
+Direct CybChat uses an authenticated X25519 handshake.
+
+1. Initiator creates an ephemeral X25519 key.
+2. Initiator signs the key-init transcript with its persistent Ed25519 identity.
+3. Responder verifies the identity and creates its own ephemeral X25519 key.
+4. Responder signs the key-reply transcript.
+5. Both sides derive the same session root with HKDF-SHA256.
+6. Ephemeral X25519 private keys are consumed by the agreement operation.
+
+The protocol separates identity authentication (Ed25519), key agreement (X25519), key derivation (HKDF-SHA256), and message confidentiality/integrity (ChaCha20-Poly1305).
+
+## 3. Persistent peer-key pinning
+
+After authenticated discovery, cybOS uses TOFU (Trust On First Use).
+
+A new peer is stored as peer_pin:<node_id> = public_key in the local SQLite key/value store.
+
+On subsequent discovery:
+- same node ID + same public key = accepted
+- same node ID + different public key = rejected
+
+This prevents silent identity-key replacement after first trust.
+
+## 4. Encrypted wire envelope
+
+A CybChat message is never sent as plaintext.
+
+The wire envelope contains:
+- message ID
+- sender node ID
+- recipient node ID
+- timestamp
+- ratchet counter
+- AEAD nonce
+- ciphertext
+- Ed25519 signature
+
+The signed transcript covers the encrypted material and routing identity. AEAD associated data covers message identity, endpoints, timestamp and counter.
+
+## 5. Message-key ratchet
+
+After the initial X25519 handshake, cybOS derives a message key from the current chain key and monotonically increasing counter.
+
+message_key_n = HKDF(chain_key_n, "message-key:n")
+
+After successful delivery:
+
+chain_key_(n+1) = HKDF(chain_key_n, "chain-key:n")
+
+The receiver requires the expected next counter and advances its chain only after successful authentication and decryption.
+
+The current UDP design is ordered: lost packets stop the chain rather than silently skipping unknown counters. Retransmission/resynchronization is a separate transport layer.
+
+## 6. Replay protection
+
+Each message has a unique UUID message ID, timestamp freshness window, monotonic session counter and an in-memory seen-message cache.
+
+An already accepted message ID is not delivered again.
+
+The timestamp window is approximately five minutes.
+
+## 7. Authenticated delivery
+
+The recipient sends an Ed25519-signed ACK after successful decryption.
+
+The sender reports E2E DELIVERED only after verifying the message ID, identities and ACK signature.
+
+## 8. Direct-LAN flow
+
+LAN discovery
+ -> Ed25519 identity verification
+ -> TOFU public-key pinning
+ -> authenticated X25519 handshake
+ -> HKDF-SHA256 session root
+ -> per-message HKDF ratchet
+ -> ChaCha20-Poly1305
+ -> signed encrypted wire envelope
+ -> decrypt + authenticate + replay check
+ -> signed ACK
+
+## 9. Onion / relay boundary
+
+The current implementation deliberately does not claim full onion routing.
+
+A secure multi-hop onion layer requires a stable authenticated encryption key for every relay. The current direct handshake deliberately uses one-shot X25519 ephemeral keys. The ring API exposes those ephemeral keys as single-use objects, which is desirable for direct forward secrecy but is not a persistent relay encryption identity.
+
+The correct next layer is:
+1. create a separate persistent X25519 relay identity;
+2. protect its private material with the local keystore;
+3. bind its X25519 public key to the existing Ed25519 node identity;
+4. pin both identities;
+5. establish per-hop relay sessions;
+6. build nested authenticated relay layers;
+7. make each relay decrypt only its own layer;
+8. forward only the remaining opaque layer;
+9. prevent route/path manipulation and replay;
+10. rotate relay/session keys independently.
+
+Do not implement onion routing by encrypting a route list with the Ed25519 public key. Ed25519 is used here for signatures, not public-key encryption.
+
+## 10. Cryptographic boundaries
+
+| Purpose | Primitive |
+|---|---|
+| Persistent identity | Ed25519 |
+| Node ID | SHA-256 |
+| Handshake | X25519 ephemeral |
+| KDF | HKDF-SHA256 |
+| Message encryption | ChaCha20-Poly1305 |
+| Authentication | Ed25519 signatures |
+| Replay | UUID + timestamp + counter |
+
+The implementation uses ring for the existing Ed25519, X25519, HKDF and AEAD primitives.
+
+## 11. Required tests
+
+- X25519 agreement symmetry
+- HKDF session-key symmetry
+- AEAD round trip
+- ciphertext does not contain plaintext
+- AAD tampering failure
+- ciphertext tampering failure
+- Ed25519 signature verification
+- signature tampering failure
+- invalid node-ID/public-key binding
+- stale timestamp rejection
+- duplicate message rejection
+- ratchet counter ordering
+- TOFU key replacement rejection
+- ACK signature rejection
+- wrong recipient rejection
+
+## 12. Operational status
+
+The direct LAN channel is real transport, not a UI simulation.
+
+The UI should report actual states: authenticated peer, key exchange, encrypted send, acknowledged delivery, timeout, authentication failure, and pinned-key conflict.
+
+It must never claim E2E delivery before the cryptographic ACK is verified.

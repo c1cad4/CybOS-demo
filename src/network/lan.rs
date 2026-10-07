@@ -395,7 +395,9 @@ impl crate::state::CybOs {
         let Some(rx) = &self.lan_scan else { return };
         match rx.try_recv() {
             Ok(peers) => {
-                self.lan_peers = peers;
+                self.lan_peers = peers.into_iter().filter(|peer| {
+                    peer.public_key.as_deref().map(|key| self.store.trust_peer_key(&peer.node_id, key)).unwrap_or(false)
+                }).collect();
                 let target_still_exists = self.lan_target.as_deref().map(|target| self.lan_peers.iter().any(|peer| peer.node_id == target)).unwrap_or(false);
                 if !target_still_exists { self.lan_target = self.lan_peers.first().map(|peer| peer.node_id.clone()); }
                 self.lan_scan = None;
