@@ -37,7 +37,10 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Cargo check
-        run: cargo check --locked
+        run: cargo check
+
+      - name: Show generated lock diff
+        run: git diff -- Cargo.lock
 
       - name: Cargo test
         run: cargo test --locked
