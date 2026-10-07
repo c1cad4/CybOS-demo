@@ -9,6 +9,7 @@ use std::time::Duration;
 impl CybOs {
     pub(crate) fn shell_ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         self.ensure_qwen();
+        self.poll_lan_send();
         self.poll_lan_events();
         self.neon_theme(ui.ctx());
 
