@@ -93,6 +93,7 @@ struct LanAck {
 
 #[derive(Clone)]
 struct Session {
+    root_key: [u8; 32],
     key: [u8; 32],
     public_key: Vec<u8>,
     counter: u64,
@@ -229,7 +230,7 @@ fn spawn_listener_on_addr(
                 if !sessions.contains_key(&init.from) && sessions.len() >= MAX_SESSIONS {
                     continue;
                 }
-                sessions.insert(init.from.clone(), Session { key, public_key, counter: 0 });
+                sessions.insert(init.from.clone(), Session { root_key: key, key, public_key, counter: 0 });
 
                 let timestamp = now_secs();
                 let reply_eph_b64 = STANDARD.encode(&reply_eph);
@@ -429,7 +430,7 @@ fn send_private_chat_on_port(
             Ok(k) => k,
             Err(e) => return LanSendStatus::Failed { message_id, peer_id: peer_id.to_string(), reason: e.into() },
         };
-        session = Some(Session { key, public_key: peer_public_key.clone(), counter: 0 });
+        session = Some(Session { root_key: key, key, public_key: peer_public_key.clone(), counter: 0 });
     }
 
     let mut session = session.expect("session initialized");
