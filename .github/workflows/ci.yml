@@ -21,7 +21,7 @@ jobs:
         run: cargo check --locked
 
       - name: Cargo test
-        run: cargo test --locked
+        run: cargo test --locked -- --test-threads=1
 
       - name: Diff whitespace check
         run: git diff --check
