@@ -3,15 +3,7 @@ use std::time::Instant;
 
 impl CybOs {
 
-    pub(crate) fn persist_current_graph(&self) {
-        for node in &self.nodes {
-            self.store.save_graph_node(node);
-        }
 
-        for link in &self.links {
-            self.store.save_graph_link(link);
-        }
-    }
 
     pub(crate) fn notify(&mut self, text: impl Into<String>) {
         self.toast = Some((text.into(), Instant::now()));

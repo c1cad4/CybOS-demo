@@ -58,10 +58,6 @@ impl Default for CybOs {
             store.add_event("SYSTEM", "cybOS local runtime initialized");
             events = store.events();
         }
-        let farm = String::from("cicadafarm");
-        let robot = String::from("robotcyb");
-        let hive = String::from("hive-003");
-        let apiary = String::from("apiary-north");
         let mut app = Self {
             store,
             page: Page::Dashboard,
@@ -82,77 +78,8 @@ impl Default for CybOs {
             payment_status: String::from("PAYMENT REQUEST READY"),
             balance_refresh: std::time::Instant::now() - std::time::Duration::from_secs(60),
             events,
-            nodes: vec![
-                GraphNode {
-                    id: farm.clone(),
-                    label: "CICADAFARM".into(),
-                    kind: "FARM".into(),
-                    x: 0.0,
-                    y: 0.0,
-                },
-                GraphNode {
-                    id: robot.clone(),
-                    label: "ROBOTCYB".into(),
-                    kind: "AGENT".into(),
-                    x: -220.0,
-                    y: -110.0,
-                },
-                GraphNode {
-                    id: hive.clone(),
-                    label: "HIVE #003".into(),
-                    kind: "BEE".into(),
-                    x: 220.0,
-                    y: -110.0,
-                },
-                GraphNode {
-                    id: apiary.clone(),
-                    label: "NORTH APIARY".into(),
-                    kind: "PLACE".into(),
-                    x: 220.0,
-                    y: 110.0,
-                },
-                GraphNode {
-                    id: "weather-001".into(),
-                    label: "WEATHER SENSOR".into(),
-                    kind: "SENSOR".into(),
-                    x: -220.0,
-                    y: 120.0,
-                },
-                GraphNode {
-                    id: "knowledge".into(),
-                    label: "KNOWLEDGE".into(),
-                    kind: "BRAIN".into(),
-                    x: 0.0,
-                    y: 210.0,
-                },
-            ],
-            links: vec![
-                GraphLink {
-                    from: farm.clone(),
-                    to: robot,
-                    relation: "has_agent".into(),
-                },
-                GraphLink {
-                    from: farm.clone(),
-                    to: hive.clone(),
-                    relation: "contains".into(),
-                },
-                GraphLink {
-                    from: hive,
-                    to: apiary,
-                    relation: "located_at".into(),
-                },
-                GraphLink {
-                    from: farm.clone(),
-                    to: "weather-001".into(),
-                    relation: "observed_by".into(),
-                },
-                GraphLink {
-                    from: farm,
-                    to: "knowledge".into(),
-                    relation: "feeds".into(),
-                },
-            ],
+            nodes: Vec::new(),
+            links: Vec::new(),
             graph_zoom: 1.0,
             graph_pan: Vec2::ZERO,
             selected_node: None,
@@ -169,15 +96,7 @@ impl Default for CybOs {
             remember_note: String::new(),
         };
 
-        let stored_nodes = app.store.graph_nodes();
-        let stored_links = app.store.graph_links();
-
-        if stored_nodes.is_empty() {
-            app.persist_current_graph();
-        } else {
-            app.nodes = stored_nodes;
-            app.links = stored_links;
-        }
+        app.initialize_graph();
 
         app
     }
