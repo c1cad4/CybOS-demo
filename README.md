@@ -13,6 +13,8 @@ not a browser wrapper.
 - Persistent SQLite event, memory, graph and node-identity storage
 - Search/navigation shell with native page routing
 - Local Qwen runtime shared by planner, learning, RobotCYB and web answers
+- Background market and Solana balance refreshes that keep network I/O off the UI thread
+- Real local LAN peer discovery with UDP broadcast and node/version reporting
 - Background market and Solana balance refreshes that do not block UI rendering
 - Public $CICADAFARM and $ROBOTCYB mint identifiers
 - No private keys
@@ -30,9 +32,10 @@ and infrastructure is not presented as live until a real connection exists.
 
 ## What is deliberately not faked
 
-Bluetooth, LAN, P2P, Nostr and RTSP camera feeds are shown as transport/ready
-states, but the MVP does not claim a live connection. Real transport integration
-is the next engineering layer.
+Bluetooth, P2P, Nostr and RTSP camera feeds are shown as transport/ready states,
+but the MVP does not claim them as connected. LAN discovery is implemented as a
+real local peer-discovery channel; application message transport is still separate.
+
 
 ## One-click macOS launch
 
