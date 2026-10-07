@@ -473,7 +473,11 @@ mod tests {
     fn three_hop_udp_relay_forwards_only_through_bound_routes() {
         let route = new_route_id();
         let packet_id = new_packet_id();
-        let expires = 1_000_000_100;
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let expires = now + 60;
         let keys = [[11u8; 32], [12u8; 32], [13u8; 32]];
         let relay_ports = [free_port(), free_port(), free_port()];
         let destination_port = free_port();
