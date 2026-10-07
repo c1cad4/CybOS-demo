@@ -6,12 +6,13 @@ use std::time::Instant;
 impl CybOs {
     pub(crate) fn network(&mut self, ui: &mut egui::Ui) {
         self.poll_lan_scan();
+        self.poll_lan_send();
 
         let neon = Self::neon();
         let dim = Color32::from_rgb(55, 145, 105);
 
         ui.label(
-            RichText::new("ONE IDENTITY · LOCAL DISCOVERY · NO FAKE CONNECTIONS")
+            RichText::new("ONE NODE IDENTITY · DISCOVERY · DIRECT DELIVERY · NO FAKE CONNECTIONS")
                 .size(11.0)
                 .color(dim),
         );
@@ -64,6 +65,17 @@ impl CybOs {
                         .color(dim),
                     );
                 }
+
+                ui.add_space(7.0);
+
+                ui.label(
+                    RichText::new(format!(
+                        "LAN DELIVERY · {}",
+                        self.lan_delivery_status
+                    ))
+                    .size(9.0)
+                    .color(neon),
+                );
             });
 
         ui.add_space(10.0);
@@ -75,7 +87,7 @@ impl CybOs {
             .inner_margin(egui::Margin::same(12))
             .show(ui, |ui| {
                 ui.label(
-                    RichText::new("LAN PEERS")
+                    RichText::new("LAN PEERS · DIRECT ADDRESSING")
                         .size(11.0)
                         .strong()
                         .color(neon),
@@ -98,7 +110,9 @@ impl CybOs {
                         .color(dim),
                     );
                 } else {
-                    for peer in &self.lan_peers {
+                    for peer in self.lan_peers.clone() {
+                        let selected = self.lan_target.as_deref() == Some(peer.node_id.as_str());
+
                         ui.horizontal(|ui| {
                             let (rect, _) =
                                 ui.allocate_exact_size(Vec2::splat(28.0), egui::Sense::hover());
@@ -107,7 +121,7 @@ impl CybOs {
                                 ui.painter(),
                                 rect.center(),
                                 Icon::Node,
-                                neon,
+                                if selected { neon } else { dim },
                                 16.0,
                             );
 
@@ -116,7 +130,7 @@ impl CybOs {
                                     RichText::new(&peer.node_id)
                                         .size(11.0)
                                         .strong()
-                                        .color(neon),
+                                        .color(if selected { neon } else { Color32::from_rgb(175, 235, 205) }),
                                 );
 
                                 ui.label(
@@ -128,6 +142,22 @@ impl CybOs {
                                     .color(dim),
                                 );
                             });
+
+                            if ui
+                                .add(
+                                    egui::Button::new(
+                                        RichText::new(if selected { "TARGET" } else { "SELECT" })
+                                            .size(8.0)
+                                            .strong()
+                                            .color(neon),
+                                    )
+                                    .min_size(Vec2::new(64.0, 24.0)),
+                                )
+                                .clicked()
+                            {
+                                self.lan_target = Some(peer.node_id.clone());
+                                self.notify(format!("LAN TARGET: {}", peer.node_id));
+                            }
                         });
 
                         ui.add_space(6.0);
@@ -139,7 +169,8 @@ impl CybOs {
 
         for (name, status, live) in [
             ("LOCAL LOOPBACK", "READY", true),
-            ("LAN DISCOVERY", "ACTIVE · UDP BROADCAST", true),
+            ("LAN DISCOVERY", "ACTIVE · UDP BROADCAST · DISCOVERY ONLY", true),
+            ("LAN CHAT", "DIRECT UDP · DELIVERY ACK · PLAINTEXT", true),
             ("BLUETOOTH MESH", "ADAPTER ONLY · NOT CONNECTED", false),
             ("P2P", "ADAPTER ONLY · NOT CONNECTED", false),
             ("NOSTR FALLBACK", "AVAILABLE · NOT CONNECTED", false),
