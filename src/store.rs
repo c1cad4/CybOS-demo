@@ -87,16 +87,19 @@ impl Store {
                 encrypted INTEGER NOT NULL DEFAULT 0
             );
 
-        let _ = conn.execute(
-            "ALTER TABLE chat_messages ADD COLUMN encrypted INTEGER NOT NULL DEFAULT 0",
-            [],
-        );
-
             CREATE INDEX IF NOT EXISTS idx_chat_messages_time
                 ON chat_messages(time);
             "#,
         )
         .expect("cannot initialize database");
+
+        // Existing databases from the previous plaintext schema need the new
+        // marker column added once. Ignore the duplicate-column error on
+        // databases that already have it.
+        let _ = conn.execute(
+            "ALTER TABLE chat_messages ADD COLUMN encrypted INTEGER NOT NULL DEFAULT 0",
+            [],
+        );
         Self {
             path,
             conn,
