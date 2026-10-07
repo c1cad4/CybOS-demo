@@ -165,7 +165,7 @@ impl CybOs {
 
                         ui.label(
                             RichText::new(format!(
-                                "⌂ LOCAL · READY\n⟶ DIRECT LAN · {} PEER(S)\n◈ TARGET · {}\n✓ DELIVERY ACK · {}\n◌ BLE · ADAPTER ONLY\n↔ P2P · ADAPTER ONLY\n∴ NOSTR · ADAPTER ONLY",
+                                "⌂ LOCAL · READY\n⟶ DIRECT LAN · {} PEER(S)\n◈ TARGET · {}\n◈ ONION RELAYS AVAILABLE · {}\n✓ DELIVERY ACK · {}\n◌ BLE · ADAPTER ONLY\n↔ P2P · ADAPTER ONLY\n∴ NOSTR · ADAPTER ONLY",
                                 self.lan_peers.len(),
                                 target,
                                 onion_relay_count,
