@@ -31,15 +31,19 @@ The protocol separates identity authentication (Ed25519), key agreement (X25519)
 
 ## 3. Persistent peer-key pinning
 
-After authenticated discovery, cybOS uses TOFU (Trust On First Use).
+After authenticated discovery, cybOS uses explicit TOFU (Trust On First Use).
 
-A new peer is stored as peer_pin:<node_id> = public_key in the local SQLite key/value store.
+A newly discovered peer is shown with its SHA-256 public-key fingerprint and is
+not eligible for direct send until the operator explicitly selects "TRUST KEY".
+
+After confirmation, the key is stored as peer_pin:<node_id> = public_key in the
+local SQLite key/value store.
 
 On subsequent discovery:
-- same node ID + same public key = accepted
-- same node ID + different public key = rejected
+- same node ID + same public key = trusted automatically
+- same node ID + different public key = rejected and surfaced as a pinned-key conflict
 
-This prevents silent identity-key replacement after first trust.
+This prevents silent identity-key replacement and makes the first-contact decision visible.
 
 ## 4. Encrypted wire envelope
 
