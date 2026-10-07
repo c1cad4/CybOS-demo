@@ -119,7 +119,8 @@ fn derive_aead_key(shared: &[u8], peer_id: &[u8]) -> Result<[u8; 32], &'static s
     let salt = hkdf::Salt::new(hkdf::HKDF_SHA256, b"cybOS/cybchat/e2e/v1");
     let prk = salt.extract(shared);
     let info = [b"message-key".as_slice(), peer_id].concat();
-    let okm = prk.expand(&[&info], &aead::CHACHA20_POLY1305)
+    let info_refs = [&info];
+    let okm = prk.expand(&info_refs, &aead::CHACHA20_POLY1305)
         .map_err(|_| "KDF failed")?;
     let mut key = [0_u8; 32];
     okm.fill(&mut key).map_err(|_| "KDF output failed")?;
