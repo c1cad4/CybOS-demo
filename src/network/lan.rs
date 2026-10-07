@@ -2810,13 +2810,15 @@ mod tests {
         let destination_port = free_port();
         let dead_relay_port = free_port();
 
+        let relay_a_stop = Arc::new(AtomicBool::new(true));
+        let relay_c_stop = Arc::new(AtomicBool::new(true));
         let (_relay_a_events, _relay_a_ack, relay_a_handle) =
             spawn_listener_on_port_with_control(
                 relay_a.node_id(),
                 relay_a.clone(),
                 relay_a_port,
                 Arc::new(AtomicBool::new(true)),
-                Arc::new(AtomicBool::new(true)),
+                Arc::clone(&relay_a_stop),
             );
         let (_relay_c_events, _relay_c_ack, relay_c_handle) =
             spawn_listener_on_port_with_control(
@@ -2824,7 +2826,7 @@ mod tests {
                 relay_c.clone(),
                 relay_c_port,
                 Arc::new(AtomicBool::new(true)),
-                Arc::new(AtomicBool::new(true)),
+                Arc::clone(&relay_c_stop),
             );
         let destination_events = spawn_listener_on_port(
             destination.node_id(),
@@ -2874,6 +2876,8 @@ mod tests {
 
         assert!(destination_events.recv_timeout(Duration::from_millis(200)).is_err());
 
+        relay_a_stop.store(false, Ordering::Release);
+        relay_c_stop.store(false, Ordering::Release);
         let _ = relay_a_handle.join();
         let _ = relay_c_handle.join();
     }
