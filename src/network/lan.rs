@@ -7,7 +7,10 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::UdpSocket;
 use std::sync::mpsc::{self, Receiver, TryRecvError};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc, Mutex, OnceLock,
+};
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
@@ -145,11 +148,25 @@ fn aad(message_id: &str, from: &str, to: &str, timestamp: u64, counter: u64) -> 
 }
 
 pub(crate) fn spawn_listener(node_id: String, identity: NodeIdentity) -> Receiver<LanEvent> {
-    spawn_listener_on_addr(node_id, identity, "0.0.0.0", LAN_DISCOVERY_PORT)
+    spawn_listener_on_addr(node_id, identity, "0.0.0.0", LAN_DISCOVERY_PORT, Arc::new(AtomicBool::new(true))).0
 }
 
 fn spawn_listener_on_port(node_id: String, identity: NodeIdentity, listen_port: u16) -> Receiver<LanEvent> {
-    spawn_listener_on_addr(node_id, identity, "127.0.0.1", listen_port)
+    spawn_listener_on_addr(node_id, identity, "127.0.0.1", listen_port, Arc::new(AtomicBool::new(true))).0
+}
+
+fn spawn_listener_on_port_with_ack(
+    node_id: String,
+    identity: NodeIdentity,
+    listen_port: u16,
+) -> (Receiver<LanEvent>, Arc<AtomicBool>) {
+    spawn_listener_on_addr(
+        node_id,
+        identity,
+        "127.0.0.1",
+        listen_port,
+        Arc::new(AtomicBool::new(true)),
+    )
 }
 
 fn spawn_listener_on_addr(
@@ -157,7 +174,8 @@ fn spawn_listener_on_addr(
     identity: NodeIdentity,
     listen_addr: &'static str,
     listen_port: u16,
-) -> Receiver<LanEvent> {
+    ack_enabled: Arc<AtomicBool>,
+) -> (Receiver<LanEvent>, Arc<AtomicBool>) {
     let (tx, rx) = mpsc::channel();
     thread::spawn(move || {
         let socket = match UdpSocket::bind((listen_addr, listen_port)) { Ok(s) => s, Err(_) => return };
@@ -256,14 +274,16 @@ fn spawn_listener_on_addr(
                     to: envelope.from.clone(),
                     signature: STANDARD.encode(crypto::sign(&identity, ack_signed.as_bytes())),
                 };
-                if let Ok(body) = serde_json::to_string(&ack) {
-                    let _ = socket.send_to(format!("{} {}", ACK_PREFIX, body).as_bytes(), peer_addr);
+                if ack_enabled.load(Ordering::Acquire) {
+                    if let Ok(body) = serde_json::to_string(&ack) {
+                        let _ = socket.send_to(format!("{} {}", ACK_PREFIX, body).as_bytes(), peer_addr);
+                    }
                 }
                 let _ = tx.send(LanEvent::Chat { message_id: envelope.message_id, node_id: envelope.from, message: text });
             }
         }
     });
-    rx
+    (rx, ack_enabled)
 }
 
 pub(crate) fn scan(node_id: String) -> Vec<LanPeer> {
@@ -601,6 +621,34 @@ mod tests {
         );
         assert!(matches!(second, LanSendStatus::Delivered { .. }));
         wait_for_chat(&bob_events, "second ratcheted message");
+    }
+
+    #[test]
+    fn lost_ack_forces_fresh_handshake_and_recovers() {
+        let alice = NodeIdentity::generate_for_test();
+        let bob = NodeIdentity::generate_for_test();
+        let bob_id = bob.node_id();
+        let bob_port = free_port();
+        let (bob_events, ack_enabled) =
+            spawn_listener_on_port_with_ack(bob_id.clone(), bob.clone(), bob_port);
+        thread::sleep(Duration::from_millis(40));
+
+        let bob_key = STANDARD.encode(bob.public_key());
+        ack_enabled.store(false, Ordering::Release);
+
+        let first = send_private_chat_on_port(
+            &alice, &bob_id, "127.0.0.1", bob_port, &bob_key, "delivered-without-ack",
+        );
+        assert!(matches!(first, LanSendStatus::TimedOut { .. }));
+        wait_for_chat(&bob_events, "delivered-without-ack");
+
+        ack_enabled.store(true, Ordering::Release);
+
+        let second = send_private_chat_on_port(
+            &alice, &bob_id, "127.0.0.1", bob_port, &bob_key, "recovered-after-fresh-handshake",
+        );
+        assert!(matches!(second, LanSendStatus::Delivered { .. }));
+        wait_for_chat(&bob_events, "recovered-after-fresh-handshake");
     }
 
     #[test]
