@@ -2796,6 +2796,89 @@ mod tests {
     }
 
     #[test]
+    fn routed_onion_chat_rebuilds_after_dead_relay() {
+        let _guard = test_guard();
+
+        let source = NodeIdentity::generate_for_test();
+        let relay_a = NodeIdentity::generate_for_test();
+        let dead_relay = NodeIdentity::generate_for_test();
+        let relay_c = NodeIdentity::generate_for_test();
+        let destination = NodeIdentity::generate_for_test();
+
+        let relay_a_port = free_port();
+        let relay_c_port = free_port();
+        let destination_port = free_port();
+        let dead_relay_port = free_port();
+
+        let (_relay_a_events, _relay_a_ack, relay_a_handle) =
+            spawn_listener_on_port_with_control(
+                relay_a.node_id(),
+                relay_a.clone(),
+                relay_a_port,
+                Arc::new(AtomicBool::new(true)),
+                Arc::new(AtomicBool::new(true)),
+            );
+        let (_relay_c_events, _relay_c_ack, relay_c_handle) =
+            spawn_listener_on_port_with_control(
+                relay_c.node_id(),
+                relay_c.clone(),
+                relay_c_port,
+                Arc::new(AtomicBool::new(true)),
+                Arc::new(AtomicBool::new(true)),
+            );
+        let destination_events = spawn_listener_on_port(
+            destination.node_id(),
+            destination.clone(),
+            destination_port,
+        );
+
+        thread::sleep(Duration::from_millis(60));
+
+        let dead_relay_peer = OnionRoutePeer {
+            node_id: dead_relay.node_id(),
+            address: format!("127.0.0.1:{dead_relay_port}"),
+            public_key_b64: STANDARD.encode(dead_relay.public_key()),
+        };
+        let relays = vec![
+            OnionRoutePeer {
+                node_id: relay_a.node_id(),
+                address: format!("127.0.0.1:{relay_a_port}"),
+                public_key_b64: STANDARD.encode(relay_a.public_key()),
+            },
+            dead_relay_peer,
+            OnionRoutePeer {
+                node_id: relay_c.node_id(),
+                address: format!("127.0.0.1:{relay_c_port}"),
+                public_key_b64: STANDARD.encode(relay_c.public_key()),
+            },
+        ];
+        let destination_peer = OnionRoutePeer {
+            node_id: destination.node_id(),
+            address: format!("127.0.0.1:{destination_port}"),
+            public_key_b64: STANDARD.encode(destination.public_key()),
+        };
+
+        let result = send_onion_private_chat_with_route_fallback(
+            &source,
+            &destination_peer,
+            &relays,
+            "route recovered through healthy relays",
+        );
+
+        assert!(matches!(
+            result,
+            LanSendStatus::Delivered { ref peer_id, .. }
+                if peer_id == &destination.node_id()
+        ));
+        wait_for_chat(&destination_events, "route recovered through healthy relays");
+
+        assert!(destination_events.recv_timeout(Duration::from_millis(200)).is_err());
+
+        let _ = relay_a_handle.join();
+        let _ = relay_c_handle.join();
+    }
+
+    #[test]
     fn live_udp_rejects_stale_timestamp_and_wrong_recipient() {
         let _guard = test_guard();
         let alice = NodeIdentity::generate_for_test();
@@ -2924,8 +3007,19 @@ mod tests {
         let mut envelope: WireEnvelope = serde_json::from_str(payload).unwrap();
 
         let replay_socket = UdpSocket::bind(("127.0.0.1", 0)).unwrap();
-        replay_socket.send_to(wire.as_bytes(), ("127.0.0.1", bob_port)).unwrap();
+        replay_socket
+            .set_read_timeout(Some(Duration::from_millis(500)))
+            .unwrap();
+        replay_socket
+            .send_to(wire.as_bytes(), ("127.0.0.1", bob_port))
+            .unwrap();
         assert!(bob_events.recv_timeout(Duration::from_millis(250)).is_err());
+
+        let mut ack_buffer = [0u8; 4096];
+        let (ack_size, ack_sender) = replay_socket.recv_from(&mut ack_buffer).unwrap();
+        assert_eq!(ack_sender.port(), bob_port);
+        let ack_text = std::str::from_utf8(&ack_buffer[..ack_size]).unwrap();
+        assert!(ack_text.starts_with(ACK_PREFIX));
 
         envelope.message_id = Uuid::new_v4().to_string();
         let mut ciphertext = STANDARD.decode(&envelope.ciphertext).unwrap();
