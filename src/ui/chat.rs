@@ -147,7 +147,7 @@ impl CybOs {
 
                         ui.label(
                             RichText::new(
-                                "Direct LAN transport is acknowledged. Cryptographic envelope primitives are loaded; wire-level E2E integration remains explicitly gated until peer key exchange is enabled.",
+                                "Direct LAN transport is active: authenticated peer discovery, X25519 handshake, encrypted wire envelopes, ratchet state and signed delivery ACKs are enforced.",
                             )
                             .size(8.0)
                             .color(dim),
