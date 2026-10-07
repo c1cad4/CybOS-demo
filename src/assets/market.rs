@@ -129,27 +129,57 @@ impl CybOs {
 
     fn token_markets(&self) -> Vec<TokenMarket> {
         let cache = TOKEN_MARKET_CACHE.get_or_init(|| {
-            Mutex::new((
-                Instant::now()
-                    .checked_sub(Duration::from_secs(120))
-                    .unwrap_or_else(Instant::now),
-                Vec::new(),
-            ))
+            Mutex::new((Instant::now(), Vec::new()))
         });
 
-        let mut guard = cache.lock().unwrap();
+        let (refresh_needed, cached) = {
+            let guard = cache.lock().unwrap();
+            (
+                guard.1.is_empty() || guard.0.elapsed() >= Duration::from_secs(60),
+                guard.1.clone(),
+            )
+        };
 
-        if guard.1.is_empty() || guard.0.elapsed() >= Duration::from_secs(60) {
-            let markets = vec![
-                Self::fetch_token_market("$CICADAFARM", CICADAFARM_MINT),
-                Self::fetch_token_market("$ROBOTCYB", ROBOTCYB_MINT),
-            ];
+        if refresh_needed {
+            let should_spawn = {
+                let mut guard = cache.lock().unwrap();
+                if guard.1.is_empty() || guard.0.elapsed() >= Duration::from_secs(60) {
+                    guard.0 = Instant::now();
+                    true
+                } else {
+                    false
+                }
+            };
 
-            guard.0 = std::time::Instant::now();
-            guard.1 = markets;
+            if should_spawn {
+                std::thread::spawn(|| {
+                    let markets = vec![
+                        CybOs::fetch_token_market("$CICADAFARM", CICADAFARM_MINT),
+                        CybOs::fetch_token_market("$ROBOTCYB", ROBOTCYB_MINT),
+                    ];
+
+                    if let Some(cache) = TOKEN_MARKET_CACHE.get() {
+                        let mut guard = cache.lock().unwrap();
+                        guard.1 = markets;
+                    }
+                });
+            }
         }
 
-        guard.1.clone()
+        if cached.is_empty() {
+            vec![
+                TokenMarket {
+                    name: "$CICADAFARM".into(),
+                    ..Default::default()
+                },
+                TokenMarket {
+                    name: "$ROBOTCYB".into(),
+                    ..Default::default()
+                },
+            ]
+        } else {
+            cached
+        }
     }
 
     pub(crate) fn token_matrix(&mut self, ui: &mut egui::Ui) {
