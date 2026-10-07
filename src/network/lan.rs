@@ -145,13 +145,22 @@ fn aad(message_id: &str, from: &str, to: &str, timestamp: u64, counter: u64) -> 
 }
 
 pub(crate) fn spawn_listener(node_id: String, identity: NodeIdentity) -> Receiver<LanEvent> {
-    spawn_listener_on_port(node_id, identity, LAN_DISCOVERY_PORT)
+    spawn_listener_on_addr(node_id, identity, "0.0.0.0", LAN_DISCOVERY_PORT)
 }
 
 fn spawn_listener_on_port(node_id: String, identity: NodeIdentity, listen_port: u16) -> Receiver<LanEvent> {
+    spawn_listener_on_addr(node_id, identity, "127.0.0.1", listen_port)
+}
+
+fn spawn_listener_on_addr(
+    node_id: String,
+    identity: NodeIdentity,
+    listen_addr: &'static str,
+    listen_port: u16,
+) -> Receiver<LanEvent> {
     let (tx, rx) = mpsc::channel();
     thread::spawn(move || {
-        let socket = match UdpSocket::bind(("127.0.0.1", listen_port)) { Ok(s) => s, Err(_) => return };
+        let socket = match UdpSocket::bind((listen_addr, listen_port)) { Ok(s) => s, Err(_) => return };
         let mut buffer = [0u8; 8192];
         let mut sessions: HashMap<String, Session> = HashMap::new();
         let mut seen_messages: HashMap<String, u64> = HashMap::new();
