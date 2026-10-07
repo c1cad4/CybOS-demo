@@ -1758,8 +1758,10 @@ mod tests {
         let route_id = onion::new_route_id();
         let expires_at = now_secs() + 30;
 
-        let relay_public = relay.clone();
-        let relay_address_for_thread = relay_address;
+        let forged_route_id = route_id.clone();
+        let forged_source_id = source.node_id();
+        let forged_relay_id = relay.node_id();
+        let forged_expires_at = expires_at;
         let handle = thread::spawn(move || {
             let mut buffer = [0u8; 4096];
             let (size, source_address) = relay_socket.recv_from(&mut buffer).unwrap();
@@ -1767,15 +1769,15 @@ mod tests {
             assert!(text.starts_with(ONION_BIND_PREFIX));
 
             let mut forged = OnionRouteBindAck {
-                route_id,
+                route_id: forged_route_id,
                 hop_index: 0,
-                source_id: source.node_id(),
-                relay_id: relay_public.node_id(),
-                previous_node_id: source.node_id(),
+                source_id: forged_source_id.clone(),
+                relay_id: forged_relay_id,
+                previous_node_id: forged_source_id,
                 previous_address: "0.0.0.0:12345".into(),
                 next_node_id: "destination".into(),
                 next_address: "127.0.0.1:49494".into(),
-                expires_at,
+                expires_at: forged_expires_at,
                 signature: String::new(),
             };
 
@@ -1791,8 +1793,6 @@ mod tests {
                     source_address,
                 )
                 .unwrap();
-
-            let _ = relay_address_for_thread;
         });
 
         let result = send_onion_route_bind(
