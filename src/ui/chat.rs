@@ -168,6 +168,7 @@ impl CybOs {
                                 "⌂ LOCAL · READY\n⟶ DIRECT LAN · {} PEER(S)\n◈ TARGET · {}\n✓ DELIVERY ACK · {}\n◌ BLE · ADAPTER ONLY\n↔ P2P · ADAPTER ONLY\n∴ NOSTR · ADAPTER ONLY",
                                 self.lan_peers.len(),
                                 target,
+                                onion_relay_count,
                                 self.lan_delivery_status
                             ))
                             .size(9.0)
@@ -185,7 +186,7 @@ impl CybOs {
 
                         ui.label(
                             RichText::new(
-                                "Direct LAN transport is active: authenticated peer discovery, X25519 handshake, encrypted wire envelopes, ratchet state and signed delivery ACKs are enforced.",
+                                "Direct LAN transport and routed onion transport are active. Onion delivery wraps the same authenticated E2E WireEnvelope in layered relay encryption; relay bindings, hop lineage, replay and signed destination ACKs are enforced.",
                             )
                             .size(8.0)
                             .color(dim),
@@ -275,6 +276,19 @@ impl CybOs {
 
                         let can_send_lan =
                             self.lan_target.is_some() && self.lan_send_task.is_none();
+                        let onion_relay_count = self
+                            .lan_peers
+                            .iter()
+                            .filter(|peer| {
+                                peer.trusted
+                                    && self.lan_target.as_deref() != Some(peer.node_id.as_str())
+                            })
+                            .count()
+                            .min(crate::network::onion::MAX_ONION_HOPS);
+                        let can_send_onion =
+                            self.lan_target.is_some()
+                                && onion_relay_count > 0
+                                && self.lan_send_task.is_none();
 
                         let send_lan = ui
                             .add_enabled(
@@ -325,6 +339,42 @@ impl CybOs {
                                     true,
                                 );
                                 self.send_lan_chat(&t);
+                                self.chat_input.clear();
+                            }
+                        }
+
+                        let send_onion = ui
+                            .add_enabled(
+                                can_send_onion,
+                                egui::Button::new(
+                                    RichText::new(format!("◈ SEND ONION · {}", onion_relay_count))
+                                        .size(10.0)
+                                        .strong()
+                                        .color(neon),
+                                )
+                                .min_size(Vec2::new(150.0, 34.0)),
+                            )
+                            .on_disabled_hover_text(
+                                "Select a trusted destination and keep at least one other trusted peer available as a relay.",
+                            )
+                            .clicked();
+
+                        if send_onion {
+                            let t = self.chat_input.trim().to_string();
+
+                            if !t.is_empty() {
+                                let target = self
+                                    .lan_target
+                                    .as_deref()
+                                    .unwrap_or("selected peer")
+                                    .to_string();
+
+                                self.push_chat_message(
+                                    format!("YOU ◈→ {}", target),
+                                    t.clone(),
+                                    true,
+                                );
+                                self.send_lan_onion_chat(&t);
                                 self.chat_input.clear();
                             }
                         }
