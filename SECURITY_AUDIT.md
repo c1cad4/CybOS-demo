@@ -7,6 +7,8 @@ Scope: direct-LAN discovery, identity, handshake, wire envelope, ratchet, replay
 
 The direct LAN design has a sound primitive selection and an explicit security boundary, but the initial implementation contained two merge-blocking state/integration defects:
 
+The branch now also contains the first authenticated multi-hop onion transport layer. It is a transport milestone rather than a claim of a complete routed messenger: layered relay packets, per-hop scoped AEAD keys, TTL, hop/route lineage checks, replay suppression and a bounded UDP relay are implemented; automatic route establishment and reverse routed ACK delivery are still pending.
+
 1. The runtime persisted a random node ID unrelated to the persistent Ed25519 identity. This could make authenticated discovery reject the local peer because the announced node ID did not equal the hash-derived identity ID.
 2. A lost delivery ACK could leave the sender reusing a stale ratchet session while the receiver had already advanced its chain. Subsequent messages could then be rejected until the process was restarted.
 
@@ -77,7 +79,7 @@ The current design is a per-message HKDF chain with a monotonic counter. It is n
 
 Do not claim "production-grade secure messenger" yet.
 
-For this direct-LAN MVP, the implementation is suitable to merge after the current CI is green, with the residual risks above kept explicit in the documentation. The next security milestone should be the two-process adversarial integration harness and encrypted storage for any additional sensitive datasets.
+For this branch, the direct-LAN transport and the onion transport core are suitable to merge only while the residual risks above remain explicit. The current onion milestone is not yet a complete routed CybChat path: route establishment, reverse routed ACKs, and UI route selection remain to be integrated. The next security milestone is to connect adjacent per-hop sessions to route setup and then exercise the full routed send/ack path in an adversarial multi-process harness.
 
 
 Current automated integration coverage also includes:
@@ -85,3 +87,22 @@ Current automated integration coverage also includes:
 - live UDP rejection of wrong-recipient envelopes
 - forged ACK signature rejection
 - persistent TOFU key replacement rejection
+
+
+### Multi-hop onion transport
+
+Implemented:
+- layered ChaCha20-Poly1305 onion packets;
+- route ID and packet ID;
+- hop-index and nested-packet lineage validation;
+- bounded 120-second route expiry;
+- per-relay replay cache;
+- route binding table capped at 256 entries;
+- live UDP relay forwarding;
+- live three-relay loopback forwarding test.
+
+Not yet implemented:
+- automatic per-hop route/session establishment;
+- reverse onion ACKs;
+- route selection and onion-send UI;
+- process-isolated routed adversarial harness.
