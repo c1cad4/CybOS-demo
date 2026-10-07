@@ -141,6 +141,36 @@ mod tests {
     }
 
     #[test]
+    fn aead_tampering_fails() {
+        let key = [9u8; 32];
+        let (nonce, ciphertext) = encrypt(&key, b"aad", b"hello").unwrap();
+
+        assert!(decrypt(&key, b"tampered-aad", &nonce, &ciphertext).is_err());
+
+        let mut bytes = STANDARD.decode(&ciphertext).unwrap();
+        bytes[0] ^= 0x01;
+        let tampered_ciphertext = STANDARD.encode(bytes);
+        assert!(decrypt(&key, b"aad", &nonce, &tampered_ciphertext).is_err());
+    }
+
+    #[test]
+    fn envelope_signature_rejects_wrong_recipient() {
+        let store = Store::open();
+        let identity = NodeIdentity::load_or_create(&store);
+        let message = EncryptedMessage {
+            version: 1,
+            sender_id: identity.node_id(),
+            sender_public_key: STANDARD.encode(identity.public_key()),
+            ephemeral_public_key: STANDARD.encode([1u8; 32]),
+            nonce: STANDARD.encode([2u8; NONCE_LEN]),
+            ciphertext: STANDARD.encode(b"ciphertext"),
+            signature: STANDARD.encode([0u8; 64]),
+        };
+
+        assert!(!verify_envelope(&message, "cyb-wrong-recipient"));
+    }
+
+    #[test]
     fn identity_signature_verifies() {
         let store = Store::open();
         let identity = NodeIdentity::load_or_create(&store);
