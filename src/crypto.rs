@@ -106,6 +106,10 @@ pub(crate) fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
+pub(crate) fn fingerprint(public_key: &[u8]) -> String {
+    hex(public_key)
+}
+
 pub(crate) fn node_id_from_public_key(public_key: &[u8]) -> String {
     let hash = digest::digest(&digest::SHA256, public_key);
     format!("cyb-{}", hex(&hash.as_ref()[..12]))
