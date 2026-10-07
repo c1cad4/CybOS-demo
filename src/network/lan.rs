@@ -807,8 +807,7 @@ fn spawn_listener_on_addr_with_stop(
             if let Some(payload) = message.strip_prefix(ONION_REVERSE_PREFIX).and_then(|r| r.strip_prefix(' ')) {
                 let Ok(mut reverse) = serde_json::from_str::<OnionReverseAck>(payload) else { continue };
                 let Some(binding) = onion_bindings.get(&reverse.route_id).cloned() else { continue };
-                if reverse.ack.to != binding.source_id
-                    || reverse.ack.message_id != reverse.message_id
+                if reverse.ack.message_id != reverse.message_id
                     || peer_addr.to_string() != binding.next_address
                 {
                     continue;
