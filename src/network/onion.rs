@@ -59,6 +59,24 @@ pub(crate) enum PeelResult {
     Deliver(DeliverPacket),
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub(crate) struct OnionReversePacket {
+    pub(crate) version: u8,
+    pub(crate) route_id: String,
+    pub(crate) packet_id: String,
+    pub(crate) hop_index: u8,
+    pub(crate) expires_at: u64,
+    pub(crate) nonce: String,
+    pub(crate) ciphertext: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct ReverseForward {
+    pub(crate) previous_node_id: String,
+    pub(crate) previous_address: String,
+    pub(crate) payload: Vec<u8>,
+}
+
 #[derive(Clone, Debug, Default)]
 pub(crate) struct OnionRelayTable {
     bindings: Arc<Mutex<HashMap<(String, u8), [u8; 32]>>>,
@@ -255,6 +273,7 @@ fn layer_aad(
     packet_id: &str,
     hop_index: u8,
     expires_at: u64,
+    direction: &str,
 ) -> Vec<u8> {
     [
         crypto::PROTOCOL,
@@ -263,6 +282,7 @@ fn layer_aad(
         packet_id,
         &hop_index.to_string(),
         &expires_at.to_string(),
+        direction,
     ]
     .join("|")
     .into_bytes()
@@ -346,7 +366,7 @@ pub(crate) fn wrap(
             hop_index,
             "forward",
         )?;
-        let aad = layer_aad(route_id, packet_id, hop_index, expires_at);
+        let aad = layer_aad(route_id, packet_id, hop_index, expires_at, "forward");
         let (nonce, ciphertext) = crypto::encrypt(&key, &aad, &frame_bytes)?;
 
         let packet = OnionPacket {
@@ -412,6 +432,7 @@ pub(crate) fn peel(
         &packet.packet_id,
         packet.hop_index,
         packet.expires_at,
+        "forward",
     );
     let frame_bytes = crypto::decrypt(&key, &aad, &packet.nonce, &packet.ciphertext)?;
 
@@ -447,6 +468,103 @@ pub(crate) fn peel(
             payload,
         })),
     }
+}
+
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct ReverseFrame {
+    previous_node_id: String,
+    previous_address: String,
+    payload: Vec<u8>,
+}
+
+pub(crate) fn wrap_reverse_hop(
+    route_id: &str,
+    packet_id: &str,
+    hop_index: u8,
+    expires_at: u64,
+    payload: &[u8],
+    previous_node_id: &str,
+    previous_address: &str,
+    hop_session_key: &[u8; 32],
+) -> Result<OnionReversePacket, &'static str> {
+    if payload.is_empty() {
+        return Err("empty reverse onion payload");
+    }
+    if previous_node_id.is_empty() || previous_address.is_empty() {
+        return Err("invalid reverse onion target");
+    }
+    let frame = ReverseFrame {
+        previous_node_id: previous_node_id.to_string(),
+        previous_address: previous_address.to_string(),
+        payload: payload.to_vec(),
+    };
+    let bytes = serde_json::to_vec(&frame).map_err(|_| "cannot encode reverse onion frame")?;
+    let key = crypto::onion_layer_key(
+        hop_session_key,
+        route_id,
+        packet_id,
+        hop_index,
+        "reverse",
+    )?;
+    let aad = layer_aad(route_id, packet_id, hop_index, expires_at, "reverse");
+    let (nonce, ciphertext) = crypto::encrypt(&key, &aad, &bytes)?;
+    Ok(OnionReversePacket {
+        version: 1,
+        route_id: route_id.to_string(),
+        packet_id: packet_id.to_string(),
+        hop_index,
+        expires_at,
+        nonce,
+        ciphertext,
+    })
+}
+
+pub(crate) fn peel_reverse(
+    packet: &OnionReversePacket,
+    expected_route_id: &str,
+    expected_hop_index: u8,
+    hop_session_key: &[u8; 32],
+    now: u64,
+) -> Result<ReverseForward, &'static str> {
+    if packet.version != 1 {
+        return Err("unsupported reverse onion version");
+    }
+    if packet.route_id != expected_route_id {
+        return Err("unexpected reverse onion route");
+    }
+    if packet.hop_index != expected_hop_index {
+        return Err("unexpected reverse onion hop index");
+    }
+    if packet.expires_at < now
+        || packet.expires_at.saturating_sub(now) > ONION_TTL_SECS
+    {
+        return Err("invalid reverse onion expiry");
+    }
+
+    let key = crypto::onion_layer_key(
+        hop_session_key,
+        &packet.route_id,
+        &packet.packet_id,
+        packet.hop_index,
+        "reverse",
+    )?;
+    let aad = layer_aad(
+        &packet.route_id,
+        &packet.packet_id,
+        packet.hop_index,
+        packet.expires_at,
+        "reverse",
+    );
+    let bytes = crypto::decrypt(&key, &aad, &packet.nonce, &packet.ciphertext)?;
+    let frame: ReverseFrame =
+        serde_json::from_slice(&bytes).map_err(|_| "invalid reverse onion frame")?;
+
+    Ok(ReverseForward {
+        previous_node_id: frame.previous_node_id,
+        previous_address: frame.previous_address,
+        payload: frame.payload,
+    })
 }
 
 #[cfg(test)]
@@ -645,6 +763,80 @@ mod tests {
         assert_eq!(deliver.destination_id, "cyb-destination");
         assert_eq!(deliver.destination_address, "127.0.0.1:40004");
         assert_eq!(deliver.payload, payload);
+    }
+
+    #[test]
+    fn reverse_onion_ack_can_cross_back_through_three_relays() {
+        let route = new_route_id();
+        let packet_id = new_packet_id();
+        let expires = 1_000_000_100;
+        let keys = [[21u8; 32], [22u8; 32], [23u8; 32]];
+        let payload = b"signed destination ack";
+
+        let packet_c = wrap_reverse_hop(
+            &route,
+            &packet_id,
+            2,
+            expires,
+            payload,
+            "relay-b",
+            "127.0.0.1:41002",
+            &keys[2],
+        )
+        .unwrap();
+        let from_c = peel_reverse(
+            &packet_c,
+            &route,
+            2,
+            &keys[2],
+            1_000_000_000,
+        )
+        .unwrap();
+        assert_eq!(from_c.previous_node_id, "relay-b");
+        assert_eq!(from_c.payload, payload);
+
+        let packet_b = wrap_reverse_hop(
+            &route,
+            &packet_id,
+            1,
+            expires,
+            &from_c.payload,
+            "relay-a",
+            "127.0.0.1:41001",
+            &keys[1],
+        )
+        .unwrap();
+        let from_b = peel_reverse(
+            &packet_b,
+            &route,
+            1,
+            &keys[1],
+            1_000_000_000,
+        )
+        .unwrap();
+
+        let packet_a = wrap_reverse_hop(
+            &route,
+            &packet_id,
+            0,
+            expires,
+            &from_b.payload,
+            "source",
+            "127.0.0.1:41000",
+            &keys[0],
+        )
+        .unwrap();
+        let source = peel_reverse(
+            &packet_a,
+            &route,
+            0,
+            &keys[0],
+            1_000_000_000,
+        )
+        .unwrap();
+
+        assert_eq!(source.previous_node_id, "source");
+        assert_eq!(source.payload, payload);
     }
 
     #[test]
