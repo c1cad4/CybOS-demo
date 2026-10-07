@@ -24,6 +24,7 @@ const MAX_WIRE_BYTES: usize = 4096;
 const CHAT_ACK_TIMEOUT: Duration = Duration::from_millis(900);
 const KEY_TIMEOUT: Duration = Duration::from_millis(900);
 const REPLAY_WINDOW_SECS: u64 = 300;
+const MAX_SESSIONS: usize = 128;
 
 #[derive(Clone, Debug)]
 pub(crate) struct LanPeer {
@@ -166,6 +167,9 @@ pub(crate) fn spawn_listener(node_id: String, identity: NodeIdentity) -> Receive
                 let Ok((private, reply_eph)) = crypto::ephemeral() else { continue };
                 let transcript = session_transcript(&init.from, &init.to, &eph, &reply_eph);
                 let Ok(key) = crypto::derive_session_key(private, &eph, &transcript) else { continue };
+                if !sessions.contains_key(&init.from) && sessions.len() >= MAX_SESSIONS {
+                    continue;
+                }
                 sessions.insert(init.from.clone(), Session { key, public_key, counter: 0 });
 
                 let timestamp = now_secs();
