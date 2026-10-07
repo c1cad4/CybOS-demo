@@ -1,9 +1,11 @@
-//! Local LAN discovery for cybOS nodes.
+//! Local LAN discovery and peer-to-peer message transport.
 //!
-//! Discovery uses a small UDP broadcast handshake. No credentials or
-//! application data are transmitted by the discovery protocol.
+//! Discovery and chat use a small UDP broadcast protocol. Only explicitly
+//! addressed cybOS messages are accepted; no credentials or application
+//! secrets are transmitted by this service.
 
 use crate::config::APP_VERSION;
+use serde_json::json;
 use std::net::UdpSocket;
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::thread;
@@ -12,6 +14,7 @@ use std::time::Duration;
 const LAN_DISCOVERY_PORT: u16 = 39393;
 const DISCOVERY_PREFIX: &str = "CYBOS_DISCOVER";
 const RESPONSE_PREFIX: &str = "CYBOS_PEER";
+const CHAT_PREFIX: &str = "CYBOS_CHAT";
 
 #[derive(Clone, Debug)]
 pub(crate) struct LanPeer {
@@ -20,14 +23,24 @@ pub(crate) struct LanPeer {
     pub(crate) version: String,
 }
 
-pub(crate) fn spawn_listener(node_id: String) {
+#[derive(Clone, Debug)]
+pub(crate) enum LanEvent {
+    Chat {
+        node_id: String,
+        message: String,
+    },
+}
+
+pub(crate) fn spawn_listener(node_id: String) -> Receiver<LanEvent> {
+    let (tx, rx) = mpsc::channel();
+
     thread::spawn(move || {
         let socket = match UdpSocket::bind(("0.0.0.0", LAN_DISCOVERY_PORT)) {
             Ok(socket) => socket,
             Err(_) => return,
         };
 
-        let mut buffer = [0_u8; 1024];
+        let mut buffer = [0_u8; 4096];
 
         loop {
             let Ok((size, peer_addr)) = socket.recv_from(&mut buffer) else {
@@ -38,13 +51,37 @@ pub(crate) fn spawn_listener(node_id: String) {
                 continue;
             };
 
-            let mut parts = message.split_whitespace();
+            if let Some(sender_id) = message
+                .strip_prefix(DISCOVERY_PREFIX)
+                .and_then(|rest| rest.strip_prefix(' '))
+            {
+                if sender_id == node_id {
+                    continue;
+                }
 
-            if parts.next() != Some(DISCOVERY_PREFIX) {
+                let response = format!(
+                    "{} {} {}",
+                    RESPONSE_PREFIX,
+                    node_id,
+                    APP_VERSION
+                );
+
+                let _ = socket.send_to(response.as_bytes(), peer_addr);
                 continue;
             }
 
-            let Some(sender_id) = parts.next() else {
+            let Some(payload) = message
+                .strip_prefix(CHAT_PREFIX)
+                .and_then(|rest| rest.strip_prefix(' '))
+            else {
+                continue;
+            };
+
+            let Ok(value) = serde_json::from_str::<serde_json::Value>(payload) else {
+                continue;
+            };
+
+            let Some(sender_id) = value["node_id"].as_str() else {
                 continue;
             };
 
@@ -52,16 +89,22 @@ pub(crate) fn spawn_listener(node_id: String) {
                 continue;
             }
 
-            let response = format!(
-                "{} {} {}",
-                RESPONSE_PREFIX,
-                node_id,
-                APP_VERSION
-            );
+            let Some(chat_message) = value["message"].as_str() else {
+                continue;
+            };
 
-            let _ = socket.send_to(response.as_bytes(), peer_addr);
+            if chat_message.trim().is_empty() {
+                continue;
+            }
+
+            let _ = tx.send(LanEvent::Chat {
+                node_id: sender_id.to_string(),
+                message: chat_message.to_string(),
+            });
         }
     });
+
+    rx
 }
 
 pub(crate) fn scan(node_id: String) -> Vec<LanPeer> {
@@ -99,11 +142,8 @@ pub(crate) fn scan(node_id: String) -> Vec<LanPeer> {
                 };
 
                 let mut parts = message.split_whitespace();
-                let Some(prefix) = parts.next() else {
-                    continue;
-                };
 
-                if prefix != RESPONSE_PREFIX {
+                if parts.next() != Some(RESPONSE_PREFIX) {
                     continue;
                 }
 
@@ -132,6 +172,32 @@ pub(crate) fn scan(node_id: String) -> Vec<LanPeer> {
     }
 
     peers
+}
+
+pub(crate) fn send_chat(node_id: &str, message: &str) -> bool {
+    let socket = match UdpSocket::bind(("0.0.0.0", 0)) {
+        Ok(socket) => socket,
+        Err(_) => return false,
+    };
+
+    if socket.set_broadcast(true).is_err() {
+        return false;
+    }
+
+    let payload = json!({
+        "node_id": node_id,
+        "message": message,
+        "version": APP_VERSION
+    });
+
+    let wire = format!("{} {}", CHAT_PREFIX, payload);
+
+    socket
+        .send_to(
+            wire.as_bytes(),
+            ("255.255.255.255", LAN_DISCOVERY_PORT),
+        )
+        .is_ok()
 }
 
 impl crate::state::CybOs {
@@ -172,6 +238,40 @@ impl crate::state::CybOs {
             Err(TryRecvError::Empty) => {}
             Err(TryRecvError::Disconnected) => {
                 self.lan_scan = None;
+            }
+        }
+    }
+
+    pub(crate) fn send_lan_chat(&mut self, message: &str) {
+        let node_id = self.node_id.clone();
+        let message = message.trim().to_string();
+
+        if message.is_empty() {
+            return;
+        }
+
+        thread::spawn(move || {
+            let _ = send_chat(&node_id, &message);
+        });
+    }
+
+    pub(crate) fn poll_lan_events(&mut self) {
+        loop {
+            let event = match self.lan_events.try_recv() {
+                Ok(event) => event,
+                Err(TryRecvError::Empty) => break,
+                Err(TryRecvError::Disconnected) => break,
+            };
+
+            match event {
+                LanEvent::Chat { node_id, message } => {
+                    let display = format!("LAN:{}", node_id);
+                    self.push_chat_message(display, message.clone(), false);
+                    self.add_event(
+                        "CHAT",
+                        format!("LAN message received from {}", node_id),
+                    );
+                }
             }
         }
     }
