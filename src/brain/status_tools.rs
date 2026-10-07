@@ -3,7 +3,7 @@
 use crate::CybOs;
 
 impl CybOs {
-pub(crate) fn tool_system_status(&self) -> String {
+    pub(crate) fn tool_system_status(&self) -> String {
         format!(
             "System status:
 Node ID: {}
@@ -14,7 +14,7 @@ Battery: {:.0}%",
         )
     }
 
-pub(crate) fn tool_farm_status(&self) -> String {
+    pub(crate) fn tool_farm_status(&self) -> String {
         let mut result = String::new();
 
         result.push_str("CicadaFarm status:\n");
@@ -31,7 +31,7 @@ pub(crate) fn tool_farm_status(&self) -> String {
         result
     }
 
-pub(crate) fn tool_get_events(&self, limit: usize) -> String {
+    pub(crate) fn tool_get_events(&self, limit: usize) -> String {
         let mut result = String::new();
 
         result.push_str(&format!("Recent cybOS events (limit {}):\n", limit));
@@ -44,14 +44,5 @@ pub(crate) fn tool_get_events(&self, limit: usize) -> String {
         }
 
         result
-    }
-
-pub(crate) fn tool_create_event(&mut self, kind: &str, text: &str) -> String {
-        self.add_event(kind, text.to_string());
-
-        format!(
-            "Event created successfully.\nKind: {}\nText: {}",
-            kind, text
-        )
     }
 }
