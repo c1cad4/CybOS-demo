@@ -940,7 +940,7 @@ fn send_onion_private_chat(
             relay,
             &route_id,
             index as u8,
-            previous_node_id,
+            &previous_node_id,
             previous_address,
             next_node_id,
             next_address,
