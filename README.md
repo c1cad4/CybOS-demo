@@ -10,14 +10,14 @@ not a browser wrapper.
 - RobotCYB local contextual assistant
 - CybChat local conversation shell with persistent SQLite history
 - Cybergraph with nodes, links, zoom/pan and inspector
-- Persistent SQLite event, memory, graph and node-identity storage
+- Persistent SQLite event, memory and graph storage
+- macOS Keychain-backed Ed25519 node identity with one-time migration from legacy SQLite identity storage
 - Search/navigation shell with native page routing
 - Local Qwen runtime shared by planner, learning, RobotCYB and web answers
 - Real local LAN peer discovery with UDP broadcast and node/version reporting
 - Directed LAN CybChat with explicit recipient identity, message IDs and bounded delivery acknowledgements
 - Background market and Solana balance refreshes that do not block UI rendering
 - Public $CICADAFARM and $ROBOTCYB mint identifiers
-- Local Ed25519 private identity key stored in the local SQLite runtime store
 - Rust CI checks for push and pull requests
 
 ## Architecture
@@ -41,9 +41,7 @@ but the MVP does not claim them as connected. LAN discovery is implemented as a
 real local peer-discovery channel. Discovery is broadcast-only; CybChat messages
 are directed to a selected peer and acknowledged within a bounded timeout. The
 CybChat direct-LAN payloads are encrypted with the authenticated wire envelope
-and are only reported as delivered after a verified signed ACK. Local chat
-history remains stored in SQLite as application data; at-rest encryption is not
-part of this transport layer.
+and are only reported as delivered after a verified signed ACK. Local chat history remains stored in SQLite as application data; chat-history at-rest encryption is not part of this milestone.
 
 
 ## One-click macOS launch
