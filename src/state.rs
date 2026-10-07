@@ -44,6 +44,8 @@ pub(crate) struct CybOs {
     pub(crate) camera_zone: usize,
     pub(crate) search_focus: bool,
     pub(crate) last_scan: Option<Instant>,
+    pub(crate) lan_peers: Vec<crate::network::lan::LanPeer>,
+    pub(crate) lan_scan: Option<std::sync::mpsc::Receiver<Vec<crate::network::lan::LanPeer>>>,
     pub(crate) remember_note: String,
 }
 impl Default for CybOs {
@@ -97,8 +99,12 @@ impl Default for CybOs {
             camera_zone: 0,
             search_focus: false,
             last_scan: None,
+            lan_peers: Vec::new(),
+            lan_scan: None,
             remember_note: String::new(),
         };
+
+        crate::network::lan::spawn_listener(node_id.clone());
 
         app.initialize_graph();
 
