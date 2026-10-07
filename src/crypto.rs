@@ -89,6 +89,19 @@ pub(crate) fn decrypt(
     Ok(plaintext.to_vec())
 }
 
+pub(crate) fn local_storage_key(secret: &[u8]) -> [u8; 32] {
+    let salt = hkdf::Salt::new(hkdf::HKDF_SHA256, b"cybOS/local-storage/v1");
+    let prk = salt.extract(secret);
+    let refs: [&[u8]; 1] = [b"cybchat-sqlite-v1"];
+    let okm = prk
+        .expand(&refs, &aead::CHACHA20_POLY1305)
+        .expect("local storage HKDF parameters must be valid");
+    let mut key = [0u8; 32];
+    okm.fill(&mut key)
+        .expect("local storage HKDF output must be 32 bytes");
+    key
+}
+
 pub(crate) fn envelope_bytes(
     message_id: &str,
     from: &str,
@@ -156,6 +169,16 @@ mod tests {
         bytes[0] ^= 0x01;
         let tampered_ciphertext = STANDARD.encode(bytes);
         assert!(decrypt(&key, b"aad", &nonce, &tampered_ciphertext).is_err());
+    }
+
+    #[test]
+    fn local_storage_key_is_deterministic_and_scoped() {
+        let a = local_storage_key(b"identity-key");
+        let b = local_storage_key(b"identity-key");
+        let c = local_storage_key(b"different-identity-key");
+
+        assert_eq!(a, b);
+        assert_ne!(a, c);
     }
 
     #[test]
