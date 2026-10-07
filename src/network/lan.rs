@@ -308,11 +308,20 @@ fn spawn_listener_on_addr(
                     continue;
                 }
 
+                if bind.hop_index == 0 && bind.previous_node_id != bind.source_id {
+                    continue;
+                }
+                let previous_address = if bind.hop_index == 0 {
+                    peer_addr.to_string()
+                } else {
+                    bind.previous_address.clone()
+                };
+
                 let binding = OnionRouteBinding {
                     source_id: bind.source_id.clone(),
                     hop_index: bind.hop_index,
                     previous_node_id: bind.previous_node_id.clone(),
-                    previous_address: bind.previous_address.clone(),
+                    previous_address,
                     next_node_id: bind.next_node_id.clone(),
                     next_address: bind.next_address.clone(),
                     expires_at: bind.expires_at,
@@ -548,6 +557,7 @@ fn spawn_listener_on_addr(
                 let Some(binding) = onion_bindings.get(&reverse.route_id).cloned() else { continue };
                 if reverse.ack.to != binding.source_id
                     || reverse.ack.message_id != reverse.packet_id
+                    || peer_addr.to_string() != binding.next_address
                 {
                     continue;
                 }
@@ -681,7 +691,7 @@ fn ensure_onion_session(
     socket
         .set_read_timeout(Some(KEY_TIMEOUT))
         .map_err(|e| e.to_string())?;
-    let (private, init_public) = crypto::ephemeral().map_err(str::to_string)?;
+    let (private, init_public) = crypto::ephemeral().map_err(|e| e.to_string())?;
     let init_public_b64 = STANDARD.encode(&init_public);
     let identity_public_b64 = STANDARD.encode(identity.public_key());
     let timestamp = now_secs();
@@ -760,7 +770,7 @@ fn ensure_onion_session(
         &reply_public,
     );
     let key = crypto::derive_session_key(private, &reply_public, &transcript)
-        .map_err(str::to_string)?;
+        .map_err(|e| e.to_string())?;
 
     let session = Session {
         root_key: key,
