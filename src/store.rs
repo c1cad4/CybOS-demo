@@ -93,13 +93,24 @@ impl Store {
         )
         .expect("cannot initialize database");
 
-        // Existing databases from the previous plaintext schema need the new
-        // marker column added once. Ignore the duplicate-column error on
-        // databases that already have it.
-        let _ = conn.execute(
-            "ALTER TABLE chat_messages ADD COLUMN encrypted INTEGER NOT NULL DEFAULT 0",
-            [],
-        );
+        // Migrate legacy plaintext databases once. Avoid issuing ALTER TABLE
+        // on every Store::open(), because the test suite and multiple app
+        // components can legitimately open the same SQLite database in parallel.
+        let has_encrypted_column = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('chat_messages') WHERE name='encrypted'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap_or(0)
+            > 0;
+
+        if !has_encrypted_column {
+            let _ = conn.execute(
+                "ALTER TABLE chat_messages ADD COLUMN encrypted INTEGER NOT NULL DEFAULT 0",
+                [],
+            );
+        }
         Self {
             path,
             conn,
