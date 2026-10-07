@@ -323,3 +323,22 @@ fn dirs_fallback() -> PathBuf {
     }
 }
 
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tofu_rejects_peer_key_replacement() {
+        let store = Store::open();
+        let node_id = format!("test-peer-{}", Uuid::new_v4());
+        let first = "ZmFrZS1rZXktMQ==";
+        let replacement = "ZmFrZS1rZXktMg==";
+
+        assert!(store.trust_peer_key(&node_id, first));
+        assert_eq!(store.peer_pin(&node_id).as_deref(), Some(first));
+        assert!(store.trust_peer_key(&node_id, first));
+        assert!(!store.trust_peer_key(&node_id, replacement));
+        assert_eq!(store.peer_pin(&node_id).as_deref(), Some(first));
+    }
+}
