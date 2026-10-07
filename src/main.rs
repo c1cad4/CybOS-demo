@@ -7,6 +7,7 @@ mod actions;
 mod ai;
 mod assets;
 mod brain;
+mod config;
 mod graph;
 mod navigation;
 mod runtime;
@@ -15,19 +16,10 @@ mod state;
 mod theme;
 mod ui;
 
-use crate::models::TokenMarket;
 pub(crate) use navigation::{Icon, Page};
 pub(crate) use state::CybOs;
 
 use eframe::egui;
-const CICADAFARM_MINT: &str = "9QLCEL7Xo9VTwgBeAYU1PWX7JJ8joKxQCYw3msjUpump";
-const ROBOTCYB_MINT: &str = "8WZiguAp8NyFnwm8Z97k6sCbSRCWaW1YYXKeCTpupump";
-
-static TOKEN_MARKET_CACHE: std::sync::OnceLock<
-    std::sync::Mutex<(std::time::Instant, Vec<TokenMarket>)>,
-> = std::sync::OnceLock::new();
-
-const APP_VERSION: &str = "0.6.0";
 
 fn main() -> eframe::Result {
     let opts = eframe::NativeOptions {
@@ -37,6 +29,7 @@ fn main() -> eframe::Result {
             .with_min_inner_size([1000.0, 680.0]),
         ..Default::default()
     };
+
     eframe::run_native(
         "cybOS",
         opts,
