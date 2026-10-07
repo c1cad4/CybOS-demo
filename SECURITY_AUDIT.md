@@ -1,13 +1,13 @@
 # cybOS Secure CybChat Security Audit
 
 Date: 2026-10-07
-Scope: direct-LAN discovery, identity, handshake, wire envelope, ratchet, replay handling, ACK delivery, local storage, and documentation.
+Scope: direct-LAN discovery, identity, handshake, wire envelope, ratchet, replay handling, ACK delivery, local storage, routed onion transport, and documentation.
 
 ## Audit result
 
 The direct LAN design has a sound primitive selection and an explicit security boundary, but the initial implementation contained two merge-blocking state/integration defects:
 
-The branch now contains the authenticated multi-hop routed CybChat path: authenticated adjacent-hop sessions, signed route binding, layered relay packets, per-hop scoped AEAD keys, TTL, hop/route lineage checks, replay suppression, reverse routed ACK delivery and a bounded UDP relay. The UI exposes explicit relay selection and ordered hop construction.
+The branch now contains the routed CybChat path: each relay establishes a fresh anonymous X25519 session, authenticates its own session reply with its Ed25519 identity, and receives an AEAD-encrypted route binding. Onion packets use per-hop session IDs and scoped AEAD keys, enforce TTL and hop/route lineage, suppress replay, forward over bounded UDP, and carry reverse routed ACKs. The UI exposes explicit relay selection and ordered hop construction. The route setup does not send the source Ed25519 identity to the relay.
 
 1. The runtime persisted a random node ID unrelated to the persistent Ed25519 identity. This could make authenticated discovery reject the local peer because the announced node ID did not equal the hash-derived identity ID.
 2. A lost delivery ACK could leave the sender reusing a stale ratchet session while the receiver had already advanced its chain. Subsequent messages could then be rejected until the process was restarted.
@@ -26,7 +26,7 @@ Both defects were fixed on this branch.
 - On macOS, CybChat history is encrypted with ChaCha20-Poly1305 before being written to SQLite.
 - Existing plaintext chat rows are migrated to encrypted rows on first read after the storage key is configured.
 - The chat table carries an explicit encrypted-state column so plaintext content cannot be confused with an encrypted payload.
-- README and CybChat UI no longer claim that wire-level E2E is disabled.
+- README, GUIDE and CybChat UI describe the implemented wire-level E2E and routed transport boundary accurately.
 - Security guide now distinguishes live transport behavior from integration-test targets.
 - AEAD AAD/ciphertext tampering tests and wrong-recipient envelope checks were added.
 - The unused envelope signing helper now includes the ratchet counter so it cannot drift from the live transcript format.
@@ -95,22 +95,29 @@ Current automated integration coverage also includes:
 
 Implemented:
 - layered ChaCha20-Poly1305 onion packets;
-- route ID and packet ID;
-- hop-index and nested-packet lineage validation;
+- unique per-hop anonymous X25519 session IDs and keys;
+- Ed25519 authentication of relay session replies;
+- AEAD-encrypted route binding and encrypted route acknowledgement;
+- source-identity non-disclosure in route setup;
+- route ID, packet ID, hop-index and nested-packet lineage validation;
 - bounded 120-second route expiry;
 - per-relay replay cache;
 - route binding table capped at 256 entries;
+- onion session state capped at 256 entries with endpoint binding;
 - live UDP relay forwarding;
-- live three-relay loopback forwarding test.
+- live three-relay loopback forwarding test;
+- process-isolated routed delivery, replay and ciphertext-tampering tests;
+- forged encrypted route-ack rejection;
+- regression test proving route-bind payload does not expose source node ID/public key.
 
 Completed:
-- automatic per-hop X25519 session establishment;
-- signed route binding and route acknowledgement;
-- reverse routed signed ACK delivery;
-- explicit route selection and ordered relay hops in CybChat UI;
-- process-isolated routed replay/tamper harness.
+- automatic anonymous per-hop X25519 session establishment;
+- encrypted route binding;
+- reverse routed signed destination ACK delivery;
+- explicit route selection and ordered relay hops in CybChat UI.
 
 Still to harden:
 - relay crash/failure recovery during an active route;
 - route-expiry refresh under long-lived sessions;
-- malformed route-binding and packet-drop fault injection across process boundaries.
+- malformed route-binding and packet-drop fault injection across process boundaries;
+- broader traffic-analysis and endpoint privacy protections.
