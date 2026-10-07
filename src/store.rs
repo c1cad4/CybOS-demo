@@ -1,5 +1,6 @@
 use chrono::Local;
 use rusqlite::{params, Connection};
+use serde::{de::DeserializeOwned, Serialize};
 use std::{fs, path::PathBuf};
 
 #[cfg(unix)]
@@ -13,6 +14,7 @@ pub(crate) struct Store {
     pub(crate) path: PathBuf,
     conn: Connection,
     chat_key: Option<[u8; 32]>,
+    local_key: Option<[u8; 32]>,
 }
 impl Store {
     pub(crate) fn open() -> Self {
@@ -41,7 +43,9 @@ impl Store {
                 id TEXT PRIMARY KEY,
                 time TEXT,
                 kind TEXT,
-                text TEXT
+                text TEXT,
+                encrypted INTEGER NOT NULL DEFAULT 0,
+                payload TEXT NOT NULL DEFAULT ''
             );
 
             CREATE TABLE IF NOT EXISTS kv(
@@ -54,7 +58,9 @@ impl Store {
                 time TEXT NOT NULL,
                 text TEXT NOT NULL,
                 source TEXT NOT NULL,
-                importance REAL NOT NULL
+                importance REAL NOT NULL,
+                encrypted INTEGER NOT NULL DEFAULT 0,
+                payload TEXT NOT NULL DEFAULT ''
             );
 
             CREATE TABLE IF NOT EXISTS graph_nodes(
@@ -62,13 +68,17 @@ impl Store {
                 label TEXT NOT NULL,
                 kind TEXT NOT NULL,
                 x REAL NOT NULL,
-                y REAL NOT NULL
+                y REAL NOT NULL,
+                encrypted INTEGER NOT NULL DEFAULT 0,
+                payload TEXT NOT NULL DEFAULT ''
             );
 
             CREATE TABLE IF NOT EXISTS graph_links(
                 from_id TEXT NOT NULL,
                 to_id TEXT NOT NULL,
                 relation TEXT NOT NULL,
+                encrypted INTEGER NOT NULL DEFAULT 0,
+                payload TEXT NOT NULL DEFAULT '',
                 PRIMARY KEY(from_id, to_id, relation)
             );
 
@@ -93,33 +103,73 @@ impl Store {
         )
         .expect("cannot initialize database");
 
-        // Migrate legacy plaintext databases once. Avoid issuing ALTER TABLE
-        // on every Store::open(), because the test suite and multiple app
-        // components can legitimately open the same SQLite database in parallel.
-        let has_encrypted_column = conn
-            .query_row(
-                "SELECT COUNT(*) FROM pragma_table_info('chat_messages') WHERE name='encrypted'",
-                [],
-                |row| row.get::<_, i64>(0),
-            )
-            .unwrap_or(0)
-            > 0;
-
-        if !has_encrypted_column {
-            let _ = conn.execute(
-                "ALTER TABLE chat_messages ADD COLUMN encrypted INTEGER NOT NULL DEFAULT 0",
-                [],
-            );
+        // Additive schema migrations for databases created by older cybOS builds.
+        for (table, column, ddl) in [
+            ("events", "encrypted", "ALTER TABLE events ADD COLUMN encrypted INTEGER NOT NULL DEFAULT 0"),
+            ("events", "payload", "ALTER TABLE events ADD COLUMN payload TEXT NOT NULL DEFAULT ''"),
+            ("memories", "encrypted", "ALTER TABLE memories ADD COLUMN encrypted INTEGER NOT NULL DEFAULT 0"),
+            ("memories", "payload", "ALTER TABLE memories ADD COLUMN payload TEXT NOT NULL DEFAULT ''"),
+            ("graph_nodes", "encrypted", "ALTER TABLE graph_nodes ADD COLUMN encrypted INTEGER NOT NULL DEFAULT 0"),
+            ("graph_nodes", "payload", "ALTER TABLE graph_nodes ADD COLUMN payload TEXT NOT NULL DEFAULT ''"),
+            ("graph_links", "encrypted", "ALTER TABLE graph_links ADD COLUMN encrypted INTEGER NOT NULL DEFAULT 0"),
+            ("graph_links", "payload", "ALTER TABLE graph_links ADD COLUMN payload TEXT NOT NULL DEFAULT ''"),
+            ("chat_messages", "encrypted", "ALTER TABLE chat_messages ADD COLUMN encrypted INTEGER NOT NULL DEFAULT 0"),
+        ] {
+            let has_column = conn
+                .query_row(
+                    &format!(
+                        "SELECT COUNT(*) FROM pragma_table_info('{}') WHERE name='{}'",
+                        table, column
+                    ),
+                    [],
+                    |row| row.get::<_, i64>(0),
+                )
+                .unwrap_or(0)
+                > 0;
+            if !has_column {
+                let _ = conn.execute(ddl, []);
+            }
         }
+
         Self {
             path,
             conn,
             chat_key: None,
+            local_key: None,
         }
     }
 
     pub(crate) fn configure_chat_key(&mut self, key: [u8; 32]) {
         self.chat_key = Some(key);
+    }
+
+    pub(crate) fn configure_local_storage_key(&mut self, key: [u8; 32]) {
+        self.local_key = Some(key);
+    }
+
+    fn storage_aad(scope: &str, id: &str) -> Vec<u8> {
+        [b"cybOS/local-storage/v1".as_slice(), scope.as_bytes(), id.as_bytes()].concat()
+    }
+
+    fn encrypt_record<T: Serialize>(&self, scope: &str, id: &str, value: &T) -> Option<String> {
+        let key = self.local_key.as_ref()?;
+        let json = serde_json::to_vec(value).ok()?;
+        let aad = Self::storage_aad(scope, id);
+        let (nonce, ciphertext) = crypto::encrypt(key, &aad, &json).ok()?;
+        Some(format!("v1:{nonce}:{ciphertext}"))
+    }
+
+    fn decrypt_record<T: DeserializeOwned>(&self, scope: &str, id: &str, stored: &str) -> Option<T> {
+        let key = self.local_key.as_ref()?;
+        let mut parts = stored.splitn(3, ':');
+        if parts.next() != Some("v1") {
+            return None;
+        }
+        let nonce = parts.next()?;
+        let ciphertext = parts.next()?;
+        let aad = Self::storage_aad(scope, id);
+        let json = crypto::decrypt(key, &aad, nonce, ciphertext).ok()?;
+        serde_json::from_slice(&json).ok()
     }
 
     fn chat_aad(id: &str, time: &str, who: &str, mine: bool) -> Vec<u8> {
@@ -184,42 +234,35 @@ impl Store {
         let _ = self.conn.execute("DELETE FROM kv WHERE key=?1", [key]);
     }
     pub(crate) fn add_memory(&self, memory: &Memory) {
-        let _ = self.conn.execute(
-            "INSERT OR IGNORE INTO memories(id,time,text,source,importance)
-             VALUES(?1,?2,?3,?4,?5)",
-            params![
-                memory.id,
-                memory.time,
-                memory.text,
-                memory.source,
-                memory.importance
-            ],
-        );
+        if let Some(payload) = self.encrypt_record("memory", &memory.id, memory) {
+            let _ = self.conn.execute(
+                "INSERT OR IGNORE INTO memories(id,time,text,source,importance,encrypted,payload)
+                 VALUES(?1,'','','',0,1,?2)",
+                params![memory.id, payload],
+            );
+        } else {
+            let _ = self.conn.execute(
+                "INSERT OR IGNORE INTO memories(id,time,text,source,importance)
+                 VALUES(?1,?2,?3,?4,?5)",
+                params![memory.id, memory.time, memory.text, memory.source, memory.importance],
+            );
+        }
     }
 
     pub(crate) fn memories(&self) -> Vec<Memory> {
-        let mut st = self
-            .conn
-            .prepare(
-                "SELECT id,time,text,source,importance
-                 FROM memories
-                 ORDER BY rowid DESC
-                 LIMIT 200",
-            )
-            .unwrap();
-
-        st.query_map([], |r| {
-            Ok(Memory {
-                id: r.get(0)?,
-                time: r.get(1)?,
-                text: r.get(2)?,
-                source: r.get(3)?,
-                importance: r.get(4)?,
-            })
-        })
-        .unwrap()
-        .filter_map(Result::ok)
-        .collect()
+        let rows: Vec<(String,String,String,String,f32,bool,String)> = self.conn
+            .prepare("SELECT id,time,text,source,importance,encrypted,payload FROM memories ORDER BY rowid DESC LIMIT 200")
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?,r.get::<_,i64>(5)? != 0,r.get(6)?)))
+            .unwrap().filter_map(Result::ok).collect();
+        rows.into_iter().filter_map(|(id,time,text,source,importance,encrypted,payload)| {
+            if encrypted { return self.decrypt_record("memory",&id,&payload); }
+            let memory=Memory{id:id.clone(),time,text,source,importance};
+            if let Some(payload)=self.encrypt_record("memory",&id,&memory) {
+                let _=self.conn.execute("UPDATE memories SET time='',text='',source='',importance=0,encrypted=1,payload=?1 WHERE id=?2",params![payload,id]);
+            }
+            Some(memory)
+        }).collect()
     }
 
     pub(crate) fn search_memories(&self, query: &str) -> Vec<Memory> {
@@ -253,70 +296,59 @@ impl Store {
     }
 
     pub(crate) fn graph_nodes(&self) -> Vec<GraphNode> {
-        let mut st = self
-            .conn
-            .prepare(
-                "SELECT id,label,kind,x,y
-                 FROM graph_nodes
-                 ORDER BY rowid ASC",
-            )
-            .unwrap();
-
-        st.query_map([], |r| {
-            Ok(GraphNode {
-                id: r.get(0)?,
-                label: r.get(1)?,
-                kind: r.get(2)?,
-                x: r.get(3)?,
-                y: r.get(4)?,
-            })
-        })
-        .unwrap()
-        .filter_map(Result::ok)
-        .collect()
+        let rows: Vec<(String,String,String,f32,f32,bool,String)> = self.conn
+            .prepare("SELECT id,label,kind,x,y,encrypted,payload FROM graph_nodes ORDER BY rowid ASC")
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?,r.get::<_,i64>(5)? != 0,r.get(6)?)))
+            .unwrap().filter_map(Result::ok).collect();
+        rows.into_iter().filter_map(|(id,label,kind,x,y,encrypted,payload)| {
+            if encrypted { return self.decrypt_record("graph-node",&id,&payload); }
+            let node=GraphNode{id:id.clone(),label,kind,x,y};
+            if let Some(payload)=self.encrypt_record("graph-node",&id,&node) {
+                let _=self.conn.execute("UPDATE graph_nodes SET label='',kind='',x=0,y=0,encrypted=1,payload=?1 WHERE id=?2",params![payload,id]);
+            }
+            Some(node)
+        }).collect()
     }
 
     pub(crate) fn graph_links(&self) -> Vec<GraphLink> {
-        let mut st = self
-            .conn
-            .prepare(
-                "SELECT from_id,to_id,relation
-                 FROM graph_links
-                 ORDER BY rowid ASC",
-            )
-            .unwrap();
-
-        st.query_map([], |r| {
-            Ok(GraphLink {
-                from: r.get(0)?,
-                to: r.get(1)?,
-                relation: r.get(2)?,
-            })
-        })
-        .unwrap()
-        .filter_map(Result::ok)
-        .collect()
+        let rows: Vec<(String,String,String,bool,String)> = self.conn
+            .prepare("SELECT from_id,to_id,relation,encrypted,payload FROM graph_links ORDER BY rowid ASC")
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get::<_,i64>(3)? != 0,r.get(4)?)))
+            .unwrap().filter_map(Result::ok).collect();
+        rows.into_iter().filter_map(|(from,to,relation,encrypted,payload)| {
+            if encrypted { return self.decrypt_record("graph-link",&format!("{from}|{to}"),&payload); }
+            let link=GraphLink{from:from.clone(),to:to.clone(),relation:relation.clone()};
+            if let Some(payload)=self.encrypt_record("graph-link",&format!("{from}|{to}"),&link) {
+                let relation_key=crypto::fingerprint(relation.as_bytes());
+                let _=self.conn.execute("UPDATE graph_links SET relation=?1,encrypted=1,payload=?2 WHERE from_id=?3 AND to_id=?4 AND relation=?5",params![relation_key,payload,from,to,relation]);
+            }
+            Some(link)
+        }).collect()
     }
 
     pub(crate) fn save_graph_node(&self, node: &GraphNode) {
-        let _ = self.conn.execute(
-            "INSERT INTO graph_nodes(id,label,kind,x,y)
-             VALUES(?1,?2,?3,?4,?5)
-             ON CONFLICT(id) DO UPDATE SET
-                 label=excluded.label,
-                 kind=excluded.kind,
-                 x=excluded.x,
-                 y=excluded.y",
-            params![node.id, node.label, node.kind, node.x, node.y],
-        );
+        if let Some(payload)=self.encrypt_record("graph-node",&node.id,node) {
+            let _=self.conn.execute("INSERT INTO graph_nodes(id,label,kind,x,y,encrypted,payload) VALUES(?1,'','',0,0,1,?2)
+                ON CONFLICT(id) DO UPDATE SET label='',kind='',x=0,y=0,encrypted=1,payload=excluded.payload",
+                params![node.id,payload]);
+        } else {
+            let _=self.conn.execute("INSERT INTO graph_nodes(id,label,kind,x,y) VALUES(?1,?2,?3,?4,?5)
+                ON CONFLICT(id) DO UPDATE SET label=excluded.label,kind=excluded.kind,x=excluded.x,y=excluded.y",
+                params![node.id,node.label,node.kind,node.x,node.y]);
+        }
     }
 
     pub(crate) fn save_graph_link(&self, link: &GraphLink) {
-        let _ = self.conn.execute(
-            "INSERT OR IGNORE INTO graph_links(from_id,to_id,relation)
-             VALUES(?1,?2,?3)",
-            params![link.from, link.to, link.relation],
-        );
+        if let Some(payload)=self.encrypt_record("graph-link",&format!("{}|{}",link.from,link.to),link) {
+            let relation_key=crypto::fingerprint(link.relation.as_bytes());
+            let _=self.conn.execute("INSERT OR IGNORE INTO graph_links(from_id,to_id,relation,encrypted,payload) VALUES(?1,?2,?3,1,?4)",
+                params![link.from,link.to,relation_key,payload]);
+        } else {
+            let _=self.conn.execute("INSERT OR IGNORE INTO graph_links(from_id,to_id,relation) VALUES(?1,?2,?3)",
+                params![link.from,link.to,link.relation]);
+        }
     }
 
     pub(crate) fn chat_messages(&self) -> Vec<(String, String, bool)> {
@@ -407,32 +439,28 @@ impl Store {
     }
 
     pub(crate) fn events(&self) -> Vec<Event> {
-        let mut st = self
-            .conn
-            .prepare("SELECT id,time,kind,text FROM events ORDER BY rowid DESC LIMIT 100")
-            .unwrap();
-        st.query_map([], |r| {
-            Ok(Event {
-                id: r.get(0)?,
-                time: r.get(1)?,
-                kind: r.get(2)?,
-                text: r.get(3)?,
-            })
-        })
-        .unwrap()
-        .filter_map(Result::ok)
-        .collect()
+        let rows: Vec<(String,String,String,String,bool,String)> = self.conn
+            .prepare("SELECT id,time,kind,text,encrypted,payload FROM events ORDER BY rowid DESC LIMIT 100")
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get::<_,i64>(4)? != 0,r.get(5)?)))
+            .unwrap().filter_map(Result::ok).collect();
+        rows.into_iter().filter_map(|(id,time,kind,text,encrypted,payload)| {
+            if encrypted { return self.decrypt_record("event",&id,&payload); }
+            let event=Event{id:id.clone(),time,kind,text};
+            if let Some(payload)=self.encrypt_record("event",&id,&event) {
+                let _=self.conn.execute("UPDATE events SET time='',kind='',text='',encrypted=1,payload=?1 WHERE id=?2",params![payload,id]);
+            }
+            Some(event)
+        }).collect()
     }
+
     pub(crate) fn add_event(&self, kind: &str, text: &str) {
-        let _ = self.conn.execute(
-            "INSERT INTO events VALUES(?1,?2,?3,?4)",
-            params![
-                Uuid::new_v4().to_string(),
-                Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
-                kind,
-                text
-            ],
-        );
+        let event=Event{id:Uuid::new_v4().to_string(),time:Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),kind:kind.to_string(),text:text.to_string()};
+        if let Some(payload)=self.encrypt_record("event",&event.id,&event) {
+            let _=self.conn.execute("INSERT INTO events(id,time,kind,text,encrypted,payload) VALUES(?1,'','','',1,?2)",params![event.id,payload]);
+        } else {
+            let _=self.conn.execute("INSERT INTO events(id,time,kind,text) VALUES(?1,?2,?3,?4)",params![event.id,event.time,event.kind,event.text]);
+        }
     }
 }
 fn dirs_fallback() -> PathBuf {
