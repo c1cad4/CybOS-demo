@@ -1,6 +1,6 @@
 # cybOS architecture
 
-cybOS is a native desktop system composed of a small application shell,
+cybOS 0.7 is a native desktop system composed of a small application shell,
 domain services, local persistence and page-oriented UI.
 
 ## Core layers
@@ -11,13 +11,15 @@ domain services, local persistence and page-oriented UI.
 - State — src/state.rs owns the central runtime state and initialization.
 - Persistence — src/store.rs owns SQLite events, memories and graph data.
 - Runtime — src/runtime/ owns node bootstrap and persistent runtime setup.
+- Configuration — src/config.rs centralizes version, public identifiers and default local settings.
 - Brain — src/brain/ owns context, learning, planning, tools, web intent
   and the shared local Qwen HTTP runtime.
 - Network — src/network/ owns web discovery, fetch, parsing and source
   handling.
-- Assets — src/assets/ owns Solana balances, market data and asset state.
+- Assets — src/assets/ owns Solana balances and market data; network refreshes run in background workers.
 - UI pages — src/ui/ contains dashboard, graph, brain, farm, robot,
   chat, network, cameras, assets and system views.
+- CybChat history is persisted in SQLite and restored at startup.
 - Theme/navigation — src/theme.rs and src/navigation.rs own visual
   primitives and page semantics.
 
