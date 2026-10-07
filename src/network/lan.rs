@@ -104,7 +104,7 @@ struct LanAck {
     signature: String,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct OnionRoutePeer {
     pub(crate) node_id: String,
     pub(crate) address: String,
@@ -746,6 +746,17 @@ fn spawn_listener_on_addr_with_stop(
                 }
 
                 if let Some((_, cached_ack)) = delivered_acks.get(&envelope.message_id) {
+                    let Some(session) = sessions.get_mut(&envelope.from) else { continue };
+                    if envelope.counter == session.counter + 1 {
+                        let Ok(next) = crypto::ratchet_chain(&session.key, envelope.counter) else {
+                            continue;
+                        };
+                        session.key = next;
+                        session.counter = envelope.counter;
+                    } else if envelope.counter > session.counter {
+                        continue;
+                    }
+
                     if let Ok(body) = serde_json::to_string(&OnionReverseAck {
                         route_id: delivery.route_id.clone(),
                         packet_id: delivery.packet_id.clone(),
@@ -883,6 +894,17 @@ fn spawn_listener_on_addr_with_stop(
                 if !crypto::verify_signature(&session.public_key, &signed, &signature) { continue; }
 
                 if let Some((_, cached_ack)) = delivered_acks.get(&envelope.message_id) {
+                    let Some(session) = sessions.get_mut(&envelope.from) else { continue };
+                    if envelope.counter == session.counter + 1 {
+                        let Ok(next) = crypto::ratchet_chain(&session.key, envelope.counter) else {
+                            continue;
+                        };
+                        session.key = next;
+                        session.counter = envelope.counter;
+                    } else if envelope.counter > session.counter {
+                        continue;
+                    }
+
                     if ack_state.load(Ordering::Acquire) {
                         if let Ok(body) = serde_json::to_string(cached_ack) {
                             let _ = socket.send_to(
