@@ -177,6 +177,7 @@ fn spawn_listener_on_addr(
     ack_enabled: Arc<AtomicBool>,
 ) -> (Receiver<LanEvent>, Arc<AtomicBool>) {
     let (tx, rx) = mpsc::channel();
+    let ack_state = Arc::clone(&ack_enabled);
     thread::spawn(move || {
         let socket = match UdpSocket::bind((listen_addr, listen_port)) { Ok(s) => s, Err(_) => return };
         let mut buffer = [0u8; 8192];
@@ -274,7 +275,7 @@ fn spawn_listener_on_addr(
                     to: envelope.from.clone(),
                     signature: STANDARD.encode(crypto::sign(&identity, ack_signed.as_bytes())),
                 };
-                if ack_enabled.load(Ordering::Acquire) {
+                if ack_state.load(Ordering::Acquire) {
                     if let Ok(body) = serde_json::to_string(&ack) {
                         let _ = socket.send_to(format!("{} {}", ACK_PREFIX, body).as_bytes(), peer_addr);
                     }
