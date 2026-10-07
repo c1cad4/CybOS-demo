@@ -8,7 +8,9 @@ A node ID is derived from SHA-256(public_key):
 
 cyb-<first-12-bytes-of-sha256(public-key)>
 
-The private Ed25519 key remains local to the node.
+The private Ed25519 key remains local to the node and is stored in the local
+SQLite runtime store. The current implementation does not provide OS-keychain
+or database-level encryption at rest.
 
 Peer discovery is authenticated. A peer announces its node ID, application version, Ed25519 public key and a signature binding those values.
 
@@ -67,7 +69,10 @@ chain_key_(n+1) = HKDF(chain_key_n, "chain-key:n")
 
 The receiver requires the expected next counter and advances its chain only after successful authentication and decryption.
 
-The current UDP design is ordered: lost packets stop the chain rather than silently skipping unknown counters. Retransmission/resynchronization is a separate transport layer.
+The current UDP design is ordered. If an ACK is lost after the receiver
+successfully accepts a message, the sender drops its cached session and the next
+send performs a fresh X25519 handshake instead of continuing a stale ratchet.
+Packets that arrive out of order are rejected rather than silently skipped.
 
 ## 6. Replay protection
 
@@ -130,23 +135,29 @@ Do not implement onion routing by encrypting a route list with the Ed25519 publi
 
 The implementation uses ring for the existing Ed25519, X25519, HKDF and AEAD primitives.
 
-## 11. Required tests
+## 11. Security test matrix
 
+Automated unit coverage currently includes:
 - X25519 agreement symmetry
 - HKDF session-key symmetry
 - AEAD round trip
 - ciphertext does not contain plaintext
-- AAD tampering failure
-- ciphertext tampering failure
 - Ed25519 signature verification
 - signature tampering failure
-- invalid node-ID/public-key binding
+- ratchet key/counter derivation
+
+The following remain integration-test targets and should be exercised with
+two real cybOS processes before treating the transport as production-grade:
+- AAD tampering failure
+- ciphertext tampering failure on the live wire
+- invalid node-ID/public-key binding in discovery and handshake
 - stale timestamp rejection
 - duplicate message rejection
-- ratchet counter ordering
+- ratchet counter ordering on the live transport
 - TOFU key replacement rejection
 - ACK signature rejection
 - wrong recipient rejection
+- lost-ACK recovery through a fresh handshake
 
 ## 12. Operational status
 
