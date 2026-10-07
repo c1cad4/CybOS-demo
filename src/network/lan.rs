@@ -384,6 +384,7 @@ fn spawn_listener_on_addr_with_stop(
         let mut sessions: HashMap<String, Session> = HashMap::new();
         let mut seen_messages: HashMap<String, u64> = HashMap::new();
         let mut onion_bindings: HashMap<String, OnionRouteBinding> = HashMap::new();
+        let mut onion_sessions: HashMap<String, OnionHopSession> = HashMap::new();
         let mut onion_cache = onion::OnionRelayCache::new();
 
         loop {
@@ -401,6 +402,75 @@ fn spawn_listener_on_addr_with_stop(
             if size > MAX_WIRE_BYTES { continue; }
             let Ok(message) = std::str::from_utf8(&buffer[..size]) else { continue };
 
+            let now = now_secs();
+            onion_sessions.retain(|_, session| session.expires_at >= now);
+            onion_bindings.retain(|_, binding| binding.expires_at >= now);
+
+            if let Some(payload) = message
+                .strip_prefix(ONION_SESSION_INIT_PREFIX)
+                .and_then(|r| r.strip_prefix(' '))
+            {
+                let Ok(init) = serde_json::from_str::<OnionSessionInit>(payload) else { continue };
+                if init.to_node_id != node_id
+                    || init.session_id.trim().is_empty()
+                    || init.session_id.len() > 64
+                    || !fresh_timestamp(init.timestamp)
+                {
+                    continue;
+                }
+
+                let Ok(init_public) = STANDARD.decode(&init.ephemeral_public_key) else { continue };
+                if init_public.len() != 32 || onion_sessions.contains_key(&init.session_id) {
+                    continue;
+                }
+                if onion_sessions.len() >= MAX_ONION_SESSIONS {
+                    continue;
+                }
+
+                let Ok((private, reply_public)) = crypto::ephemeral() else { continue };
+                let transcript = onion_session_transcript(
+                    &init.session_id,
+                    &node_id,
+                    &init_public,
+                    &reply_public,
+                );
+                let Ok(key) =
+                    crypto::derive_session_key(private, &init_public, &transcript)
+                else {
+                    continue;
+                };
+
+                let expires_at = now.saturating_add(ONION_SESSION_TTL_SECS);
+                onion_sessions.insert(
+                    init.session_id.clone(),
+                    OnionHopSession {
+                        key,
+                        control_peer: peer_addr,
+                        expires_at,
+                    },
+                );
+
+                let reply_public_b64 = STANDARD.encode(&reply_public);
+                let mut reply = OnionSessionReply {
+                    session_id: init.session_id,
+                    relay_id: node_id.clone(),
+                    initiator_ephemeral_public_key: init.ephemeral_public_key,
+                    responder_ephemeral_public_key: reply_public_b64,
+                    timestamp: now,
+                    signature: String::new(),
+                };
+                reply.signature =
+                    STANDARD.encode(crypto::sign(&identity, &signed_onion_session_reply(&reply)));
+
+                if let Ok(body) = serde_json::to_string(&reply) {
+                    let _ = socket.send_to(
+                        format!("{} {}", ONION_SESSION_REPLY_PREFIX, body).as_bytes(),
+                        peer_addr,
+                    );
+                }
+                continue;
+            }
+
             if let Some(sender_id) = message.strip_prefix(DISCOVERY_PREFIX).and_then(|r| r.strip_prefix(' ')) {
                 if sender_id == node_id { continue; }
                 let public_key_b64 = STANDARD.encode(identity.public_key());
@@ -411,59 +481,72 @@ fn spawn_listener_on_addr_with_stop(
             }
 
 
-            if let Some(payload) = message.strip_prefix(ONION_BIND_PREFIX).and_then(|r| r.strip_prefix(' ')) {
+            if let Some(payload) = message
+                .strip_prefix(ONION_BIND_PREFIX)
+                .and_then(|r| r.strip_prefix(' '))
+            {
                 let Ok(bind) = serde_json::from_str::<OnionRouteBind>(payload) else { continue };
-                if bind.source_id == node_id
-                    || bind.route_id.is_empty()
-                    || bind.previous_node_id.is_empty()
-                    || bind.previous_address.is_empty()
-                    || bind.next_node_id.is_empty()
-                    || bind.next_address.is_empty()
+                if bind.session_id.trim().is_empty()
+                    || bind.route_id.trim().is_empty()
                     || bind.hop_index as usize >= onion::MAX_ONION_HOPS
                     || !fresh_timestamp(bind.expires_at)
+                    || bind.expires_at < now
+                    || bind.expires_at.saturating_sub(now) > onion::ONION_TTL_SECS
                 {
                     continue;
                 }
 
-                let Ok(source_public_key) = STANDARD.decode(&bind.source_public_key) else { continue };
-                let Ok(signature) = STANDARD.decode(&bind.signature) else { continue };
-                if crypto::node_id_from_public_key(&source_public_key) != bind.source_id
-                    || !crypto::verify_signature(
-                        &source_public_key,
-                        &signed_onion_route_bind(&bind),
-                        &signature,
-                    )
-                {
+                let Some(session) = onion_sessions.get(&bind.session_id).cloned() else {
+                    continue;
+                };
+                if session.expires_at < now || session.control_peer != peer_addr {
                     continue;
                 }
 
-                if !sessions.contains_key(&bind.source_id) {
+                let aad = onion_bind_aad(
+                    "onion-bind-v1",
+                    &bind.session_id,
+                    &bind.route_id,
+                    bind.hop_index,
+                    bind.expires_at,
+                );
+                let Ok(frame_bytes) = crypto::decrypt(
+                    &session.key,
+                    &aad,
+                    &bind.nonce,
+                    &bind.ciphertext,
+                ) else {
                     continue;
-                }
-
-                if bind.hop_index == 0 && bind.previous_node_id != bind.source_id {
+                };
+                let Ok(frame) = serde_json::from_slice::<OnionRouteBindFrame>(&frame_bytes) else {
                     continue;
-                }
-                let previous_address = if bind.hop_index == 0 {
-                    peer_addr.to_string()
-                } else {
-                    bind.previous_address.clone()
                 };
 
+                if frame.route_id != bind.route_id
+                    || frame.hop_index != bind.hop_index
+                    || frame.previous_address.is_empty()
+                    || frame.next_node_id.is_empty()
+                    || frame.next_address.is_empty()
+                    || frame.previous_address.parse::<SocketAddr>().is_err()
+                    || frame.next_address.parse::<SocketAddr>().is_err()
+                    || !fresh_timestamp(frame.expires_at)
+                    || frame.expires_at != bind.expires_at
+                {
+                    continue;
+                }
+
                 let binding = OnionRouteBinding {
-                    source_id: bind.source_id.clone(),
+                    session_id: bind.session_id.clone(),
                     hop_index: bind.hop_index,
-                    previous_node_id: bind.previous_node_id.clone(),
-                    previous_address,
-                    next_node_id: bind.next_node_id.clone(),
-                    next_address: bind.next_address.clone(),
-                    expires_at: bind.expires_at,
+                    previous_address: frame.previous_address,
+                    next_node_id: frame.next_node_id,
+                    next_address: frame.next_address,
+                    expires_at: frame.expires_at,
                 };
 
                 if let Some(existing) = onion_bindings.get(&bind.route_id) {
-                    if existing.source_id != binding.source_id
+                    if existing.session_id != binding.session_id
                         || existing.hop_index != binding.hop_index
-                        || existing.previous_node_id != binding.previous_node_id
                         || existing.previous_address != binding.previous_address
                         || existing.next_node_id != binding.next_node_id
                         || existing.next_address != binding.next_address
@@ -475,25 +558,29 @@ fn spawn_listener_on_addr_with_stop(
                     if onion_bindings.len() >= MAX_ONION_ROUTES {
                         continue;
                     }
-                    onion_bindings.insert(bind.route_id.clone(), binding.clone());
+                    onion_bindings.insert(bind.route_id.clone(), binding);
                 }
 
-                let mut ack = OnionRouteBindAck {
-                    route_id: bind.route_id.clone(),
-                    hop_index: bind.hop_index,
-                    source_id: bind.source_id.clone(),
-                    relay_id: node_id.clone(),
-                    previous_node_id: bind.previous_node_id.clone(),
-                    previous_address: bind.previous_address.clone(),
-                    next_node_id: bind.next_node_id.clone(),
-                    next_address: bind.next_address.clone(),
-                    expires_at: bind.expires_at,
-                    signature: String::new(),
+                let ack_frame = OnionRouteBindAckFrame { accepted: true };
+                let Ok(ack_bytes) = serde_json::to_vec(&ack_frame) else { continue };
+                let ack_aad = onion_bind_aad(
+                    "onion-bind-ack-v1",
+                    &bind.session_id,
+                    &bind.route_id,
+                    bind.hop_index,
+                    bind.expires_at,
+                );
+                let Ok((nonce, ciphertext)) = crypto::encrypt(&session.key, &ack_aad, &ack_bytes) else {
+                    continue;
                 };
-                ack.signature = STANDARD.encode(crypto::sign(
-                    &identity,
-                    &signed_onion_route_bind_ack(&ack),
-                ));
+                let ack = OnionRouteBindAck {
+                    session_id: bind.session_id,
+                    route_id: bind.route_id,
+                    hop_index: bind.hop_index,
+                    expires_at: bind.expires_at,
+                    nonce,
+                    ciphertext,
+                };
                 if let Ok(body) = serde_json::to_string(&ack) {
                     let _ = socket.send_to(
                         format!("{} {}", ONION_BIND_ACK_PREFIX, body).as_bytes(),
