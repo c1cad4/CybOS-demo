@@ -139,3 +139,62 @@ mod tests {
         assert!(!verify_signature(identity.public_key(), b"tampered", &sig));
     }
 }
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub(crate) struct EncryptedMessage {
+    pub(crate) version: u8,
+    pub(crate) sender_id: String,
+    pub(crate) sender_public_key: String,
+    pub(crate) ephemeral_public_key: String,
+    pub(crate) nonce: String,
+    pub(crate) ciphertext: String,
+    pub(crate) signature: String,
+}
+
+pub(crate) fn encrypt_for_peer(
+    identity: &NodeIdentity,
+    peer_id: &str,
+    peer_x25519_public: &[u8],
+    plaintext: &[u8],
+) -> Result<EncryptedMessage, &'static str> {
+    let (private, ephemeral_public) = ephemeral()?;
+    let sender_id = identity.node_id();
+    let transcript = [
+        PROTOCOL.as_bytes(), sender_id.as_bytes(), peer_id.as_bytes(),
+        ephemeral_public.as_slice(), peer_x25519_public,
+    ].concat();
+    let key = derive_session_key(private, peer_x25519_public, &transcript)?;
+    let aad = [PROTOCOL, "self-test", &sender_id, peer_id].join("|");
+    let (nonce, ciphertext) = encrypt(&key, aad.as_bytes(), plaintext)?;
+    let sender_public_key = STANDARD.encode(identity.public_key());
+    let ephemeral_public_key = STANDARD.encode(&ephemeral_public);
+    let signed = [
+        PROTOCOL, "self-test", &sender_id, peer_id,
+        &sender_public_key, &ephemeral_public_key, &nonce, &ciphertext,
+    ].join("|").into_bytes();
+    Ok(EncryptedMessage {
+        version: 1,
+        sender_id,
+        sender_public_key,
+        ephemeral_public_key,
+        nonce,
+        ciphertext,
+        signature: STANDARD.encode(sign(identity, &signed)),
+    })
+}
+
+pub(crate) fn verify_envelope(message: &EncryptedMessage, expected_peer_id: &str) -> bool {
+    if message.version != 1 || message.sender_id != expected_peer_id {
+        return false;
+    }
+    let Ok(public_key) = STANDARD.decode(&message.sender_public_key) else { return false };
+    let Ok(sig) = STANDARD.decode(&message.signature) else { return false };
+    if node_id_from_public_key(&public_key) != message.sender_id {
+        return false;
+    }
+    let signed = [
+        PROTOCOL, "self-test", &message.sender_id, expected_peer_id,
+        &message.sender_public_key, &message.ephemeral_public_key,
+        &message.nonce, &message.ciphertext,
+    ].join("|").into_bytes();
+    verify_signature(&public_key, &signed, &sig)
+}
