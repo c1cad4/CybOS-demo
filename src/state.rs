@@ -41,6 +41,7 @@ pub(crate) struct CybOs {
 
     // Local identity and runtime
     pub(crate) node_id: String,
+    pub(crate) identity: crate::identity::NodeIdentity,
     pub(crate) status: String,
     pub(crate) qwen_child: Option<Child>,
     pub(crate) qwen_status: String,
@@ -64,7 +65,8 @@ pub(crate) struct CybOs {
 impl Default for CybOs {
     fn default() -> Self {
         let store = crate::runtime::open_store();
-        let node_id = crate::runtime::load_or_create_node_id(&store);
+        let identity = crate::identity::NodeIdentity::load_or_create(&store);
+        let node_id = identity.node_id();
         let events = crate::runtime::load_events(&store);
 
         let mut chat = store.chat_messages();
@@ -111,6 +113,7 @@ impl Default for CybOs {
             battery: 100.0,
 
             node_id,
+            identity,
             status: "LOCAL-FIRST · READY".into(),
             qwen_child: None,
             qwen_status: "QWEN · STARTING".into(),
