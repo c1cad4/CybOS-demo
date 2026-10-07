@@ -1737,6 +1737,82 @@ mod tests {
     }
 
     #[test]
+    fn onion_bind_rejects_forged_ack() {
+        let _guard = test_guard();
+        let source = NodeIdentity::generate_for_test();
+        let relay = NodeIdentity::generate_for_test();
+        let relay_socket = UdpSocket::bind(("127.0.0.1", 0)).unwrap();
+        let relay_address = relay_socket.local_addr().unwrap();
+        relay_socket.set_read_timeout(Some(Duration::from_secs(1))).unwrap();
+
+        let source_socket = UdpSocket::bind(("127.0.0.1", 0)).unwrap();
+        source_socket
+            .set_read_timeout(Some(KEY_TIMEOUT))
+            .unwrap();
+
+        let peer = OnionRoutePeer {
+            node_id: relay.node_id(),
+            address: relay_address.to_string(),
+            public_key_b64: STANDARD.encode(relay.public_key()),
+        };
+        let route_id = onion::new_route_id();
+        let expires_at = now_secs() + 30;
+
+        let relay_public = relay.clone();
+        let relay_address_for_thread = relay_address;
+        let handle = thread::spawn(move || {
+            let mut buffer = [0u8; 4096];
+            let (size, source_address) = relay_socket.recv_from(&mut buffer).unwrap();
+            let text = std::str::from_utf8(&buffer[..size]).unwrap();
+            assert!(text.starts_with(ONION_BIND_PREFIX));
+
+            let mut forged = OnionRouteBindAck {
+                route_id,
+                hop_index: 0,
+                source_id: source.node_id(),
+                relay_id: relay_public.node_id(),
+                previous_node_id: source.node_id(),
+                previous_address: "0.0.0.0:12345".into(),
+                next_node_id: "destination".into(),
+                next_address: "127.0.0.1:49494".into(),
+                expires_at,
+                signature: String::new(),
+            };
+
+            let attacker = NodeIdentity::generate_for_test();
+            forged.signature = STANDARD.encode(crypto::sign(
+                &attacker,
+                &signed_onion_route_bind_ack(&forged),
+            ));
+            let body = serde_json::to_string(&forged).unwrap();
+            relay_socket
+                .send_to(
+                    format!("{} {}", ONION_BIND_ACK_PREFIX, body).as_bytes(),
+                    source_address,
+                )
+                .unwrap();
+
+            let _ = relay_address_for_thread;
+        });
+
+        let result = send_onion_route_bind(
+            &source_socket,
+            &source,
+            &peer,
+            &route_id,
+            0,
+            &source.node_id(),
+            &source_socket.local_addr().unwrap().to_string(),
+            "destination",
+            "127.0.0.1:49494",
+            expires_at,
+        );
+
+        handle.join().unwrap();
+        assert!(result.is_err());
+    }
+
+    #[test]
     fn routed_onion_chat_crosses_two_relays_and_returns_e2e_ack() {
         let _guard = test_guard();
 
