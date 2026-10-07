@@ -49,6 +49,11 @@ pub(crate) struct CybOs {
     pub(crate) camera_zone: usize,
     pub(crate) search_focus: bool,
 
+    // CicadaFarm Digital Twin UI state
+    pub(crate) farm_season: usize,
+    pub(crate) farm_panel: Option<String>,
+    pub(crate) farm_knowledge: String,
+
     // Directed LAN communication
     pub(crate) last_scan: Option<Instant>,
     pub(crate) lan_peers: Vec<crate::network::lan::LanPeer>,
@@ -120,6 +125,9 @@ impl Default for CybOs {
             toast: None,
             camera_zone: 0,
             search_focus: false,
+            farm_season: store.get("cicadafarm_season").and_then(|v| v.parse::<usize>().ok()).unwrap_or(0).min(3),
+            farm_panel: None,
+            farm_knowledge: store.get("cicadafarm_knowledge").unwrap_or_default(),
 
             last_scan: None,
             lan_peers: Vec::new(),
