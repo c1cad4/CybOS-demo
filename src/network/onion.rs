@@ -7,7 +7,7 @@
 
 use crate::crypto;
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::net::{SocketAddr, UdpSocket};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
@@ -325,8 +325,13 @@ pub(crate) fn wrap(
     if hops.len() != hop_session_keys.len() || hops.len() != hop_session_ids.len() {
         return Err("onion hop/session metadata count mismatch");
     }
-    if hop_session_ids.iter().any(|id| id.trim().is_empty()) {
+    if hop_session_ids.iter().any(|id| id.trim().is_empty() || id.len() > 64) {
         return Err("invalid onion session id");
+    }
+    let unique_session_ids: HashSet<&str> =
+        hop_session_ids.iter().map(String::as_str).collect();
+    if unique_session_ids.len() != hop_session_ids.len() {
+        return Err("duplicate onion session id");
     }
     if payload.is_empty() {
         return Err("empty onion payload");
