@@ -590,6 +590,157 @@ mod tests {
     }
 
     #[test]
+    fn encrypted_local_records_roundtrip_without_plaintext_at_rest() {
+        let mut store = Store::open();
+        store.configure_local_storage_key([11u8; 32]);
+
+        let event_kind = format!("TEST-EVENT-{}", Uuid::new_v4());
+        let event_text = "private event payload";
+        store.add_event(&event_kind, event_text);
+
+        let memory = Memory {
+            id: format!("mem-{}", Uuid::new_v4()),
+            time: Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+            text: "private memory payload".into(),
+            source: "private source".into(),
+            importance: 0.91,
+        };
+        store.add_memory(&memory);
+
+        let node = GraphNode {
+            id: format!("node-{}", Uuid::new_v4()),
+            label: "private node label".into(),
+            kind: "private kind".into(),
+            x: 12.5,
+            y: 33.5,
+        };
+        store.save_graph_node(&node);
+
+        let link = GraphLink {
+            from: node.id.clone(),
+            to: format!("node-{}", Uuid::new_v4()),
+            relation: "private relation".into(),
+        };
+        store.save_graph_link(&link);
+
+        let raw_event: (String, String, String, i64, String) = store.conn.query_row(
+            "SELECT time,kind,text,encrypted,payload FROM events WHERE kind='' ORDER BY rowid DESC LIMIT 1",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
+        ).unwrap();
+        assert!(raw_event.0.is_empty() && raw_event.1.is_empty() && raw_event.2.is_empty());
+        assert_eq!(raw_event.3, 1);
+        assert!(!raw_event.4.contains(event_text));
+
+        let raw_memory: (String, String, String, i64, String) = store.conn.query_row(
+            "SELECT time,text,source,encrypted,payload FROM memories WHERE id=?1",
+            [&memory.id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
+        ).unwrap();
+        assert!(raw_memory.0.is_empty() && raw_memory.1.is_empty() && raw_memory.2.is_empty());
+        assert_eq!(raw_memory.3, 1);
+        assert!(!raw_memory.4.contains(&memory.text));
+
+        let raw_node: (String, String, f32, f32, i64, String) = store.conn.query_row(
+            "SELECT label,kind,x,y,encrypted,payload FROM graph_nodes WHERE id=?1",
+            [&node.id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?)),
+        ).unwrap();
+        assert!(raw_node.0.is_empty() && raw_node.1.is_empty());
+        assert_eq!(raw_node.2, 0.0);
+        assert_eq!(raw_node.3, 0.0);
+        assert_eq!(raw_node.4, 1);
+        assert!(!raw_node.5.contains(&node.label));
+
+        let raw_link: (String, i64, String) = store.conn.query_row(
+            "SELECT relation,encrypted,payload FROM graph_links WHERE from_id=?1 AND to_id=?2",
+            [&link.from, &link.to],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        ).unwrap();
+        assert_ne!(raw_link.0, link.relation);
+        assert_eq!(raw_link.1, 1);
+        assert!(!raw_link.2.contains(&link.relation));
+
+        assert!(store.events().iter().any(|e| e.kind == event_kind && e.text == event_text));
+        assert!(store.memories().iter().any(|m| m.id == memory.id && m.text == memory.text));
+        assert!(store.graph_nodes().iter().any(|n| n.id == node.id && n.label == node.label));
+        assert!(store.graph_links().iter().any(|l| l.from == link.from && l.to == link.to && l.relation == link.relation));
+    }
+
+    #[test]
+    fn legacy_local_records_migrate_on_read() {
+        let mut store = Store::open();
+        store.configure_local_storage_key([12u8; 32]);
+
+        let event_id = format!("event-{}", Uuid::new_v4());
+        let memory_id = format!("memory-{}", Uuid::new_v4());
+        let node_id = format!("node-{}", Uuid::new_v4());
+        let from_id = format!("from-{}", Uuid::new_v4());
+        let to_id = format!("to-{}", Uuid::new_v4());
+
+        store.conn.execute(
+            "INSERT INTO events(id,time,kind,text,encrypted,payload) VALUES(?1,?2,?3,?4,0,'')",
+            params![event_id, "2026-10-08 01:00:00", "legacy-kind", "legacy-event"],
+        ).unwrap();
+        store.conn.execute(
+            "INSERT INTO memories(id,time,text,source,importance,encrypted,payload) VALUES(?1,?2,?3,?4,?5,0,'')",
+            params![memory_id, "2026-10-08 01:01:00", "legacy-memory", "legacy-source", 0.4f32],
+        ).unwrap();
+        store.conn.execute(
+            "INSERT INTO graph_nodes(id,label,kind,x,y,encrypted,payload) VALUES(?1,?2,?3,?4,?5,0,'')",
+            params![node_id, "legacy-label", "legacy-kind", 4.0f32, 5.0f32],
+        ).unwrap();
+        store.conn.execute(
+            "INSERT INTO graph_links(from_id,to_id,relation,encrypted,payload) VALUES(?1,?2,?3,0,'')",
+            params![from_id, to_id, "legacy-relation"],
+        ).unwrap();
+
+        assert!(store.events().iter().any(|e| e.id == event_id && e.text == "legacy-event"));
+        assert!(store.memories().iter().any(|m| m.id == memory_id && m.text == "legacy-memory"));
+        assert!(store.graph_nodes().iter().any(|n| n.id == node_id && n.label == "legacy-label"));
+        assert!(store.graph_links().iter().any(|l| l.from == from_id && l.to == to_id && l.relation == "legacy-relation"));
+
+        for (table, id) in [
+            ("events", event_id.as_str()),
+            ("memories", memory_id.as_str()),
+            ("graph_nodes", node_id.as_str()),
+        ] {
+            let encrypted: i64 = store.conn.query_row(
+                &format!("SELECT encrypted FROM {table} WHERE id=?1"),
+                [id],
+                |r| r.get(0),
+            ).unwrap();
+            assert_eq!(encrypted, 1);
+        }
+        let link_encrypted: i64 = store.conn.query_row(
+            "SELECT encrypted FROM graph_links WHERE from_id=?1 AND to_id=?2",
+            [&from_id, &to_id],
+            |r| r.get(0),
+        ).unwrap();
+        assert_eq!(link_encrypted, 1);
+    }
+
+    #[test]
+    fn tampered_encrypted_memory_is_not_returned() {
+        let mut store = Store::open();
+        store.configure_local_storage_key([13u8; 32]);
+        let memory = Memory {
+            id: format!("tamper-{}", Uuid::new_v4()),
+            time: "2026-10-08 01:02:00".into(),
+            text: "secret tamper payload".into(),
+            source: "secret source".into(),
+            importance: 0.7,
+        };
+        store.add_memory(&memory);
+        store.conn.execute(
+            "UPDATE memories SET payload='v1:AAAA:AAAA' WHERE id=?1",
+            [&memory.id],
+        ).unwrap();
+
+        assert!(!store.memories().iter().any(|m| m.id == memory.id));
+    }
+
+    #[test]
     fn tofu_rejects_peer_key_replacement() {
         let store = Store::open();
         let node_id = format!("test-peer-{}", Uuid::new_v4());
