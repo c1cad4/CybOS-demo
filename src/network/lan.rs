@@ -269,7 +269,7 @@ pub(crate) fn send_private_chat(
 
     let wire = format!("{} {}", CHAT_PREFIX, payload);
 
-    if let Err(error) = socket.send_to(wire.as_bytes(), &target) {
+    if let Err(error) = socket.send_to(wire.as_bytes(), target.as_str()) {
         return LanSendStatus::Failed {
             message_id,
             peer_id: peer_id.to_string(),
@@ -516,3 +516,29 @@ impl crate::state::CybOs {
     }
 }
 
+
+
+#[cfg(test)]
+mod tests {
+    use super::LanMessage;
+
+    #[test]
+    fn directed_message_envelope_roundtrips() {
+        let message = LanMessage {
+            message_id: "msg-001".into(),
+            from: "cyb-a".into(),
+            to: "cyb-b".into(),
+            message: "hello from cybOS".into(),
+            version: "0.7.0".into(),
+        };
+
+        let encoded = serde_json::to_string(&message).expect("encode message");
+        let decoded: LanMessage =
+            serde_json::from_str(&encoded).expect("decode message");
+
+        assert_eq!(decoded.message_id, "msg-001");
+        assert_eq!(decoded.from, "cyb-a");
+        assert_eq!(decoded.to, "cyb-b");
+        assert_eq!(decoded.message, "hello from cybOS");
+    }
+}
