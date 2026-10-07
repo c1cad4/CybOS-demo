@@ -313,7 +313,7 @@ impl Store {
             )
             .unwrap();
 
-        let rows: Vec<(String, String, String, String, bool)> = st
+        let rows: Vec<(String, String, String, String, bool, bool)> = st
             .query_map([], |r| {
                 Ok((
                     r.get(0)?,
