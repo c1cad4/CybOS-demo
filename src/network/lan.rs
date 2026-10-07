@@ -535,10 +535,16 @@ fn spawn_listener_on_addr_with_stop(
                     continue;
                 }
 
+                let previous_address = if frame.hop_index == 0 {
+                    session.control_peer.to_string()
+                } else {
+                    frame.previous_address
+                };
+
                 let binding = OnionRouteBinding {
                     session_id: bind.session_id.clone(),
                     hop_index: bind.hop_index,
-                    previous_address: frame.previous_address,
+                    previous_address,
                     next_node_id: frame.next_node_id,
                     next_address: frame.next_address,
                     expires_at: frame.expires_at,
@@ -1371,14 +1377,9 @@ fn send_onion_private_chat(
         }
     };
 
-    let source_socket_address = socket
-        .local_addr()
-        .map(|addr| addr.to_string())
-        .unwrap_or_else(|_| "127.0.0.1:0".into());
-
     for (index, relay) in relays.iter().enumerate() {
         let previous_address = if index == 0 {
-            source_socket_address.as_str()
+            "0.0.0.0:0"
         } else {
             &relays[index - 1].address
         };
