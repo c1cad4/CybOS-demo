@@ -1396,6 +1396,80 @@ impl crate::state::CybOs {
         self.notify(format!("TRUSTED LAN PEER {}", peer.node_id));
     }
 
+    pub(crate) fn send_lan_onion_chat(&mut self, message: &str) {
+        if self.lan_send_task.is_some() {
+            self.notify("LAN DELIVERY ALREADY IN PROGRESS");
+            return;
+        }
+        let message = message.trim().to_string();
+        if message.is_empty() {
+            return;
+        }
+
+        let Some(target_id) = self.lan_target.clone() else {
+            self.notify("SELECT A LAN DESTINATION FIRST");
+            return;
+        };
+        let Some(destination) = self
+            .lan_peers
+            .iter()
+            .find(|peer| peer.node_id == target_id && peer.trusted)
+            .cloned()
+        else {
+            self.notify("DESTINATION MUST BE TRUSTED");
+            return;
+        };
+
+        let relays: Vec<_> = self
+            .lan_peers
+            .iter()
+            .filter(|peer| peer.trusted && peer.node_id != target_id)
+            .take(crate::network::onion::MAX_ONION_HOPS)
+            .cloned()
+            .collect();
+
+        if relays.is_empty() {
+            self.notify("ONION ROUTING NEEDS AT LEAST ONE TRUSTED RELAY");
+            return;
+        }
+
+        let destination = crate::network::lan::OnionRoutePeer {
+            node_id: destination.node_id,
+            address: format!("{}:{}", destination.address, LAN_DISCOVERY_PORT),
+            public_key_b64: destination.public_key.unwrap_or_default(),
+        };
+        let relay_peers: Vec<crate::network::lan::OnionRoutePeer> = relays
+            .into_iter()
+            .filter_map(|peer| {
+                Some(crate::network::lan::OnionRoutePeer {
+                    node_id: peer.node_id,
+                    address: format!("{}:{}", peer.address, LAN_DISCOVERY_PORT),
+                    public_key_b64: peer.public_key?,
+                })
+            })
+            .collect();
+
+        if relay_peers.is_empty() {
+            self.notify("NO TRUSTED RELAY WITH AN AUTHENTICATED KEY");
+            return;
+        }
+
+        let (tx, rx) = mpsc::channel();
+        self.lan_send_task = Some(rx);
+        self.lan_delivery_status = format!(
+            "ONION ROUTE · {} RELAY(S) → {}",
+            relay_peers.len(),
+            destination.node_id
+        );
+        let identity = self.identity.clone();
+
+        thread::spawn(move || {
+            let result =
+                send_onion_private_chat(&identity, &destination, &relay_peers, &message);
+            let _ = tx.send(result);
+        });
+    }
+
     pub(crate) fn send_lan_chat(&mut self, message: &str) {
         if self.lan_send_task.is_some() { self.notify("LAN DELIVERY ALREADY IN PROGRESS"); return; }
         let message = message.trim().to_string();
