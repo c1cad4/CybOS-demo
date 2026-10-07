@@ -13,6 +13,7 @@ mod chat;
 mod farm;
 mod graph;
 mod network;
+mod navigation;
 mod robot;
 mod shell;
 mod state;
