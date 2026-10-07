@@ -80,28 +80,9 @@ impl CybOs {
         };
 
 
-        let message = &value["choices"][0]["message"];
-
-
-        let content = message["content"]
-            .as_str()
-            .filter(|v| !v.trim().is_empty())
-            .or_else(|| {
-                message["reasoning"]
-                    .as_str()
-                    .filter(|v| !v.trim().is_empty())
-            })
-            .or_else(|| {
-                value["choices"][0]["text"]
-                    .as_str()
-                    .filter(|v| !v.trim().is_empty())
-            });
-
-
-        let Some(content) = content else {
+        let Some(content) = Self::qwen_visible_content(&value) else {
             return;
         };
-
 
         let cleaned = content
             .trim()
