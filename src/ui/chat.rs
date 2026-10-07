@@ -192,6 +192,20 @@ impl CybOs {
                             )
                             .clicked();
 
+                        let send_lan = ui
+                            .add_enabled(
+                                !self.lan_peers.is_empty(),
+                                egui::Button::new(
+                                    RichText::new("↗  SEND LAN")
+                                        .size(11.0)
+                                        .strong()
+                                        .color(neon),
+                                )
+                                .min_size(Vec2::new(125.0, 34.0)),
+                            )
+                            .on_disabled_hover_text("Discover at least one LAN peer first.")
+                            .clicked();
+
                         if (response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)))
                             || send
                         {
@@ -205,6 +219,18 @@ impl CybOs {
                                 self.chat_input.clear();
                                 self.add_event("CHAT", &format!("Local message sent: {}", t));
                                 self.notify("MESSAGE SENT ON LOCAL CHANNEL");
+                            }
+                        }
+
+                        if send_lan {
+                            let t = self.chat_input.trim().to_string();
+
+                            if !t.is_empty() {
+                                self.push_chat_message("YOU", t.clone(), true);
+                                self.send_lan_chat(&t);
+                                self.chat_input.clear();
+                                self.add_event("CHAT", &format!("LAN broadcast queued: {}", t));
+                                self.notify("LAN MESSAGE QUEUED");
                             }
                         }
 
