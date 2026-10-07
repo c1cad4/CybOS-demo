@@ -17,10 +17,11 @@ domain services, local persistence and page-oriented UI.
 - Network — src/network/ owns web discovery, fetch, parsing and source
   handling.
 - Assets — src/assets/ owns Solana balances and market data; network refreshes run in background workers.
-- LAN — src/network/lan.rs provides local UDP discovery and explicit peer-to-peer chat broadcast.
+- LAN — src/network/lan.rs provides broadcast-only discovery plus directed peer-to-peer chat.
 - UI pages — src/ui/ contains dashboard, graph, brain, farm, robot,
   chat, network, cameras, assets and system views.
 - CybChat history is persisted in SQLite and restored at startup.
+- LAN chat uses an explicit envelope (`from`, `to`, `message_id`, `message`, `version`) and a bounded delivery ACK; this is a delivery acknowledgement, not a cryptographic proof.
 - Theme/navigation — src/theme.rs and src/navigation.rs own visual
   primitives and page semantics.
 
