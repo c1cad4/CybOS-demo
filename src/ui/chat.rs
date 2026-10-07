@@ -183,9 +183,9 @@ impl CybOs {
 
                             if !t.is_empty() {
                                 self.chat_output = t.clone();
-                                self.chat.push(("YOU".into(), t.clone(), true));
+                                self.push_chat_message("YOU", t.clone(), true);
                                 let reply = self.agent_answer(&t);
-                                self.chat.push(("ROBOTCYB".into(), reply, false));
+                                self.push_chat_message("ROBOTCYB", reply, false);
                                 self.chat_input.clear();
                                 self.add_event("CHAT", &format!("Local message sent: {}", t));
                                 self.notify("MESSAGE SENT ON LOCAL CHANNEL");
