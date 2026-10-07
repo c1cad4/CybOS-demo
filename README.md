@@ -15,6 +15,7 @@ not a browser wrapper.
 - Local Qwen runtime shared by planner, learning, RobotCYB and web answers
 - Background market and Solana balance refreshes that keep network I/O off the UI thread
 - Real local LAN peer discovery with UDP broadcast and node/version reporting
+- Directed LAN CybChat with explicit recipient identity, message IDs and bounded delivery acknowledgements
 - Background market and Solana balance refreshes that do not block UI rendering
 - Public $CICADAFARM and $ROBOTCYB mint identifiers
 - No private keys
@@ -34,7 +35,7 @@ and infrastructure is not presented as live until a real connection exists.
 
 Bluetooth, P2P, Nostr and RTSP camera feeds are shown as transport/ready states,
 but the MVP does not claim them as connected. LAN discovery is implemented as a
-real local peer-discovery channel; application message transport is separate. LAN chat is an unencrypted local-network broadcast and should not carry secrets.
+real local peer-discovery channel; application message transport is separate. LAN discovery is broadcast-only. CybChat messages are now directed to a selected peer and acknowledged within a bounded timeout, but the payload is still plaintext and must not carry secrets. End-to-end encryption is not implemented yet.
 
 
 ## One-click macOS launch
