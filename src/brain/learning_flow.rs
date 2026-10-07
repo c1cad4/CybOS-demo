@@ -3,7 +3,6 @@
 use crate::CybOs;
 use crate::models::{LearningFact, LearningResponse, Memory};
 use chrono::Local;
-use serde_json::json;
 use uuid::Uuid;
 
 impl CybOs {
@@ -30,7 +29,6 @@ impl CybOs {
         }
 
 
-        let url = "http://127.0.0.1:8080/v1/chat/completions";
 
 
         let system_prompt = r#"
@@ -72,44 +70,13 @@ impl CybOs {
     "#;
 
 
-        let payload = json!({
-            "model": "mlx-community/Qwen3.5-9B-MLX-4bit",
-            "messages": [
-                {
-                    "role": "system",
-                    "content": system_prompt
-                },
-                {
-                    "role": "user",
-                    "content": text
-                }
-            ],
-            "max_tokens": 1200,
-            "temperature": 0.0,
-            "chat_template_kwargs": {
-                "enable_thinking": false
-            }
-        });
-
-
-        let response = match ureq::post(url)
-            .header("Content-Type", "application/json")
-            .send_json(&payload)
-        {
-            Ok(resp) => resp,
-            Err(_) => return,
-        };
-
-
-        let body = match response.into_body().read_to_string() {
-            Ok(body) => body,
-            Err(_) => return,
-        };
-
-
-        let value: serde_json::Value = match serde_json::from_str(&body) {
-            Ok(value) => value,
-            Err(_) => return,
+        let value = match self.qwen_chat_json(
+            system_prompt,
+            text,
+            1200,
+        ) {
+            Some(value) => value,
+            None => return,
         };
 
 

@@ -1,7 +1,6 @@
 //! Qwen planner protocol and decision logic.
 
 use crate::CybOs;
-use serde_json::json;
 
 impl CybOs {
     fn parse_planner_json(content: &str) -> Option<serde_json::Value> {
@@ -36,7 +35,6 @@ impl CybOs {
     }
 
     pub(crate) fn select_tool_with_qwen(&self, q: &str) -> Option<(String, String)> {
-        let url = "http://127.0.0.1:8080/v1/chat/completions";
 
         let system_prompt = r#"
 You are the action planner and autonomous brain of RobotCYB.
@@ -105,32 +103,11 @@ If the user can be answered without a tool:
 Never output explanations outside JSON.
 "#;
 
-        let payload = json!({
-            "model": "mlx-community/Qwen3.5-9B-MLX-4bit",
-            "messages": [
-                {
-                    "role": "system",
-                    "content": system_prompt
-                },
-                {
-                    "role": "user",
-                    "content": q
-                }
-            ],
-            "max_tokens": 250,
-            "temperature": 0.0,
-            "chat_template_kwargs": {
-                "enable_thinking": false
-            }
-        });
-
-        let response = ureq::post(url)
-            .header("Content-Type", "application/json")
-            .send_json(&payload)
-            .ok()?;
-
-        let body = response.into_body().read_to_string().ok()?;
-        let value: serde_json::Value = serde_json::from_str(&body).ok()?;
+        let value = self.qwen_chat_json(
+            system_prompt,
+            q,
+            250,
+        )?;
 
         let content = Self::qwen_visible_content(&value)?;
         let decision = Self::parse_planner_json(content)?;
@@ -147,7 +124,6 @@ Never output explanations outside JSON.
     }
 
     pub(crate) fn planner_decision_from_observation(&self, observation: &str) -> Option<serde_json::Value> {
-        let url = "http://127.0.0.1:8080/v1/chat/completions";
 
         let system_prompt = r#"
 You are RobotCYB, the action planner of cybOS.
@@ -212,45 +188,17 @@ Return ONLY valid JSON.
                 "\n\nRETRY: Your previous planner output was invalid. Return ONLY one valid JSON object with action=tool or action=final. No prose.\n"
             };
 
-            let payload = json!({
-                "model": "mlx-community/Qwen3.5-9B-MLX-4bit",
-                "messages": [
-                    {
-                        "role": "system",
-                        "content": system_prompt
-                    },
-                    {
-                        "role": "user",
-                        "content": format!(
-                            "{}{}",
-                            observation,
-                            retry_note
-                        )
-                    }
-                ],
-                "max_tokens": 350,
-                "temperature": 0.0,
-                "chat_template_kwargs": {
-                    "enable_thinking": false
-                }
-            });
-
-            let response = match ureq::post(url)
-                .header("Content-Type", "application/json")
-                .send_json(&payload)
-            {
-                Ok(response) => response,
-                Err(_) => continue,
-            };
-
-            let body = match response.into_body().read_to_string() {
-                Ok(body) => body,
-                Err(_) => continue,
-            };
-
-            let value: serde_json::Value = match serde_json::from_str(&body) {
-                Ok(value) => value,
-                Err(_) => continue,
+            let value = match self.qwen_chat_json(
+                system_prompt,
+                &format!(
+                    "{}{}",
+                    observation,
+                    retry_note
+                ),
+                350,
+            ) {
+                Some(value) => value,
+                None => continue,
             };
 
             let Some(content) = Self::qwen_visible_content(&value) else {
