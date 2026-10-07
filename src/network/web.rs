@@ -1,5 +1,6 @@
 use crate::CybOs;
 use serde_json::json;
+use super::web_html;
 use super::web_urls;
 
 impl CybOs {
@@ -23,15 +24,7 @@ impl CybOs {
             out
         }
 
-        fn html_unescape(input: &str) -> String {
-            input
-                .replace("&amp;", "&")
-                .replace("&quot;", "\"")
-                .replace("&#x27;", "'")
-                .replace("&lt;", "<")
-                .replace("&gt;", ">")
-                .replace("&nbsp;", " ")
-        }
+
 
         fn percent_decode(input: &str) -> String {
             let bytes = input.as_bytes();
@@ -65,7 +58,7 @@ impl CybOs {
         }
 
         fn resolve_url(href: &str) -> String {
-            let href = html_unescape(href.trim());
+            let href = web_html::html_unescape(href.trim());
 
             if let Some(pos) = href.find("uddg=") {
                 let value = &href[pos + 5..];
@@ -153,7 +146,7 @@ impl CybOs {
                 None => break,
             };
 
-            let title = html_unescape(&remaining[title_start..title_end])
+            let title = web_html::html_unescape(&remaining[title_start..title_end])
                 .trim()
                 .to_string();
 
@@ -186,83 +179,9 @@ impl CybOs {
     }
 
     pub(crate) fn tool_web_fetch(&self, url: &str) -> String {
-        fn html_unescape(input: &str) -> String {
-            input
-                .replace("&amp;", "&")
-                .replace("&quot;", "\"")
-                .replace("&#x27;", "'")
-                .replace("&lt;", "<")
-                .replace("&gt;", ">")
-                .replace("&nbsp;", " ")
-        }
 
-        fn html_to_text(html: &str) -> String {
-            let body = if let Some(start) = html.find("<body") {
-                if let Some(open_end) = html[start..].find('>') {
-                    let body_start = start + open_end + 1;
 
-                    if let Some(close) = html[body_start..].find("</body>") {
-                        &html[body_start..body_start + close]
-                    } else {
-                        &html[body_start..]
-                    }
-                } else {
-                    html
-                }
-            } else {
-                html
-            };
 
-            let mut cleaned = body.to_string();
-
-            loop {
-                let Some(start) = cleaned.find("<script") else {
-                    break;
-                };
-
-                let Some(end_rel) = cleaned[start..].find("</script>") else {
-                    cleaned.replace_range(start.., "");
-                    break;
-                };
-
-                let end = start + end_rel + "</script>".len();
-                cleaned.replace_range(start..end, " ");
-            }
-
-            loop {
-                let Some(start) = cleaned.find("<style") else {
-                    break;
-                };
-
-                let Some(end_rel) = cleaned[start..].find("</style>") else {
-                    cleaned.replace_range(start.., "");
-                    break;
-                };
-
-                let end = start + end_rel + "</style>".len();
-                cleaned.replace_range(start..end, " ");
-            }
-
-            let mut result = String::new();
-            let mut in_tag = false;
-
-            for ch in cleaned.chars() {
-                match ch {
-                    '<' => in_tag = true,
-                    '>' => {
-                        in_tag = false;
-                        result.push(' ');
-                    }
-                    _ if in_tag => {}
-                    '\n' | '\r' | '\t' => result.push(' '),
-                    _ => result.push(ch),
-                }
-            }
-
-            let result = html_unescape(&result);
-
-            result.split_whitespace().collect::<Vec<_>>().join(" ")
-        }
 
         let url = url.trim();
 
@@ -290,7 +209,7 @@ impl CybOs {
             }
         };
 
-        let text = html_to_text(&body);
+        let text = web_html::html_to_text(&body);
 
         if text.trim().is_empty() {
             return format!("Web source returned no readable text: {}", url);
