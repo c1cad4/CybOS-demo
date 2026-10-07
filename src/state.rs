@@ -5,7 +5,6 @@
 use crate::config::DEFAULT_CICADA_WALLET;
 use crate::models::{Event, GraphLink, GraphNode};
 use crate::navigation::Page;
-use crate::state::CybOs;
 use crate::store::Store;
 
 use eframe::egui::Vec2;
