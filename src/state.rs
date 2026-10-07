@@ -73,8 +73,10 @@ impl Default for CybOs {
         let mut store = crate::runtime::open_store();
         let identity = crate::identity::NodeIdentity::load_or_create(&store);
 
+        let local_storage_key = crate::crypto::local_storage_key(identity.pkcs8());
+        store.configure_local_storage_key(local_storage_key);
         #[cfg(target_os = "macos")]
-        store.configure_chat_key(crate::crypto::local_storage_key(identity.pkcs8()));
+        store.configure_chat_key(local_storage_key);
 
         let node_id = crate::runtime::load_or_create_node_id(&store, &identity);
         let events = crate::runtime::load_events(&store);
