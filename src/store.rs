@@ -322,7 +322,7 @@ impl Store {
             .prepare(
                 "SELECT id,time,who,text,mine,encrypted
                  FROM chat_messages
-                 ORDER BY rowid ASC
+                 ORDER BY rowid DESC
                  LIMIT 500",
             )
             .unwrap();
@@ -341,6 +341,9 @@ impl Store {
             .unwrap()
             .filter_map(Result::ok)
             .collect();
+
+        let mut rows = rows;
+        rows.reverse();
 
         rows
             .into_iter()
