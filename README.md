@@ -61,6 +61,40 @@ The launcher:
 The first build requires internet access because Cargo downloads Rust crates.
 
 
+## Local testing
+
+For the normal native UI on macOS:
+
+```bash
+./START_cybOS.command
+```
+
+For the routed transport smoke test, use the explicit self-test command:
+
+```bash
+cargo run -- --self-test onion
+```
+
+Expected result:
+
+```text
+ONION_TEST OK · 2 relays · cyb-... → cyb-...
+```
+
+The self-test creates a source node, two relay nodes and a destination,
+performs real per-hop X25519 session establishment and encrypted route binding,
+sends the end-to-end CybChat envelope through both relays, verifies the signed
+reverse ACK, and confirms that the relays do not receive a chat event.
+
+For the full Rust test suite:
+
+```bash
+cargo test --locked -- --test-threads=1
+```
+
+The CI pipeline runs the same checks on Linux and macOS and also builds a
+testable macOS `cybOS.app` artifact.
+
 ## Headless onion smoke test
 
 For a local debug verification of the full routed path:
