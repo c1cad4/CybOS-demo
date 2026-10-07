@@ -34,7 +34,7 @@ and infrastructure is not presented as live until a real connection exists.
 
 The communication design borrows the useful protocol ideas from the Cyberia CybOS
 concept: persistent node identity, explicit message addressing, bounded delivery
-and graph-oriented state. Direct LAN CybChat now uses authenticated peer identity, X25519 key exchange, encrypted wire envelopes, signed ACKs, TOFU pinning and a per-message key ratchet. The onion transport core adds nested relay layers, route/packet IDs, hop binding, replay suppression and a real UDP forwarding relay; automatic route setup and reverse routed ACKs are still separate integration work.
+and graph-oriented state. Direct LAN CybChat uses authenticated peer identity, X25519 key exchange, encrypted wire envelopes, signed ACKs, TOFU pinning and a per-message key ratchet. Routed CybChat adds authenticated per-hop sessions, signed route binding, nested relay layers, route/packet IDs, hop binding, replay suppression, reverse routed ACKs and a real UDP forwarding path. The CybChat UI exposes explicit relay selection and preserves the selected hop order.
 
 ## What is deliberately not faked
 
