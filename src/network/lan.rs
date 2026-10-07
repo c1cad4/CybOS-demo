@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::UdpSocket;
 use std::sync::mpsc::{self, Receiver, TryRecvError};
+use std::sync::{Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
@@ -87,6 +88,13 @@ struct LanAck {
 struct Session {
     key: [u8; 32],
     public_key: Vec<u8>,
+    counter: u64,
+}
+
+static SEND_SESSIONS: OnceLock<Mutex<HashMap<String, Session>>> = OnceLock::new();
+
+fn send_sessions() -> &'static Mutex<HashMap<String, Session>> {
+    SEND_SESSIONS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
 fn now_secs() -> u64 {
@@ -109,8 +117,8 @@ fn session_transcript(from: &str, to: &str, init_eph: &[u8], reply_eph: &[u8]) -
     [crypto::PROTOCOL.as_bytes(), from.as_bytes(), to.as_bytes(), init_eph, reply_eph].concat()
 }
 
-fn aad(message_id: &str, from: &str, to: &str, timestamp: u64) -> Vec<u8> {
-    [crypto::PROTOCOL, "aead", message_id, from, to, &timestamp.to_string()].join("|").into_bytes()
+fn aad(message_id: &str, from: &str, to: &str, timestamp: u64, counter: u64) -> Vec<u8> {
+    [crypto::PROTOCOL, "aead", message_id, from, to, &timestamp.to_string(), &counter.to_string()].join("|").into_bytes()
 }
 
 pub(crate) fn spawn_listener(node_id: String, identity: NodeIdentity) -> Receiver<LanEvent> {
@@ -151,7 +159,7 @@ pub(crate) fn spawn_listener(node_id: String, identity: NodeIdentity) -> Receive
                 let Ok((private, reply_eph)) = crypto::ephemeral() else { continue };
                 let transcript = session_transcript(&init.from, &init.to, &eph, &reply_eph);
                 let Ok(key) = crypto::derive_session_key(private, &eph, &transcript) else { continue };
-                sessions.insert(init.from.clone(), Session { key, public_key });
+                sessions.insert(init.from.clone(), Session { key, public_key, counter: 0 });
 
                 let timestamp = now_secs();
                 let reply_eph_b64 = STANDARD.encode(&reply_eph);
@@ -181,15 +189,22 @@ pub(crate) fn spawn_listener(node_id: String, identity: NodeIdentity) -> Receive
                 seen_messages.retain(|_, ts| *ts >= cutoff);
                 if seen_messages.contains_key(&envelope.message_id) { continue; }
 
-                let Some(session) = sessions.get(&envelope.from) else { continue };
-                let signed = crypto::envelope_bytes(&envelope.message_id, &envelope.from, &envelope.to, envelope.timestamp, &envelope.nonce, &envelope.ciphertext);
+                let Some(session) = sessions.get_mut(&envelope.from) else { continue };
+                if envelope.counter != session.counter + 1 { continue; }
+                let signed = [
+                    crypto::PROTOCOL, "message", envelope.message_id.as_str(), envelope.from.as_str(),
+                    envelope.to.as_str(), &envelope.timestamp.to_string(), &envelope.counter.to_string(),
+                    envelope.nonce.as_str(), envelope.ciphertext.as_str()
+                ].join("|").into_bytes();
                 if !crypto::verify_signature(&session.public_key, &signed, &STANDARD.decode(&envelope.signature).unwrap_or_default()) { continue; }
-                let associated = aad(&envelope.message_id, &envelope.from, &envelope.to, envelope.timestamp);
-                let Ok(plaintext) = crypto::decrypt(&session.key, &associated, &envelope.nonce, &envelope.ciphertext) else { continue };
+                let message_key = match crypto::ratchet_key(&session.key, envelope.counter) { Ok(k) => k, Err(_) => continue };
+                let associated = aad(&envelope.message_id, &envelope.from, &envelope.to, envelope.timestamp, envelope.counter);
+                let Ok(plaintext) = crypto::decrypt(&message_key, &associated, &envelope.nonce, &envelope.ciphertext) else { continue };
                 if plaintext.len() > MAX_CHAT_BYTES { continue; }
                 let Ok(text) = String::from_utf8(plaintext) else { continue };
 
                 seen_messages.insert(envelope.message_id.clone(), envelope.timestamp);
+                if let Ok(next) = crypto::ratchet_chain(&session.key, envelope.counter) { session.key = next; session.counter = envelope.counter; }
                 let ack_signed = [crypto::PROTOCOL, "ack", envelope.message_id.as_str(), node_id.as_str(), envelope.from.as_str()].join("|");
                 let ack = LanAck {
                     message_id: envelope.message_id.clone(),
