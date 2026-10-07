@@ -95,6 +95,9 @@ struct Session {
 
 static SEND_SESSIONS: OnceLock<Mutex<HashMap<String, Session>>> = OnceLock::new();
 
+#[cfg(test)]
+static LAST_SENT_WIRE: OnceLock<Mutex<Option<String>>> = OnceLock::new();
+
 fn send_sessions() -> &'static Mutex<HashMap<String, Session>> {
     SEND_SESSIONS.get_or_init(|| Mutex::new(HashMap::new()))
 }
@@ -102,6 +105,18 @@ fn send_sessions() -> &'static Mutex<HashMap<String, Session>> {
 fn clear_send_session(peer_id: &str) {
     if let Ok(mut sessions) = send_sessions().lock() {
         sessions.remove(peer_id);
+    }
+}
+
+#[cfg(test)]
+fn last_sent_wire() -> Option<String> {
+    LAST_SENT_WIRE.get_or_init(|| Mutex::new(None)).lock().ok().and_then(|v| v.clone())
+}
+
+#[cfg(test)]
+fn remember_sent_wire(wire: &str) {
+    if let Ok(mut value) = LAST_SENT_WIRE.get_or_init(|| Mutex::new(None)).lock() {
+        *value = Some(wire.to_string());
     }
 }
 
@@ -130,9 +145,13 @@ fn aad(message_id: &str, from: &str, to: &str, timestamp: u64, counter: u64) -> 
 }
 
 pub(crate) fn spawn_listener(node_id: String, identity: NodeIdentity) -> Receiver<LanEvent> {
+    spawn_listener_on_port(node_id, identity, LAN_DISCOVERY_PORT)
+}
+
+fn spawn_listener_on_port(node_id: String, identity: NodeIdentity, listen_port: u16) -> Receiver<LanEvent> {
     let (tx, rx) = mpsc::channel();
     thread::spawn(move || {
-        let socket = match UdpSocket::bind(("0.0.0.0", LAN_DISCOVERY_PORT)) { Ok(s) => s, Err(_) => return };
+        let socket = match UdpSocket::bind(("127.0.0.1", listen_port)) { Ok(s) => s, Err(_) => return };
         let mut buffer = [0u8; 8192];
         let mut sessions: HashMap<String, Session> = HashMap::new();
         let mut seen_messages: HashMap<String, u64> = HashMap::new();
@@ -277,6 +296,17 @@ pub(crate) fn send_private_chat(
     peer_public_key_b64: &str,
     message: &str,
 ) -> LanSendStatus {
+    send_private_chat_on_port(identity, peer_id, peer_address, LAN_DISCOVERY_PORT, peer_public_key_b64, message)
+}
+
+fn send_private_chat_on_port(
+    identity: &NodeIdentity,
+    peer_id: &str,
+    peer_address: &str,
+    peer_port: u16,
+    peer_public_key_b64: &str,
+    message: &str,
+) -> LanSendStatus {
     let message_id = Uuid::new_v4().to_string();
     if message.trim().is_empty() {
         return LanSendStatus::Failed { message_id, peer_id: peer_id.to_string(), reason: "empty message".into() };
@@ -292,7 +322,7 @@ pub(crate) fn send_private_chat(
         Ok(s) => s,
         Err(e) => return LanSendStatus::Failed { message_id, peer_id: peer_id.to_string(), reason: e.to_string() },
     };
-    let target = format!("{}:{}", peer_address, LAN_DISCOVERY_PORT);
+    let target = format!("{}:{}", peer_address, peer_port);
     let mut session = send_sessions().lock().ok().and_then(|g| g.get(peer_id).cloned());
 
     if session.is_none() {
@@ -386,6 +416,8 @@ pub(crate) fn send_private_chat(
     if body.as_bytes().len() > MAX_WIRE_BYTES {
         return LanSendStatus::Failed { message_id, peer_id: peer_id.to_string(), reason: "encrypted envelope exceeds wire limit".into() };
     }
+    #[cfg(test)]
+    remember_sent_wire(&format!("{} {}", CHAT_PREFIX, body));
     let _ = socket.set_read_timeout(Some(CHAT_ACK_TIMEOUT));
     if let Err(e) = socket.send_to(format!("{} {}", CHAT_PREFIX, body).as_bytes(), &target) {
         return LanSendStatus::Failed { message_id, peer_id: peer_id.to_string(), reason: e.to_string() };
@@ -508,11 +540,24 @@ impl crate::state::CybOs {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::net::UdpSocket;
+
+    fn free_port() -> u16 {
+        UdpSocket::bind(("127.0.0.1", 0)).unwrap().local_addr().unwrap().port()
+    }
+
+    fn wait_for_chat(rx: &Receiver<LanEvent>, expected: &str) {
+        match rx.recv_timeout(Duration::from_secs(2)).unwrap() {
+            LanEvent::Chat { message, .. } => assert_eq!(message, expected),
+        }
+    }
+
     #[test]
     fn timestamp_window_rejects_old_messages() {
         assert!(fresh_timestamp(now_secs()));
         assert!(!fresh_timestamp(now_secs().saturating_sub(REPLAY_WINDOW_SECS + 1)));
     }
+
     #[test]
     fn encrypted_envelope_is_not_plaintext() {
         let key = [7u8; 32];
@@ -520,5 +565,65 @@ mod tests {
         let (nonce, ciphertext) = crypto::encrypt(&key, &associated, b"secret").unwrap();
         assert!(!ciphertext.contains("secret"));
         assert_eq!(crypto::decrypt(&key, &associated, &nonce, &ciphertext).unwrap(), b"secret");
+    }
+
+    #[test]
+    fn two_node_udp_handshake_ack_and_ratchet_roundtrip() {
+        let alice = NodeIdentity::generate_for_test();
+        let bob = NodeIdentity::generate_for_test();
+        let alice_id = alice.node_id();
+        let bob_id = bob.node_id();
+        let alice_port = free_port();
+        let bob_port = free_port();
+
+        let bob_events = spawn_listener_on_port(bob_id.clone(), bob.clone(), bob_port);
+        let _alice_events = spawn_listener_on_port(alice_id.clone(), alice.clone(), alice_port);
+        thread::sleep(Duration::from_millis(40));
+
+        let bob_key = STANDARD.encode(bob.public_key());
+        let first = send_private_chat_on_port(
+            &alice, &bob_id, "127.0.0.1", bob_port, &bob_key, "hello over UDP",
+        );
+        assert!(matches!(first, LanSendStatus::Delivered { .. }));
+        wait_for_chat(&bob_events, "hello over UDP");
+
+        let second = send_private_chat_on_port(
+            &alice, &bob_id, "127.0.0.1", bob_port, &bob_key, "second ratcheted message",
+        );
+        assert!(matches!(second, LanSendStatus::Delivered { .. }));
+        wait_for_chat(&bob_events, "second ratcheted message");
+    }
+
+    #[test]
+    fn live_udp_replay_and_ciphertext_tampering_are_rejected() {
+        let alice = NodeIdentity::generate_for_test();
+        let bob = NodeIdentity::generate_for_test();
+        let bob_id = bob.node_id();
+        let bob_port = free_port();
+        let bob_events = spawn_listener_on_port(bob_id.clone(), bob.clone(), bob_port);
+        thread::sleep(Duration::from_millis(40));
+
+        let bob_key = STANDARD.encode(bob.public_key());
+        let delivered = send_private_chat_on_port(
+            &alice, &bob_id, "127.0.0.1", bob_port, &bob_key, "original",
+        );
+        assert!(matches!(delivered, LanSendStatus::Delivered { .. }));
+        wait_for_chat(&bob_events, "original");
+
+        let wire = last_sent_wire().expect("integration sender should expose test wire capture");
+        let payload = wire.strip_prefix("CYBOS_CHAT ").unwrap();
+        let mut envelope: WireEnvelope = serde_json::from_str(payload).unwrap();
+
+        let replay_socket = UdpSocket::bind(("127.0.0.1", 0)).unwrap();
+        replay_socket.send_to(wire.as_bytes(), ("127.0.0.1", bob_port)).unwrap();
+        assert!(bob_events.recv_timeout(Duration::from_millis(250)).is_err());
+
+        envelope.message_id = Uuid::new_v4().to_string();
+        let mut ciphertext = STANDARD.decode(&envelope.ciphertext).unwrap();
+        ciphertext[0] ^= 1;
+        envelope.ciphertext = STANDARD.encode(ciphertext);
+        let tampered = format!("{} {}", CHAT_PREFIX, serde_json::to_string(&envelope).unwrap());
+        replay_socket.send_to(tampered.as_bytes(), ("127.0.0.1", bob_port)).unwrap();
+        assert!(bob_events.recv_timeout(Duration::from_millis(250)).is_err());
     }
 }
