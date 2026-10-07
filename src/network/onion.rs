@@ -21,6 +21,14 @@ pub(crate) const MAX_ONION_HOPS: usize = 4;
 pub(crate) const MAX_ONION_BYTES: usize = 4096;
 pub(crate) const ONION_TTL_SECS: u64 = 120;
 const REPLAY_CACHE_LIMIT: usize = 512;
+const MAX_ROUTE_ID_BYTES: usize = 64;
+const MAX_PACKET_ID_BYTES: usize = 64;
+const MAX_SESSION_ID_BYTES: usize = 64;
+const MAX_NODE_ID_BYTES: usize = 128;
+const MAX_ADDRESS_BYTES: usize = 128;
+const MAX_NONCE_BYTES: usize = 24;
+const MIN_CIPHERTEXT_BYTES: usize = 16;
+const MAX_PAYLOAD_BYTES: usize = 3072;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct OnionHop {
@@ -29,6 +37,7 @@ pub(crate) struct OnionHop {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct OnionPacket {
     pub(crate) version: u8,
     pub(crate) route_id: String,
@@ -61,6 +70,7 @@ pub(crate) enum PeelResult {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct OnionReversePacket {
     pub(crate) version: u8,
     pub(crate) route_id: String,
@@ -261,6 +271,96 @@ impl OnionRelayCache {
     }
 }
 
+fn bounded_text(value: &str, max_bytes: usize) -> bool {
+    !value.is_empty() && value.len() <= max_bytes && value.bytes().all(|byte| byte >= 0x20 && byte != 0x7f)
+}
+
+fn valid_base64_field(value: &str, max_decoded: usize, min_decoded: usize) -> bool {
+    let Ok(decoded) = base64::engine::general_purpose::STANDARD.decode(value) else {
+        return false;
+    };
+    decoded.len() >= min_decoded && decoded.len() <= max_decoded
+}
+
+fn validate_packet_shape(packet: &OnionPacket) -> Result<(), &'static str> {
+    if packet.version != 1 {
+        return Err("unsupported onion version");
+    }
+    if !bounded_text(&packet.route_id, MAX_ROUTE_ID_BYTES)
+        || !bounded_text(&packet.packet_id, MAX_PACKET_ID_BYTES)
+        || !bounded_text(&packet.session_id, MAX_SESSION_ID_BYTES)
+        || !valid_base64_field(&packet.nonce, MAX_NONCE_BYTES, 12)
+        || !valid_base64_field(
+            &packet.ciphertext,
+            MAX_ONION_BYTES,
+            MIN_CIPHERTEXT_BYTES,
+        )
+    {
+        return Err("invalid onion packet fields");
+    }
+    Ok(())
+}
+
+fn validate_reverse_shape(packet: &OnionReversePacket) -> Result<(), &'static str> {
+    if packet.version != 1 {
+        return Err("unsupported reverse onion version");
+    }
+    if !bounded_text(&packet.route_id, MAX_ROUTE_ID_BYTES)
+        || !bounded_text(&packet.packet_id, MAX_PACKET_ID_BYTES)
+        || !valid_base64_field(&packet.nonce, MAX_NONCE_BYTES, 12)
+        || !valid_base64_field(
+            &packet.ciphertext,
+            MAX_ONION_BYTES,
+            MIN_CIPHERTEXT_BYTES,
+        )
+    {
+        return Err("invalid reverse onion packet fields");
+    }
+    Ok(())
+}
+
+fn validate_frame(frame: &LayerFrame) -> Result<(), &'static str> {
+    match frame {
+        LayerFrame::Forward {
+            next_node_id,
+            next_address,
+            packet,
+        } => {
+            if !bounded_text(next_node_id, MAX_NODE_ID_BYTES)
+                || !bounded_text(next_address, MAX_ADDRESS_BYTES)
+            {
+                return Err("invalid onion forwarding target");
+            }
+            validate_packet_shape(packet)?;
+        }
+        LayerFrame::Deliver {
+            destination_id,
+            destination_address,
+            payload,
+        } => {
+            if !bounded_text(destination_id, MAX_NODE_ID_BYTES)
+                || !bounded_text(destination_address, MAX_ADDRESS_BYTES)
+                || payload.is_empty()
+                || payload.len() > MAX_PAYLOAD_BYTES
+            {
+                return Err("invalid onion delivery frame");
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_reverse_frame(frame: &ReverseFrame) -> Result<(), &'static str> {
+    if !bounded_text(&frame.previous_node_id, MAX_NODE_ID_BYTES)
+        || !bounded_text(&frame.previous_address, MAX_ADDRESS_BYTES)
+        || frame.payload.is_empty()
+        || frame.payload.len() > MAX_PAYLOAD_BYTES
+    {
+        return Err("invalid reverse onion frame");
+    }
+    Ok(())
+}
+
 pub(crate) fn new_route_id() -> String {
     Uuid::new_v4().to_string()
 }
@@ -290,7 +390,7 @@ fn layer_aad(
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 enum LayerFrame {
     Forward {
         next_node_id: String,
@@ -410,9 +510,7 @@ pub(crate) fn peel(
     hop_session_key: &[u8; 32],
     now: u64,
 ) -> Result<PeelResult, &'static str> {
-    if packet.version != 1 {
-        return Err("unsupported onion version");
-    }
+    validate_packet_shape(packet)?;
     if packet.route_id != expected_route_id {
         return Err("unexpected onion route");
     }
@@ -448,9 +546,10 @@ pub(crate) fn peel(
     );
     let frame_bytes = crypto::decrypt(&key, &aad, &packet.nonce, &packet.ciphertext)?;
 
-    match serde_json::from_slice::<LayerFrame>(&frame_bytes)
-        .map_err(|_| "invalid onion frame")?
-    {
+    let frame = serde_json::from_slice::<LayerFrame>(&frame_bytes)
+        .map_err(|_| "invalid onion frame")?;
+    validate_frame(&frame)?;
+    match frame {
         LayerFrame::Forward {
             next_node_id,
             next_address,
@@ -485,6 +584,7 @@ pub(crate) fn peel(
 
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct ReverseFrame {
     previous_node_id: String,
     previous_address: String,
@@ -540,9 +640,7 @@ pub(crate) fn peel_reverse(
     hop_session_key: &[u8; 32],
     now: u64,
 ) -> Result<ReverseForward, &'static str> {
-    if packet.version != 1 {
-        return Err("unsupported reverse onion version");
-    }
+    validate_reverse_shape(packet)?;
     if packet.route_id != expected_route_id {
         return Err("unexpected reverse onion route");
     }
@@ -572,6 +670,7 @@ pub(crate) fn peel_reverse(
     let bytes = crypto::decrypt(&key, &aad, &packet.nonce, &packet.ciphertext)?;
     let frame: ReverseFrame =
         serde_json::from_slice(&bytes).map_err(|_| "invalid reverse onion frame")?;
+    validate_reverse_frame(&frame)?;
 
     Ok(ReverseForward {
         previous_node_id: frame.previous_node_id,
@@ -947,6 +1046,72 @@ mod tests {
                 1_000_000_000,
             ),
             Err("authentication failed")
+        );
+    }
+
+    #[test]
+    fn malformed_onion_shapes_are_rejected_before_replay_state_changes() {
+        let route = new_route_id();
+        let packet = OnionPacket {
+            version: 1,
+            route_id: route.clone(),
+            packet_id: new_packet_id(),
+            session_id: "session".into(),
+            hop_index: 0,
+            expires_at: 1_000_000_100,
+            nonce: "%%%".into(),
+            ciphertext: "%%%".into(),
+        };
+
+        let mut cache = OnionRelayCache::new();
+        assert_eq!(
+            peel(&mut cache, &packet, &route, 0, &[1u8; 32], 1_000_000_000),
+            Err("invalid onion packet fields")
+        );
+
+        let replay_key = format!(
+            "{}:{}:{}:{}",
+            packet.route_id, packet.packet_id, packet.session_id, packet.hop_index
+        );
+        assert!(!cache.seen.contains_key(&replay_key));
+    }
+
+    #[test]
+    fn malformed_reverse_frame_is_rejected_after_decryption() {
+        let route = new_route_id();
+        let packet_id = new_packet_id();
+        let key = [41u8; 32];
+        let expires_at = 1_000_000_100;
+
+        let bytes = serde_json::to_vec(&serde_json::json!({
+            "previous_node_id": "",
+            "previous_address": "127.0.0.1:1",
+            "payload": [1, 2, 3]
+        }))
+        .unwrap();
+        let layer_key = crypto::onion_layer_key(&key, &route, &packet_id, 0, "reverse").unwrap();
+        let aad = layer_aad(&route, &packet_id, 0, expires_at, "reverse");
+        let (nonce, ciphertext) = crypto::encrypt(&layer_key, &aad, &bytes).unwrap();
+
+        let packet = OnionReversePacket {
+            version: 1,
+            route_id: route.clone(),
+            packet_id,
+            hop_index: 0,
+            expires_at,
+            nonce,
+            ciphertext,
+        };
+
+        assert_eq!(
+            peel_reverse(
+                &packet,
+                &route,
+                0,
+                &key,
+                1_000_000_000,
+            ),
+            Err("invalid reverse onion frame")
         );
     }
 
