@@ -73,3 +73,10 @@ The current design is a per-message HKDF chain with a monotonic counter. It is n
 Do not claim "production-grade secure messenger" yet.
 
 For this direct-LAN MVP, the implementation is suitable to merge after the current CI is green, with the residual risks above kept explicit in the documentation. The next security milestone should be the two-process adversarial integration harness, followed by explicit first-use fingerprint confirmation and secure at-rest key storage.
+
+
+Current automated integration coverage also includes:
+- live UDP rejection of stale envelopes
+- live UDP rejection of wrong-recipient envelopes
+- forged ACK signature rejection
+- persistent TOFU key replacement rejection
