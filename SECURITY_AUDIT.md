@@ -21,6 +21,9 @@ Both defects were fixed on this branch.
 - Local Unix runtime directory is hardened to mode 0700 and the SQLite database to mode 0600 when permissions can be changed.
 - On macOS, the Ed25519 private identity is stored in the system Keychain instead of SQLite.
 - Existing macOS SQLite-backed identities are migrated to Keychain once and removed from the database.
+- On macOS, CybChat history is encrypted with ChaCha20-Poly1305 before being written to SQLite.
+- Existing plaintext chat rows are migrated to encrypted rows on first read after the storage key is configured.
+- The chat table carries an explicit encrypted-state column so plaintext content cannot be confused with an encrypted payload.
 - README and CybChat UI no longer claim that wire-level E2E is disabled.
 - Security guide now distinguishes live transport behavior from integration-test targets.
 - AEAD AAD/ciphertext tampering tests and wrong-recipient envelope checks were added.
@@ -49,10 +52,10 @@ A new peer is now shown with its SHA-256 public-key fingerprint and requires exp
 
 Recommended next step: support out-of-band key provisioning for deployments that need stronger initial trust.
 
-### MEDIUM — Chat history is not encrypted at rest
-On macOS, the Ed25519 private identity is now protected by the system Keychain. Chat history and other local application data remain in SQLite without application-level/database-level encryption. Unix file permissions are hardened, but a process or account-level local compromise could expose stored chat content.
+### MEDIUM — Other local application data is not encrypted at rest
+On macOS, the Ed25519 private identity is protected by the system Keychain and CybChat history is now AEAD-encrypted in SQLite. Other persisted data such as memories, events and graph state remains unencrypted application data. Unix file permissions are hardened, but a process or account-level local compromise could expose those records.
 
-Recommended next step: add encrypted-at-rest chat storage with a Keychain-backed local encryption key, then extend the same policy to other sensitive persisted data as needed.
+Recommended next step: extend the same encrypted-storage policy to any additional sensitive persisted datasets that require it.
 
 ### MEDIUM — Adversarial integration coverage is partial
 A deterministic two-node loopback UDP harness now exercises real handshake, signed delivery ACKs, sequential ratchet messages, replay injection, ciphertext tampering, and lost-ACK recovery through a fresh handshake. OS-process isolation and several remaining cases are still not covered.
@@ -74,7 +77,7 @@ The current design is a per-message HKDF chain with a monotonic counter. It is n
 
 Do not claim "production-grade secure messenger" yet.
 
-For this direct-LAN MVP, the implementation is suitable to merge after the current CI is green, with the residual risks above kept explicit in the documentation. The next security milestone should be the two-process adversarial integration harness and encrypted-at-rest local chat storage.
+For this direct-LAN MVP, the implementation is suitable to merge after the current CI is green, with the residual risks above kept explicit in the documentation. The next security milestone should be the two-process adversarial integration harness and encrypted storage for any additional sensitive datasets.
 
 
 Current automated integration coverage also includes:
