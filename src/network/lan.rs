@@ -102,6 +102,8 @@ static SEND_SESSIONS: OnceLock<Mutex<HashMap<String, Session>>> = OnceLock::new(
 
 #[cfg(test)]
 static LAST_SENT_WIRE: OnceLock<Mutex<Option<String>>> = OnceLock::new();
+#[cfg(test)]
+static INTEGRATION_TEST_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
 fn send_sessions() -> &'static Mutex<HashMap<String, Session>> {
     SEND_SESSIONS.get_or_init(|| Mutex::new(HashMap::new()))
@@ -111,6 +113,14 @@ fn clear_send_session(peer_id: &str) {
     if let Ok(mut sessions) = send_sessions().lock() {
         sessions.remove(peer_id);
     }
+}
+
+#[cfg(test)]
+fn test_guard() -> std::sync::MutexGuard<'static, ()> {
+    INTEGRATION_TEST_LOCK
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .expect("integration test lock poisoned")
 }
 
 #[cfg(test)]
@@ -623,6 +633,7 @@ mod tests {
 
     #[test]
     fn two_node_udp_handshake_ack_and_ratchet_roundtrip() {
+        let _guard = test_guard();
         let alice = NodeIdentity::generate_for_test();
         let bob = NodeIdentity::generate_for_test();
         let alice_id = alice.node_id();
@@ -650,6 +661,7 @@ mod tests {
 
     #[test]
     fn lost_ack_forces_fresh_handshake_and_recovers() {
+        let _guard = test_guard();
         let alice = NodeIdentity::generate_for_test();
         let bob = NodeIdentity::generate_for_test();
         let bob_id = bob.node_id();
@@ -678,6 +690,7 @@ mod tests {
 
     #[test]
     fn live_udp_rejects_stale_timestamp_and_wrong_recipient() {
+        let _guard = test_guard();
         let alice = NodeIdentity::generate_for_test();
         let bob = NodeIdentity::generate_for_test();
         let bob_id = bob.node_id();
@@ -784,6 +797,7 @@ mod tests {
 
     #[test]
     fn live_udp_replay_and_ciphertext_tampering_are_rejected() {
+        let _guard = test_guard();
         let alice = NodeIdentity::generate_for_test();
         let bob = NodeIdentity::generate_for_test();
         let bob_id = bob.node_id();
