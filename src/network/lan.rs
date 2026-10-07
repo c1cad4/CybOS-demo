@@ -71,6 +71,7 @@ struct WireEnvelope {
     from: String,
     to: String,
     timestamp: u64,
+    counter: u64,
     nonce: String,
     ciphertext: String,
     signature: String,
