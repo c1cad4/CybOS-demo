@@ -10,6 +10,7 @@ mod assets;
 mod brain;
 mod cell;
 mod config;
+mod crypto;
 mod graph;
 mod identity;
 mod navigation;
