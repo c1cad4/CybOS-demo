@@ -7,7 +7,7 @@ Scope: direct-LAN discovery, identity, handshake, wire envelope, ratchet, replay
 
 The direct LAN design has a sound primitive selection and an explicit security boundary, but the initial implementation contained two merge-blocking state/integration defects:
 
-The branch now also contains the first authenticated multi-hop onion transport layer. It is a transport milestone rather than a claim of a complete routed messenger: layered relay packets, per-hop scoped AEAD keys, TTL, hop/route lineage checks, replay suppression and a bounded UDP relay are implemented; automatic route establishment and reverse routed ACK delivery are still pending.
+The branch now contains the authenticated multi-hop routed CybChat path: authenticated adjacent-hop sessions, signed route binding, layered relay packets, per-hop scoped AEAD keys, TTL, hop/route lineage checks, replay suppression, reverse routed ACK delivery and a bounded UDP relay. The UI exposes explicit relay selection and ordered hop construction.
 
 1. The runtime persisted a random node ID unrelated to the persistent Ed25519 identity. This could make authenticated discovery reject the local peer because the announced node ID did not equal the hash-derived identity ID.
 2. A lost delivery ACK could leave the sender reusing a stale ratchet session while the receiver had already advanced its chain. Subsequent messages could then be rejected until the process was restarted.
@@ -59,10 +59,10 @@ On macOS, the Ed25519 private identity is protected by the system Keychain and C
 
 Recommended next step: extend the same encrypted-storage policy to any additional sensitive persisted datasets that require it.
 
-### MEDIUM — Adversarial integration coverage is partial
-A deterministic two-node loopback UDP harness now exercises real handshake, signed delivery ACKs, sequential ratchet messages, replay injection, ciphertext tampering, and lost-ACK recovery through a fresh handshake. OS-process isolation and several remaining cases are still not covered.
+### MEDIUM — Adversarial integration coverage is still bounded
+The harness now covers live routed delivery, replay injection and ciphertext tampering across three real cybOS child processes, in addition to the existing in-process direct-LAN and routed tests. Some broader process-level fault cases are still not covered.
 
-Recommended next step: add an OS-process harness and cover stale timestamps, wrong recipient, TOFU replacement, forged ACKs, and lost-ACK recovery under controlled fault injection.
+Recommended next step: extend the process harness with controlled relay crash, route-expiry, malformed-binding and mid-route packet-drop scenarios.
 
 ### LOW — Discovery address is not cryptographically bound
 The signed discovery response authenticates node ID, version and public key, but not the observed source address. A valid discovery response can therefore be replayed from a different address. The subsequent signed handshake prevents identity impersonation, but stale/misrouted discovery can still cause connection failure or denial of service.
@@ -79,7 +79,7 @@ The current design is a per-message HKDF chain with a monotonic counter. It is n
 
 Do not claim "production-grade secure messenger" yet.
 
-For this branch, the direct-LAN transport and the onion transport core are suitable to merge only while the residual risks above remain explicit. The current onion milestone is not yet a complete routed CybChat path: route establishment, reverse routed ACKs, and UI route selection remain to be integrated. The next security milestone is to connect adjacent per-hop sessions to route setup and then exercise the full routed send/ack path in an adversarial multi-process harness.
+For this branch, the direct-LAN transport and the onion transport core are suitable to merge only while the residual risks above remain explicit. The current onion path is a complete routed CybChat send/ack path for the implemented UDP transport. The next security milestone is broader fault injection at process boundaries and route lifecycle hardening.
 
 
 Current automated integration coverage also includes:
@@ -101,8 +101,14 @@ Implemented:
 - live UDP relay forwarding;
 - live three-relay loopback forwarding test.
 
-Not yet implemented:
-- automatic per-hop route/session establishment;
-- reverse onion ACKs;
-- route selection and onion-send UI;
-- process-isolated routed adversarial harness.
+Completed:
+- automatic per-hop X25519 session establishment;
+- signed route binding and route acknowledgement;
+- reverse routed signed ACK delivery;
+- explicit route selection and ordered relay hops in CybChat UI;
+- process-isolated routed replay/tamper harness.
+
+Still to harden:
+- relay crash/failure recovery during an active route;
+- route-expiry refresh under long-lived sessions;
+- malformed route-binding and packet-drop fault injection across process boundaries.
