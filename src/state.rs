@@ -46,6 +46,7 @@ pub(crate) struct CybOs {
     pub(crate) last_scan: Option<Instant>,
     pub(crate) lan_peers: Vec<crate::network::lan::LanPeer>,
     pub(crate) lan_scan: Option<std::sync::mpsc::Receiver<Vec<crate::network::lan::LanPeer>>>,
+    pub(crate) lan_events: std::sync::mpsc::Receiver<crate::network::lan::LanEvent>,
     pub(crate) remember_note: String,
 }
 impl Default for CybOs {
@@ -101,10 +102,11 @@ impl Default for CybOs {
             last_scan: None,
             lan_peers: Vec::new(),
             lan_scan: None,
+            lan_events,
             remember_note: String::new(),
         };
 
-        crate::network::lan::spawn_listener(node_id.clone());
+        let lan_events = crate::network::lan::spawn_listener(node_id.clone());
 
         app.initialize_graph();
 
