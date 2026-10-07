@@ -2,6 +2,7 @@
 use crate::config::APP_VERSION;
 use crate::crypto;
 use crate::identity::NodeIdentity;
+use crate::network::onion;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -22,12 +23,17 @@ const KEY_INIT_PREFIX: &str = "CYBOS_KEY_INIT";
 const KEY_REPLY_PREFIX: &str = "CYBOS_KEY_REPLY";
 const CHAT_PREFIX: &str = "CYBOS_CHAT";
 const ACK_PREFIX: &str = "CYBOS_ACK";
+const ONION_BIND_PREFIX: &str = "CYBOS_ONION_BIND";
+const ONION_PREFIX: &str = onion::ONION_PREFIX;
+const ONION_DELIVERY_PREFIX: &str = onion::ONION_DELIVERY_PREFIX;
+const ONION_REVERSE_PREFIX: &str = "CYBOS_ONION_REVERSE";
 const MAX_CHAT_BYTES: usize = 1800;
 const MAX_WIRE_BYTES: usize = 4096;
 const CHAT_ACK_TIMEOUT: Duration = Duration::from_millis(900);
 const KEY_TIMEOUT: Duration = Duration::from_millis(900);
 const REPLAY_WINDOW_SECS: u64 = 300;
 const MAX_SESSIONS: usize = 128;
+const MAX_ONION_ROUTES: usize = 256;
 
 #[derive(Clone, Debug)]
 pub(crate) struct LanPeer {
@@ -89,6 +95,46 @@ struct LanAck {
     from: String,
     to: String,
     signature: String,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct OnionRoutePeer {
+    pub(crate) node_id: String,
+    pub(crate) address: String,
+    pub(crate) public_key_b64: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct OnionRouteBind {
+    route_id: String,
+    hop_index: u8,
+    source_id: String,
+    source_public_key: String,
+    previous_node_id: String,
+    previous_address: String,
+    next_node_id: String,
+    next_address: String,
+    expires_at: u64,
+    signature: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct OnionReverseAck {
+    route_id: String,
+    packet_id: String,
+    hop_index: u8,
+    ack: LanAck,
+}
+
+#[derive(Clone, Debug)]
+struct OnionRouteBinding {
+    source_id: String,
+    hop_index: u8,
+    previous_node_id: String,
+    previous_address: String,
+    next_node_id: String,
+    next_address: String,
+    expires_at: u64,
 }
 
 #[derive(Clone)]
