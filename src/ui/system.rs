@@ -22,7 +22,8 @@ impl CybOs {
             ("DATABASE", self.store.path.to_str().unwrap_or("—")),
             ("RENDERER", "egui / eframe"),
             ("QWEN", self.qwen_status.as_str()),
-            ("KEYS", "not stored"),
+            ("IDENTITY", "Ed25519 · persistent local key"),
+            ("E2E", "X25519 · HKDF-SHA256 · ChaCha20-Poly1305"),
         ] {
             ui.horizontal(|ui| {
                 ui.label(RichText::new(k).size(11.0).strong().color(neon).extra_letter_spacing(1.2));
@@ -45,6 +46,28 @@ impl CybOs {
             if ui.button("WRITE SYSTEM EVENT").clicked() {
                 self.add_event("SYSTEM", "Manual system pulse from cybOS");
                 self.notify("SYSTEM EVENT WRITTEN");
+            }
+            if ui.button("TEST CRYPTO").clicked() {
+                use ring::{agreement, rand};
+                let rng = rand::SystemRandom::new();
+                let peer = agreement::EphemeralPrivateKey::generate(&agreement::X25519, &rng)
+                    .and_then(|key| key.compute_public_key())
+                    .ok();
+                let ok = peer
+                    .and_then(|public| crate::crypto::encrypt_for_peer(
+                        &self.identity,
+                        "cyb-test-peer",
+                        public.as_ref(),
+                        b"cybOS crypto self-test",
+                    ).ok())
+                    .map(|envelope| crate::crypto::verify_envelope(&envelope, "cyb-test-peer"))
+                    .unwrap_or(false);
+                if ok {
+                    self.add_event("CRYPTO", "Ed25519 envelope authentication self-test passed");
+                    self.notify("CRYPTO SELF-TEST PASSED");
+                } else {
+                    self.notify("CRYPTO SELF-TEST FAILED");
+                }
             }
         });
     }

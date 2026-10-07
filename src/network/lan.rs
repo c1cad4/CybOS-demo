@@ -16,6 +16,7 @@ use uuid::Uuid;
 const LAN_DISCOVERY_PORT: u16 = 39393;
 const DISCOVERY_PREFIX: &str = "CYBOS_DISCOVER";
 const RESPONSE_PREFIX: &str = "CYBOS_PEER";
+const IDENTITY_PREFIX: &str = "CYBOS_IDENTITY";
 const CHAT_PREFIX: &str = "CYBOS_CHAT";
 const ACK_PREFIX: &str = "CYBOS_ACK";
 const MAX_CHAT_BYTES: usize = 1800;
@@ -26,6 +27,7 @@ pub(crate) struct LanPeer {
     pub(crate) node_id: String,
     pub(crate) address: String,
     pub(crate) version: String,
+    pub(crate) public_key: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -200,6 +202,7 @@ pub(crate) fn scan(node_id: String) -> Vec<LanPeer> {
                     node_id: peer_id.to_string(),
                     address: addr.ip().to_string(),
                     version,
+                    public_key: None,
                 });
             }
             Err(_) => break,

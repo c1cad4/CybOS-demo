@@ -147,7 +147,7 @@ impl CybOs {
 
                         ui.label(
                             RichText::new(
-                                "Directed UDP only. Messages are not end-to-end encrypted yet.",
+                                "Direct LAN transport is acknowledged. Cryptographic envelope primitives are loaded; wire-level E2E integration remains explicitly gated until peer key exchange is enabled.",
                             )
                             .size(8.0)
                             .color(dim),
@@ -292,7 +292,7 @@ impl CybOs {
                         }
 
                         ui.label(
-                            RichText::new("LOCAL-FIRST · DELIVERY IS ACKNOWLEDGED · PLAINTEXT")
+                            RichText::new("LOCAL-FIRST · ACKNOWLEDGED · E2E CRYPTO READY · LAN ENVELOPE NEXT")
                                 .size(8.0)
                                 .color(dim),
                         );
