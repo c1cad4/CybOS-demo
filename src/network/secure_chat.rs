@@ -6,11 +6,12 @@ use std::net::{TcpListener, TcpStream};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{mpsc::{self, Receiver}, Arc};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use uuid::Uuid;
 
 const PORT: u16 = 39394;
 const TIMEOUT: Duration = Duration::from_secs(8);
+const SESSION_BUDGET: Duration = Duration::from_secs(12);
 const MAX_FRAME: usize = 16 * 1024;
 const PATTERN: &str = "Noise_XX_25519_ChaChaPoly_BLAKE2s";
 
@@ -118,7 +119,8 @@ pub(crate) fn spawn_listener(node_id: String, private_key: Vec<u8>) -> Listener 
                     let key = private_key.clone();
                     let active = Arc::clone(&active);
                     thread::spawn(move || {
-                        if let Ok(Some(event)) = receive_one(&mut stream, &node_id, &key) {
+                        let deadline = Instant::now() + SESSION_BUDGET;
+                        if let Ok(Some(event)) = receive_one(&mut stream, &node_id, &key, deadline) {
                             let _ = tx.send(event);
                         }
                         active.fetch_sub(1, Ordering::AcqRel);
@@ -142,7 +144,18 @@ pub(crate) fn send(
     message: &str,
 ) -> SecureSendStatus {
     let message_id = Uuid::new_v4().to_string();
+    send_with_deadline(sender_id, peer_id, address, private_key, message, Instant::now() + SESSION_BUDGET, message_id)
+}
 
+fn send_with_deadline(
+    sender_id: &str,
+    peer_id: &str,
+    address: &str,
+    private_key: &[u8],
+    message: &str,
+    deadline: Instant,
+    message_id: String,
+) -> SecureSendStatus {
     let result = (|| -> Result<(), String> {
         if message.trim().is_empty() {
             return Err("empty message".into());
@@ -155,11 +168,10 @@ pub(crate) fn send(
             &format!("{address}:{PORT}")
                 .parse()
                 .map_err(|e| format!("address: {e}"))?,
-            TIMEOUT,
+            remaining(deadline)?,
         )
         .map_err(|e| format!("connect: {e}"))?;
-        stream.set_read_timeout(Some(TIMEOUT)).map_err(|e| e.to_string())?;
-        stream.set_write_timeout(Some(TIMEOUT)).map_err(|e| e.to_string())?;
+        apply_io_timeout(&mut stream, deadline)?;
 
         let params = PATTERN.parse().map_err(|e| format!("noise params: {e}"))?;
         let mut hs = Builder::new(params)
@@ -171,16 +183,19 @@ pub(crate) fn send(
         let mut buf = vec![0_u8; 65535];
         let mut payload = vec![0_u8; 65535];
 
+        apply_io_timeout(&mut stream, deadline)?;
         let n = hs.write_message(&[], &mut buf)
             .map_err(|e| format!("handshake 1: {e}"))?;
         write_frame(&mut stream, &buf[..n])?;
 
+        apply_io_timeout(&mut stream, deadline)?;
         let n = read_frame(&mut stream, &mut buf)?;
         hs.read_message(&buf[..n], &mut payload)
             .map_err(|e| format!("handshake 2: {e}"))?;
 
         let hello = serde_json::to_vec(&Hello { node_id: sender_id.into() })
             .map_err(|e| e.to_string())?;
+        apply_io_timeout(&mut stream, deadline)?;
         let n = hs.write_message(&hello, &mut buf)
             .map_err(|e| format!("handshake 3: {e}"))?;
         write_frame(&mut stream, &buf[..n])?;
@@ -195,10 +210,12 @@ pub(crate) fn send(
             message: message.into(),
         }).map_err(|e| e.to_string())?;
 
+        apply_io_timeout(&mut stream, deadline)?;
         let n = transport.write_message(&envelope, &mut buf)
             .map_err(|e| format!("encrypt: {e}"))?;
         write_frame(&mut stream, &buf[..n])?;
 
+        apply_io_timeout(&mut stream, deadline)?;
         let n = read_frame(&mut stream, &mut buf)?;
         transport.read_message(&buf[..n], &mut payload)
             .map_err(|e| format!("ack decrypt: {e}"))?;
@@ -219,6 +236,7 @@ fn receive_one(
     stream: &mut TcpStream,
     node_id: &str,
     private_key: &[u8],
+    deadline: Instant,
 ) -> Result<Option<SecureEvent>, String> {
     let params = PATTERN.parse().map_err(|e| format!("noise params: {e}"))?;
     let mut hs = Builder::new(params)
@@ -230,14 +248,17 @@ fn receive_one(
     let mut buf = vec![0_u8; 65535];
     let mut payload = vec![0_u8; 65535];
 
+    apply_io_timeout(stream, deadline)?;
     let n = read_frame(stream, &mut buf)?;
     hs.read_message(&buf[..n], &mut payload)
         .map_err(|e| format!("handshake 1: {e}"))?;
 
+    apply_io_timeout(stream, deadline)?;
     let n = hs.write_message(&[], &mut buf)
         .map_err(|e| format!("handshake 2: {e}"))?;
     write_frame(stream, &buf[..n])?;
 
+    apply_io_timeout(stream, deadline)?;
     let n = read_frame(stream, &mut buf)?;
     let payload_len = hs.read_message(&buf[..n], &mut payload)
         .map_err(|e| format!("handshake 3: {e}"))?;
@@ -257,6 +278,7 @@ fn receive_one(
     let mut transport = hs.into_transport_mode()
         .map_err(|e| format!("transport: {e}"))?;
 
+    apply_io_timeout(stream, deadline)?;
     let n = read_frame(stream, &mut buf)?;
     let payload_len = transport.read_message(&buf[..n], &mut payload)
         .map_err(|e| format!("decrypt: {e}"))?;
@@ -267,6 +289,7 @@ fn receive_one(
         return Err("secure identity mismatch".into());
     }
 
+    apply_io_timeout(stream, deadline)?;
     let n = transport.write_message(b"ACK", &mut buf)
         .map_err(|e| format!("ack encrypt: {e}"))?;
     write_frame(stream, &buf[..n])?;
@@ -278,6 +301,22 @@ fn receive_one(
         fingerprint,
         public_key,
     }))
+}
+
+fn remaining(deadline: Instant) -> Result<Duration, String> {
+    let value = deadline.saturating_duration_since(Instant::now());
+    if value.is_zero() {
+        Err("secure session deadline expired".into())
+    } else {
+        Ok(value)
+    }
+}
+
+fn apply_io_timeout(stream: &TcpStream, deadline: Instant) -> Result<(), String> {
+    let timeout = remaining(deadline)?;
+    stream.set_read_timeout(Some(timeout)).map_err(|e| format!("read timeout: {e}"))?;
+    stream.set_write_timeout(Some(timeout)).map_err(|e| format!("write timeout: {e}"))?;
+    Ok(())
 }
 
 fn write_frame(stream: &mut TcpStream, data: &[u8]) -> Result<(), String> {
