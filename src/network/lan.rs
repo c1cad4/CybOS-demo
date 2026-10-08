@@ -1293,6 +1293,127 @@ pub(crate) fn run_headless_onion_test() -> Result<(), String> {
 }
 
 #[cfg(any(debug_assertions, feature = "qa"))]
+pub(crate) fn run_headless_onion_three_relay_test() -> Result<(), String> {
+    let alice = NodeIdentity::generate_ephemeral();
+    let relay_a = NodeIdentity::generate_ephemeral();
+    let relay_b = NodeIdentity::generate_ephemeral();
+    let relay_c = NodeIdentity::generate_ephemeral();
+    let bob = NodeIdentity::generate_ephemeral();
+
+    let ports = [
+        free_udp_port()?,
+        free_udp_port()?,
+        free_udp_port()?,
+        free_udp_port()?,
+    ];
+
+    let stops = [
+        Arc::new(AtomicBool::new(true)),
+        Arc::new(AtomicBool::new(true)),
+        Arc::new(AtomicBool::new(true)),
+        Arc::new(AtomicBool::new(true)),
+    ];
+
+    let (relay_a_events, _relay_a_ack, relay_a_handle) =
+        spawn_listener_on_port_with_control(
+            relay_a.node_id(),
+            relay_a.clone(),
+            ports[0],
+            Arc::new(AtomicBool::new(true)),
+            Arc::clone(&stops[0]),
+        );
+    let (relay_b_events, _relay_b_ack, relay_b_handle) =
+        spawn_listener_on_port_with_control(
+            relay_b.node_id(),
+            relay_b.clone(),
+            ports[1],
+            Arc::new(AtomicBool::new(true)),
+            Arc::clone(&stops[1]),
+        );
+    let (relay_c_events, _relay_c_ack, relay_c_handle) =
+        spawn_listener_on_port_with_control(
+            relay_c.node_id(),
+            relay_c.clone(),
+            ports[2],
+            Arc::new(AtomicBool::new(true)),
+            Arc::clone(&stops[2]),
+        );
+    let (bob_events, _bob_ack, bob_handle) =
+        spawn_listener_on_port_with_control(
+            bob.node_id(),
+            bob.clone(),
+            ports[3],
+            Arc::new(AtomicBool::new(true)),
+            Arc::clone(&stops[3]),
+        );
+
+    thread::sleep(Duration::from_millis(120));
+
+    let relay_a_peer = OnionRoutePeer {
+        node_id: relay_a.node_id(),
+        address: format!("127.0.0.1:{}", ports[0]),
+        public_key_b64: STANDARD.encode(relay_a.public_key()),
+    };
+    let relay_b_peer = OnionRoutePeer {
+        node_id: relay_b.node_id(),
+        address: format!("127.0.0.1:{}", ports[1]),
+        public_key_b64: STANDARD.encode(relay_b.public_key()),
+    };
+    let relay_c_peer = OnionRoutePeer {
+        node_id: relay_c.node_id(),
+        address: format!("127.0.0.1:{}", ports[2]),
+        public_key_b64: STANDARD.encode(relay_c.public_key()),
+    };
+    let destination = OnionRoutePeer {
+        node_id: bob.node_id(),
+        address: format!("127.0.0.1:{}", ports[3]),
+        public_key_b64: STANDARD.encode(bob.public_key()),
+    };
+
+    let status = send_onion_private_chat(
+        &alice,
+        &destination,
+        &[relay_a_peer, relay_b_peer, relay_c_peer],
+        "cybOS three-relay onion test",
+    );
+
+    let delivered = matches!(
+        status,
+        LanSendStatus::Delivered { ref peer_id, .. } if peer_id == &bob.node_id()
+    );
+
+    let received = match bob_events.recv_timeout(Duration::from_secs(2)) {
+        Ok(LanEvent::Chat { message, .. }) => message == "cybOS three-relay onion test",
+        Err(_) => false,
+    };
+
+    let relay_a_quiet = relay_a_events.try_recv().is_err();
+    let relay_b_quiet = relay_b_events.try_recv().is_err();
+    let relay_c_quiet = relay_c_events.try_recv().is_err();
+
+    for stop in &stops {
+        stop.store(false, Ordering::Release);
+    }
+    let _ = relay_a_handle.join();
+    let _ = relay_b_handle.join();
+    let _ = relay_c_handle.join();
+    let _ = bob_handle.join();
+
+    if delivered && received && relay_a_quiet && relay_b_quiet && relay_c_quiet {
+        println!(
+            "ONION_3HOP_TEST OK · 3 relays · {} → {}",
+            alice.node_id(),
+            bob.node_id()
+        );
+        Ok(())
+    } else {
+        Err(format!(
+            "three-relay onion test failed: delivered={delivered} received={received} relay_a_quiet={relay_a_quiet} relay_b_quiet={relay_b_quiet} relay_c_quiet={relay_c_quiet}"
+        ))
+    }
+}
+
+#[cfg(any(debug_assertions, feature = "qa"))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ProcessTestFault {
     None,
