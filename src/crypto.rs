@@ -240,6 +240,40 @@ mod tests {
     }
 
     #[test]
+    fn discovery_signature_is_bound_to_fresh_challenge() {
+        let store = Store::open();
+        let identity = NodeIdentity::load_or_create(&store);
+        let public_key_b64 = STANDARD.encode(identity.public_key());
+        let challenge = "challenge-one-123";
+
+        let signed = peer_discovery_binding(
+            &identity.node_id(),
+            "0.7.0",
+            &public_key_b64,
+            challenge,
+        );
+        let signature = sign(&identity, &signed);
+
+        assert!(verify_signature(
+            identity.public_key(),
+            &signed,
+            &signature,
+        ));
+
+        let replayed_challenge = peer_discovery_binding(
+            &identity.node_id(),
+            "0.7.0",
+            &public_key_b64,
+            "challenge-two-456",
+        );
+        assert!(!verify_signature(
+            identity.public_key(),
+            &replayed_challenge,
+            &signature,
+        ));
+    }
+
+    #[test]
     fn envelope_signature_rejects_wrong_recipient() {
         let store = Store::open();
         let identity = NodeIdentity::load_or_create(&store);
