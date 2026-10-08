@@ -1408,7 +1408,7 @@ pub(crate) fn run_headless_onion_three_relay_test() -> Result<(), String> {
         Ok(())
     } else {
         Err(format!(
-            "three-relay onion test failed: delivered={delivered} received={received} relay_a_quiet={relay_a_quiet} relay_b_quiet={relay_b_quiet} relay_c_quiet={relay_c_quiet}"
+            "three-relay onion test failed: status={status:?} delivered={delivered} received={received} relay_a_quiet={relay_a_quiet} relay_b_quiet={relay_b_quiet} relay_c_quiet={relay_c_quiet}"
         ))
     }
 }
