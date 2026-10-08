@@ -342,6 +342,7 @@ impl crate::state::CybOs {
         let (tx, rx) = mpsc::channel();
 
         self.lan_scan = Some(rx);
+        self.runtime.set_status("RADAR", "RUNNING");
 
         thread::spawn(move || {
             let peers = scan(node_id);
@@ -375,6 +376,7 @@ impl crate::state::CybOs {
                 }
 
                 self.lan_scan = None;
+                self.runtime.set_status("RADAR", "READY");
                 self.last_scan = Some(std::time::Instant::now());
                 self.add_event(
                     "NETWORK",
@@ -387,6 +389,7 @@ impl crate::state::CybOs {
             Err(TryRecvError::Empty) => {}
             Err(TryRecvError::Disconnected) => {
                 self.lan_scan = None;
+                self.runtime.set_status("RADAR", "ERROR");
             }
         }
     }
