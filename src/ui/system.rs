@@ -93,8 +93,8 @@ impl CybOs {
                     })).collect::<Vec<_>>(),
                     "events": self.store.exportable_events(),
                     "memories": self.store.exportable_memories(),
-                    "graph_nodes": self.nodes,
-                    "graph_links": self.links,
+                    "graph_nodes": &self.nodes,
+                    "graph_links": &self.links,
                     "chat": self.store.exportable_chat(),
                     "note": "Private Noise keys and peer TOFU keys are intentionally excluded."
                 });
