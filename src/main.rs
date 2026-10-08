@@ -185,6 +185,15 @@ fn main() -> eframe::Result {
         return Ok(());
     }
 
+    #[cfg(any(debug_assertions, feature = "qa"))]
+    if std::env::var_os("CYBOS_HEADLESS_ONION_BIND_PROCESS_TEST").is_some() {
+        if let Err(error) = network::lan::run_process_isolated_onion_bind_crash_test() {
+            eprintln!("cybOS onion-bind crash test failed: {error}");
+            std::process::exit(2);
+        }
+        return Ok(());
+    }
+
     let opts = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title("cybOS — CicadaFarm + RobotCYB")
