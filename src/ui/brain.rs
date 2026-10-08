@@ -4,6 +4,7 @@ use chrono::Local;
 use eframe::egui;
 use egui::{Color32, RichText, Stroke, Vec2};
 use uuid::Uuid;
+use std::process::Command;
 
 impl CybOs {
     pub(crate) fn brain(&mut self, ui: &mut egui::Ui) {
@@ -24,6 +25,36 @@ impl CybOs {
             ui.end_row();
         });
         ui.add_space(12.0);
+        if !self.qwen_status.contains("ONLINE") {
+            egui::Frame::new()
+                .fill(Color32::from_rgb(8, 22, 14))
+                .stroke(Stroke::new(1.0, Color32::from_rgb(70, 150, 95)))
+                .corner_radius(12.0)
+                .inner_margin(egui::Margin::same(12.0))
+                .show(ui, |ui| {
+                    ui.label(RichText::new("QWEN FIRST-RUN SETUP").size(12.0).strong().color(neon));
+                    ui.add_space(5.0);
+                    ui.label(RichText::new(
+                        "RobotCYB is local-first. cybOS is ready without cloud AI, but the local Qwen model must be available before AI requests can run."
+                    ).size(10.0).color(Color32::from_rgb(175, 220, 190)));
+                    ui.label(RichText::new("Expected server: 127.0.0.1:8080").size(9.0).color(dim));
+                    ui.label(RichText::new("Launcher path: ~/cybAI/.venv/bin/mlx_lm.server").size(9.0).color(dim));
+                    ui.horizontal(|ui| {
+                        if ui.button("OPEN QWEN FOLDER").clicked() {
+                            if let Ok(home) = std::env::var("HOME") {
+                                let path = std::path::PathBuf::from(home).join("cybAI");
+                                let _ = Command::new("open").arg(path).spawn();
+                            }
+                        }
+                        if ui.button("RETRY QWEN").clicked() {
+                            self.qwen_retry_after = std::time::Instant::now();
+                            self.notify("QWEN RETRY REQUESTED");
+                        }
+                    });
+                });
+            ui.add_space(12.0);
+        }
+
         egui::Frame::new()
             .fill(Color32::from_rgb(5, 18, 13))
             .stroke(Stroke::new(1.0, Color32::from_rgb(28, 80, 52)))
