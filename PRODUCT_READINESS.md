@@ -16,21 +16,21 @@ Core desktop scope currently implemented:
 - macOS app packaging and release workflow.
 
 ## Public macOS beta
-Estimated readiness: **80–85%**.
+Estimated readiness: **85–90%**.
 
 Remaining blockers are mostly productization and real-device validation:
 - signed/notarized distribution;
-- first-run onboarding and permission guidance;
 - two-Mac interoperability test of RADAR + Secure CYBChat + TOFU;
 - upgrade/reinstall and recovery testing.
 
 ## Production 1.0
-Estimated readiness: **65–70%**.
+Estimated readiness: **70–75%**.
 
 Remaining work includes security review, cross-version interoperability,
 configuration migration, diagnostics/recovery, signed updates and operational
 release/support workflows.
 
+The v0.7.1 macOS ZIP is now published through the companion `c1cad4/cybOS` release repository.
 Physical RobotCYB hardware, farm sensor/camera integrations and Cyblex are
 future product layers and do not block the first desktop beta.
 
