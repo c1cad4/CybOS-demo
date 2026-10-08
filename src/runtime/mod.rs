@@ -139,6 +139,7 @@ impl Runtime {
                 RuntimeCell::new("NETWORK", "discovery, transport", "peers, status", 8),
                 RuntimeCell::new("RADAR", "LAN/BLE discovery", "nearby peers, proximity", 8),
                 RuntimeCell::new("MEMORY", "notes, events", "memories", 4),
+                RuntimeCell::new("ASSETS", "RPC, market API", "balances, market data", 8),
             ],
             ticks: 0,
             last_tick: Instant::now(),
@@ -200,7 +201,7 @@ mod tests {
     #[test]
     fn all_core_cells_have_contracts() {
         let runtime = Runtime::new();
-        assert!(runtime.cells.len() >= 8);
+        assert!(runtime.cells.len() >= 9);
         assert!(runtime.cells.iter().all(|cell| !cell.inputs.is_empty()));
         assert!(runtime.cells.iter().all(|cell| !cell.outputs.is_empty()));
         assert!(runtime.cells.iter().all(|cell| cell.budget.as_millis() > 0));
