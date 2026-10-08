@@ -16,6 +16,7 @@ pub(crate) const QWEN_MODEL: &str =
     "mlx-community/Qwen3.5-9B-MLX-4bit";
 
 const QWEN_REQUEST_BUDGET: Duration = Duration::from_secs(30);
+const QWEN_MAX_PROMPT_BYTES: usize = 64 * 1024;
 
 fn qwen_agent(budget: Duration) -> ureq::Agent {
     ureq::Agent::config_builder()
@@ -25,6 +26,24 @@ fn qwen_agent(budget: Duration) -> ureq::Agent {
 }
 
 fn bounded_qwen_request(payload: Value, budget: Duration) -> Result<Value, String> {
+    let prompt_bytes = payload["messages"]
+        .as_array()
+        .map(|messages| {
+            messages
+                .iter()
+                .filter_map(|message| message["content"].as_str())
+                .map(str::len)
+                .sum::<usize>()
+        })
+        .unwrap_or(0);
+
+    if prompt_bytes > QWEN_MAX_PROMPT_BYTES {
+        return Err(format!(
+            "Qwen prompt exceeds the {} KiB input limit.",
+            QWEN_MAX_PROMPT_BYTES / 1024
+        ));
+    }
+
     let budget = budget.min(QWEN_REQUEST_BUDGET);
     let (tx, rx) = mpsc::channel();
 
