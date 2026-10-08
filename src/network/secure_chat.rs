@@ -96,12 +96,16 @@ pub(crate) fn load_or_create_static_key(store: &crate::store::Store) -> Result<V
 }
 
 pub(crate) fn spawn_listener(node_id: String, private_key: Vec<u8>) -> Listener {
+    spawn_listener_on_port(node_id, private_key, PORT)
+}
+
+fn spawn_listener_on_port(node_id: String, private_key: Vec<u8>, port: u16) -> Listener {
     let (tx, rx) = mpsc::channel();
     let stop = Arc::new(AtomicBool::new(false));
     let stop_thread = Arc::clone(&stop);
 
     thread::spawn(move || {
-        let listener = match TcpListener::bind(("0.0.0.0", PORT)) {
+        let listener = match TcpListener::bind(("0.0.0.0", port)) {
             Ok(v) => v,
             Err(_) => return,
         };
@@ -145,11 +149,43 @@ pub(crate) fn send(
     sender_id: &str,
     peer_id: &str,
     address: &str,
+    port: u16,
     private_key: &[u8],
     message: &str,
 ) -> SecureSendStatus {
     let message_id = Uuid::new_v4().to_string();
-    send_with_deadline(sender_id, peer_id, address, private_key, message, Instant::now() + SESSION_BUDGET, message_id)
+    send_with_deadline(
+        sender_id,
+        peer_id,
+        address,
+        PORT,
+        private_key,
+        message,
+        Instant::now() + SESSION_BUDGET,
+        message_id,
+    )
+}
+
+#[cfg(test)]
+fn send_to_port(
+    sender_id: &str,
+    peer_id: &str,
+    address: &str,
+    port: u16,
+    private_key: &[u8],
+    message: &str,
+) -> SecureSendStatus {
+    let message_id = Uuid::new_v4().to_string();
+    send_with_deadline(
+        sender_id,
+        peer_id,
+        address,
+        port,
+        private_key,
+        message,
+        Instant::now() + SESSION_BUDGET,
+        message_id,
+    )
 }
 
 fn send_with_deadline(
@@ -170,7 +206,7 @@ fn send_with_deadline(
         }
 
         let mut stream = TcpStream::connect_timeout(
-            &format!("{address}:{PORT}")
+            &format!("{address}:{port}")
                 .parse()
                 .map_err(|e| format!("address: {e}"))?,
             remaining(deadline)?,
@@ -393,13 +429,15 @@ fn short_hash(bytes: &[u8]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{decode_hex, encode_hex, short_hash, spawn_listener, send, SecureSendStatus, SecureEvent, SecureReply, PATTERN};
+    use super::{decode_hex, encode_hex, short_hash, spawn_listener_on_port, send_to_port, SecureSendStatus, SecureEvent, SecureReply, PATTERN};
     use snow::{params::NoiseParams, Builder};
     use std::sync::Mutex;
     use std::thread;
     use std::time::{Duration, Instant};
 
     static TEST_LOCK: Mutex<()> = Mutex::new(());
+    const REJECT_PORT: u16 = 39401;
+    const DELIVERY_PORT: u16 = 39402;
 
     #[test]
     fn hex_roundtrip() {
@@ -420,7 +458,7 @@ mod tests {
         let sender = Builder::new(params.clone()).generate_keypair().expect("sender keypair");
         let receiver = Builder::new(params).generate_keypair().expect("receiver keypair");
 
-        let listener = spawn_listener("node-b-reject".to_string(), receiver.private.clone());
+        let listener = spawn_listener_on_port("node-b-reject".to_string(), receiver.private.clone(), REJECT_PORT);
         thread::sleep(Duration::from_millis(100));
 
         let sender_key = sender.private.clone();
@@ -429,6 +467,7 @@ mod tests {
                 "node-a",
                 "node-b-reject",
                 "127.0.0.1",
+                REJECT_PORT,
                 &sender_key,
                 "rejection test",
             )
@@ -472,10 +511,10 @@ mod tests {
         let sender = Builder::new(params.clone()).generate_keypair().expect("sender keypair");
         let receiver = Builder::new(params).generate_keypair().expect("receiver keypair");
 
-        let listener = spawn_listener("node-b".to_string(), receiver.private.clone());
+        let listener = spawn_listener_on_port("node-b".to_string(), receiver.private.clone(), DELIVERY_PORT);
         thread::sleep(Duration::from_millis(100));
 
-        let status = send("node-a", "node-b", "127.0.0.1", &sender.private, "loopback secure test");
+        let status = send_to_port("node-a", "node-b", "127.0.0.1", DELIVERY_PORT, &sender.private, "loopback secure test");
 
         let message_id = match status {
             SecureSendStatus::Delivered { message_id, peer_id } => {
