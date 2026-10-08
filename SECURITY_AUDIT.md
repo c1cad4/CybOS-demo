@@ -27,7 +27,7 @@ Both defects were fixed on this branch.
 - On macOS, the Ed25519 private identity is stored in the system Keychain instead of SQLite.
 - Existing macOS SQLite-backed identities are migrated to Keychain once and removed from the database.
 - On macOS, CybChat history is encrypted with ChaCha20-Poly1305 before being written to SQLite.
-- Memories, events and graph node/link payloads are also encrypted with the same ChaCha20-Poly1305 storage policy on every platform after the storage key is configured.
+- Memories, events and graph node/link payloads are also encrypted with the same ChaCha20-Poly1305 storage policy after the storage key is configured. On macOS this key is derived from the Keychain-backed identity; non-macOS builds still store the legacy identity in SQLite.
 - Existing plaintext rows in those datasets are migrated to encrypted rows on first read after the storage key is configured.
 - The chat table carries an explicit encrypted-state column so plaintext content cannot be confused with an encrypted payload.
 - README, GUIDE and CybChat UI describe the implemented wire-level E2E and routed transport boundary accurately.
@@ -61,7 +61,7 @@ A new peer is now shown with its SHA-256 public-key fingerprint and requires exp
 Recommended next step: support out-of-band key provisioning for deployments that need stronger initial trust.
 
 ### MEDIUM — Local storage still exposes structural metadata
-On macOS, the Ed25519 private identity is protected by the system Keychain. CybChat history, memories, events and graph node/link payloads are now AEAD-encrypted before SQLite persistence on every platform after the local storage key is configured. Legacy plaintext rows are migrated on first access. Primary/relationship identifiers needed for graph integrity, row counts and SQLite file metadata remain observable.
+On macOS, the Ed25519 private identity is protected by the system Keychain. CybChat history, memories, events and graph node/link payloads are AEAD-encrypted before SQLite persistence using a key derived from that Keychain-backed identity. Legacy plaintext rows are migrated on first access. Non-macOS builds still keep the legacy identity in SQLite, so their local-storage encryption is not yet a theft-resistant keystore boundary. Primary/relationship identifiers needed for graph integrity, row counts and SQLite file metadata remain observable.
 
 A process with access to the running application can still request decrypted records through the live process, and the current design does not encrypt the SQLite schema itself.
 
