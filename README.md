@@ -30,12 +30,27 @@ For the native desktop installation path, see [NATIVE_INSTALL.md](NATIVE_INSTALL
 - Noise XX secure CYBChat with delivery ACK
 - TOFU peer identity persistence
 - Cybergraph secure-peer relationships
+- Native CybLex P2P archive powered by embedded librqbit 9.0.1
 
 See [NATIVE_INSTALL.md](NATIVE_INSTALL.md) for build and packaging instructions.
 
 **Latest hardened release:** [cybOS v0.7.2 for macOS](https://github.com/c1cad4/cybOS/releases/tag/v0.7.2)  
 
 SHA-256 checksum is published as `cybOS-0.7.2-macOS.zip.sha256` alongside the release ZIP.
+
+## CybLex P2P archive
+
+The native desktop build now embeds **librqbit 9.0.1** as its BitTorrent engine. CybLex keeps the long-lived torrent session on a dedicated Tokio worker and exposes a native egui control plane.
+
+Current native capabilities:
+- download from magnet links or HTTP(S) .torrent URLs;
+- choose a local output directory, with `~/Downloads/CybLex` as the default;
+- create and seed a torrent from a local file or folder;
+- save the generated `.torrent` sidecar and expose a shareable magnet URI;
+- pause, resume and forget torrents;
+- show progress, upload bytes, state, info hash and output path.
+
+CybLex is for content the user owns or is authorized to distribute, including public-domain, open-license and creator-authorized archives. It is not a catalog of unauthorized material.
 
 ## Browser runtime architecture
 
