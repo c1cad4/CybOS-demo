@@ -31,7 +31,7 @@ Remaining work includes security review, cross-version interoperability,
 configuration migration, diagnostics/recovery, signed updates and operational
 release/support workflows.
 
-The v0.7.1 macOS ZIP is published through the companion `c1cad4/cybOS` release repository. The source main branch also contains post-release operational hardening.
+The v0.7.1 macOS ZIP is published through the companion `c1cad4/cybOS` release repository. The source main branch also contains replay protection, recovery diagnostics, truthful listener errors, and universal ARM64 + Intel packaging for the next release.
 Physical RobotCYB hardware, farm sensor/camera integrations and Cyblex are
 future product layers and do not block the first desktop beta.
 
