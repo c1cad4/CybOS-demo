@@ -9,7 +9,8 @@ use std::time::Duration;
 impl CybOs {
     fn fetch_cicada_balances(wallet: &str) -> (Option<f64>, Option<f64>) {
         const RPC: &str = "https://api.mainnet-beta.solana.com";
-        const RPC_BUDGET: Duration = Duration::from_secs(8);
+        const RPC_BUDGET: Duration = Duration::from_secs(4);
+        const WORKER_BUDGET: Duration = Duration::from_secs(10);
         let agent: ureq::Agent = ureq::Agent::config_builder()
             .timeout_global(Some(RPC_BUDGET))
             .build()
@@ -81,9 +82,19 @@ impl CybOs {
         let (tx, rx) = mpsc::channel();
 
         self.balance_task = Some(rx);
+        let contract = crate::runtime::WorkerContract::new("ASSETS", WORKER_BUDGET);
+        let worker_contract = contract.clone();
+        self.balance_contract = Some(contract);
+        self.runtime.set_status("ASSETS", "RUNNING");
 
         thread::spawn(move || {
+            worker_contract.heartbeat();
+            if worker_contract.expired() {
+                worker_contract.finish("TIMEOUT");
+                return;
+            }
             let result = Self::fetch_cicada_balances(&wallet);
+            worker_contract.finish("READY");
             let _ = tx.send(result);
         });
     }
@@ -93,16 +104,32 @@ impl CybOs {
             return;
         };
 
+        if let Some(contract) = self.balance_contract.clone() {
+            if contract.expired() {
+                self.balance_task = None;
+                self.balance_contract = None;
+                contract.finish("TIMEOUT");
+                self.runtime.set_status("ASSETS", "ERROR");
+                return;
+            }
+        }
+
         match rx.try_recv() {
             Ok((cicada_balance, sol_balance)) => {
                 self.cicada_balance = cicada_balance;
                 self.sol_balance = sol_balance;
                 self.balance_task = None;
+                self.balance_contract = None;
                 self.balance_refresh = std::time::Instant::now();
+                self.runtime.set_status("ASSETS", "READY");
             }
             Err(TryRecvError::Empty) => {}
             Err(TryRecvError::Disconnected) => {
                 self.balance_task = None;
+                if let Some(contract) = self.balance_contract.take() {
+                    contract.finish("ERROR");
+                }
+                self.runtime.set_status("ASSETS", "ERROR");
             }
         }
     }
