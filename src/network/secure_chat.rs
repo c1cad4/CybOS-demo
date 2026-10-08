@@ -395,8 +395,11 @@ fn short_hash(bytes: &[u8]) -> String {
 mod tests {
     use super::{decode_hex, encode_hex, short_hash, spawn_listener, send, SecureSendStatus, SecureEvent, SecureReply, PATTERN};
     use snow::{params::NoiseParams, Builder};
+    use std::sync::Mutex;
     use std::thread;
     use std::time::{Duration, Instant};
+
+    static TEST_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn hex_roundtrip() {
@@ -412,6 +415,7 @@ mod tests {
 
     #[test]
     fn secure_loopback_rejection_is_not_reported_as_delivery() {
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
         let params: NoiseParams = PATTERN.parse().expect("noise params");
         let sender = Builder::new(params.clone()).generate_keypair().expect("sender keypair");
         let receiver = Builder::new(params).generate_keypair().expect("receiver keypair");
@@ -458,10 +462,12 @@ mod tests {
         }
 
         drop(listener);
+        thread::sleep(Duration::from_millis(100));
     }
 
     #[test]
     fn secure_loopback_delivery_uses_noise_and_ack() {
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
         let params: NoiseParams = PATTERN.parse().expect("noise params");
         let sender = Builder::new(params.clone()).generate_keypair().expect("sender keypair");
         let receiver = Builder::new(params).generate_keypair().expect("receiver keypair");
@@ -498,5 +504,6 @@ mod tests {
         }
 
         drop(listener);
+        thread::sleep(Duration::from_millis(100));
     }
 }
