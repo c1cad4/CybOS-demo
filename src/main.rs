@@ -10,6 +10,7 @@ mod brain;
 mod config;
 mod graph;
 mod navigation;
+mod network;
 mod runtime;
 mod shell;
 mod state;
