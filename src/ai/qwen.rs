@@ -3,7 +3,7 @@ use crate::brain::qwen_runtime::{QWEN_ADDRESS, QWEN_MODEL};
 use std::{
     path::PathBuf,
     process::{Command, Stdio},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 impl CybOs {
