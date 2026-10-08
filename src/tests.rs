@@ -19,7 +19,7 @@ fn navigation_does_not_match_partial_unrelated_words() {
 
 #[test]
 fn configuration_is_release_ready() {
-    assert_eq!(config::APP_VERSION, "0.7.1");
+    assert_eq!(config::APP_VERSION, "0.7.2");
     assert!(config::CICADAFARM_MINT.len() > 20);
     assert!(config::ROBOTCYB_MINT.len() > 20);
     assert_eq!(config::DEFAULT_CICADA_WALLET.len(), 44);
