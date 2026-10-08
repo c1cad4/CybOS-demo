@@ -91,7 +91,6 @@ fn scan_blocking() -> Result<Vec<BlePeer>, String> {
         None,
         |central, _executor| {
             central.scan(None, true, None);
-            central
         },
     );
 
