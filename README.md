@@ -33,6 +33,8 @@ For the native desktop installation path, see [NATIVE_INSTALL.md](NATIVE_INSTALL
 
 See [NATIVE_INSTALL.md](NATIVE_INSTALL.md) for build and packaging instructions.
 
+**Download:** [cybOS v0.7.1 for macOS](https://github.com/c1cad4/cybOS/releases/download/v0.7.1/cybOS-0.7.1-macOS.zip)
+
 ## Browser runtime architecture
 
 runtime.js introduces the first explicit cell contract for the browser prototype.
@@ -92,7 +94,7 @@ The browser layer is still a prototype, not the final cybOS native runtime.
 - The p5 renderer remains a legacy monolithic frame.
 - The runtime currently observes that frame through runtime-bridge.js.
 - P2P, Bluetooth, Nostr, cameras and external network services are not represented as connected unless a real implementation is added.
-- There is no cryptographic private-messaging layer in this demo.
+- The browser prototype does not provide the native Noise XX private-messaging transport; secure CYBChat is part of the native desktop layer.
 - Persistent graph/database state is not part of this browser repository.
 - The terminal is a local simulation and does not execute operating-system commands.
 
@@ -134,7 +136,7 @@ See the repository license configuration.
 
 The native macOS application is usable now for a technically capable user who can build/package it locally. The core desktop runtime, local persistence, RobotCYB/Qwen path, CYB RADAR, unified LAN+BLE proximity, encrypted CYBChat, TOFU identity, Cybergraph and Assets services are implemented and covered by Linux/macOS CI.
 
-### Public download — NOT YET
+### Public download — READY
 
 | Area | Status |
 |---|---|
@@ -145,12 +147,12 @@ The native macOS application is usable now for a technically capable user who ca
 | Noise XX secure chat | READY |
 | Worker budgets / lifecycle | READY |
 | macOS packaging | READY |
-| GitHub release publication | NOT PUBLISHED |
+| GitHub release publication | READY — [v0.7.1](https://github.com/c1cad4/cybOS/releases/tag/v0.7.1) |
 | Developer ID signing / notarization | NOT CONFIGURED |
 | Hardware / camera integrations | FUTURE LAYER |
 | P2P / Nostr fallback | FUTURE LAYER |
 
-For the current state, the honest estimate is **~85–90% for a technical/private beta** and **~70–80% for a polished public macOS download**. The remaining gap is mainly onboarding, signing/notarization and distribution, not the core desktop architecture.
+For the current state, the honest estimate is **~90% for a technical/private beta** and **~85% for a public macOS beta**. The remaining gap is mainly Developer ID signing/notarization plus two-Mac and upgrade/recovery validation, not the core desktop architecture.
 
 ## Runtime stack status
 
