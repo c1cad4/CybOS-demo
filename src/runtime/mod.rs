@@ -12,10 +12,10 @@ use uuid::Uuid;
 pub(crate) struct WorkerContract {
     pub(crate) cell: &'static str,
     pub(crate) started: Instant,
-    pub(crate) heartbeat: Instant,
     pub(crate) deadline: Instant,
-    pub(crate) status: &'static str,
-    pub(crate) runs: u64,
+    status: std::sync::Arc<std::sync::Mutex<&'static str>>,
+    heartbeat: std::sync::Arc<std::sync::Mutex<Instant>>,
+    runs: std::sync::Arc<std::sync::atomic::AtomicU64>,
 }
 
 impl WorkerContract {
@@ -24,16 +24,18 @@ impl WorkerContract {
         Self {
             cell,
             started: now,
-            heartbeat: now,
             deadline: now + budget,
-            status: "RUNNING",
-            runs: 1,
+            status: std::sync::Arc::new(std::sync::Mutex::new("RUNNING")),
+            heartbeat: std::sync::Arc::new(std::sync::Mutex::new(now)),
+            runs: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(1)),
         }
     }
 
-    pub(crate) fn heartbeat(&mut self) {
-        self.heartbeat = Instant::now();
-        self.runs = self.runs.saturating_add(1);
+    pub(crate) fn heartbeat(&self) {
+        if let Ok(mut value) = self.heartbeat.lock() {
+            *value = Instant::now();
+        }
+        self.runs.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
 
     pub(crate) fn expired(&self) -> bool {
@@ -44,13 +46,22 @@ impl WorkerContract {
         self.deadline.saturating_duration_since(Instant::now())
     }
 
-    pub(crate) fn finish(&mut self, status: &'static str) {
-        self.status = status;
-        self.heartbeat = Instant::now();
+    pub(crate) fn finish(&self, status: &'static str) {
+        if let Ok(mut value) = self.status.lock() {
+            *value = status;
+        }
+        self.heartbeat();
+    }
+
+    pub(crate) fn status(&self) -> &'static str {
+        self.status.lock().map(|value| *value).unwrap_or("ERROR")
     }
 
     pub(crate) fn heartbeat_age_ms(&self) -> u128 {
-        self.heartbeat.elapsed().as_millis()
+        self.heartbeat
+            .lock()
+            .map(|value| value.elapsed().as_millis())
+            .unwrap_or(u128::MAX)
     }
 }
 
@@ -208,6 +219,7 @@ mod tests {
     #[test]
     fn worker_contract_has_bounded_deadline() {
         let worker = super::WorkerContract::new("ROBOTCYB", Duration::from_secs(1));
+        assert_eq!(worker.status(), "RUNNING");
         assert!(!worker.expired());
         assert!(worker.remaining() <= Duration::from_secs(1));
         assert!(worker.heartbeat_age_ms() < 1000);
