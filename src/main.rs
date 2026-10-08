@@ -58,6 +58,15 @@ fn main() -> eframe::Result {
         }
     }
     #[cfg(debug_assertions)]
+    if std::env::var_os("CYBOS_HEADLESS_TEST_NODE").is_some() {
+        if let Err(error) = network::lan::run_headless_test_node() {
+            eprintln!("cybOS headless test node failed: {error}");
+            std::process::exit(2);
+        }
+        return Ok(());
+    }
+
+    #[cfg(debug_assertions)]
     if std::env::var_os("CYBOS_HEADLESS_ONION_TEST").is_some() {
         if let Err(error) = network::lan::run_headless_onion_test() {
             eprintln!("cybOS headless onion test failed: {error}");
@@ -70,15 +79,6 @@ fn main() -> eframe::Result {
     if std::env::var_os("CYBOS_HEADLESS_ONION_PROCESS_TEST").is_some() {
         if let Err(error) = network::lan::run_process_isolated_onion_test() {
             eprintln!("cybOS process-isolated onion test failed: {error}");
-            std::process::exit(2);
-        }
-        return Ok(());
-    }
-
-    #[cfg(debug_assertions)]
-    if std::env::var_os("CYBOS_HEADLESS_TEST_NODE").is_some() {
-        if let Err(error) = network::lan::run_headless_test_node() {
-            eprintln!("cybOS headless test node failed: {error}");
             std::process::exit(2);
         }
         return Ok(());
