@@ -5,3 +5,8 @@ pub mod web_parse;
 pub mod web_search;
 pub mod web_fetch;
 pub mod lan;
+#[cfg(target_os = "macos")]
+pub mod ble;
+#[cfg(not(target_os = "macos"))]
+#[path = "ble_stub.rs"]
+pub mod ble;
