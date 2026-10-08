@@ -304,6 +304,9 @@ impl CybOs {
 
         let (tx, rx) = std::sync::mpsc::channel();
         self.secure_send_task = Some(rx);
+        let contract = crate::runtime::WorkerContract::new("CYBCHAT", std::time::Duration::from_secs(12));
+        let worker_contract = contract.clone();
+        self.secure_send_contract = Some(contract);
         self.secure_status = format!("SECURE CHAT · CONNECTING · {}", peer.node_id);
         self.runtime.set_status("CYBCHAT", "RUNNING");
 
@@ -311,6 +314,11 @@ impl CybOs {
         let private_key = self.noise_private_key.clone();
 
         std::thread::spawn(move || {
+            worker_contract.heartbeat();
+            if worker_contract.expired() {
+                worker_contract.finish("TIMEOUT");
+                return;
+            }
             let status = crate::network::secure_chat::send(
                 &sender_id,
                 &peer.node_id,
@@ -318,6 +326,10 @@ impl CybOs {
                 &private_key,
                 &message,
             );
+            worker_contract.finish(match status {
+                crate::network::secure_chat::SecureSendStatus::Delivered { .. } => "READY",
+                crate::network::secure_chat::SecureSendStatus::Failed { .. } => "ERROR",
+            });
             let _ = tx.send(status);
         });
     }
@@ -327,9 +339,21 @@ impl CybOs {
             return;
         };
 
+        if let Some(contract) = self.secure_send_contract.clone() {
+            if contract.expired() {
+                self.secure_send_task = None;
+                self.secure_send_contract = None;
+                contract.finish("TIMEOUT");
+                self.secure_status = "SECURE CHAT · TIMEOUT".into();
+                self.runtime.set_status("CYBCHAT", "ERROR");
+                return;
+            }
+        }
+
         match rx.try_recv() {
             Ok(status) => {
                 self.secure_send_task = None;
+                self.secure_send_contract = None;
                 match status {
                     crate::network::secure_chat::SecureSendStatus::Delivered { message_id, peer_id } => {
                         self.secure_status = format!("SECURE CHAT · DELIVERED · {}", peer_id);
@@ -348,6 +372,9 @@ impl CybOs {
             Err(std::sync::mpsc::TryRecvError::Empty) => {}
             Err(std::sync::mpsc::TryRecvError::Disconnected) => {
                 self.secure_send_task = None;
+                if let Some(contract) = self.secure_send_contract.take() {
+                    contract.finish("ERROR");
+                }
                 self.secure_status = "SECURE CHAT · WORKER DISCONNECTED".into();
                 self.runtime.set_status("CYBCHAT", "ERROR");
             }
