@@ -43,7 +43,7 @@ pub(crate) enum LanEvent {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) enum LanSendStatus {
+pub(crate) struct Listener {\n    pub(crate) events: Receiver<LanEvent>,\n    stop: Arc<AtomicBool>,\n}\n\nimpl Listener {\n    pub(crate) fn try_recv(&self) -> Result<LanEvent, TryRecvError> {\n        self.events.try_recv()\n    }\n\n    pub(crate) fn empty() -> Self {\n        let (_tx, events) = mpsc::channel();\n        Self {\n            events,\n            stop: Arc::new(AtomicBool::new(true)),\n        }\n    }\n}\n\nimpl Drop for Listener {\n    fn drop(&mut self) {\n        self.stop.store(true, Ordering::Relaxed);\n    }\n}\n\npub(crate) enum LanSendStatus {
     Delivered {
         message_id: String,
         peer_id: String,
