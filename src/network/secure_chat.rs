@@ -96,12 +96,16 @@ pub(crate) fn load_or_create_static_key(store: &crate::store::Store) -> Result<V
 }
 
 pub(crate) fn spawn_listener(node_id: String, private_key: Vec<u8>) -> Listener {
+    spawn_listener_at(node_id, private_key, PORT)
+}
+
+fn spawn_listener_at(node_id: String, private_key: Vec<u8>, port: u16) -> Listener {
     let (tx, rx) = mpsc::channel();
     let stop = Arc::new(AtomicBool::new(false));
     let stop_thread = Arc::clone(&stop);
 
     thread::spawn(move || {
-        let listener = match TcpListener::bind(("0.0.0.0", PORT)) {
+        let listener = match TcpListener::bind(("127.0.0.1", port)) {
             Ok(v) => v,
             Err(_) => return,
         };
@@ -148,14 +152,26 @@ pub(crate) fn send(
     private_key: &[u8],
     message: &str,
 ) -> SecureSendStatus {
+    send_on_port(sender_id, peer_id, address, PORT, private_key, message)
+}
+
+fn send_on_port(
+    sender_id: &str,
+    peer_id: &str,
+    address: &str,
+    port: u16,
+    private_key: &[u8],
+    message: &str,
+) -> SecureSendStatus {
     let message_id = Uuid::new_v4().to_string();
-    send_with_deadline(sender_id, peer_id, address, private_key, message, Instant::now() + SESSION_BUDGET, message_id)
+    send_with_deadline(sender_id, peer_id, address, port, private_key, message, Instant::now() + SESSION_BUDGET, message_id)
 }
 
 fn send_with_deadline(
     sender_id: &str,
     peer_id: &str,
     address: &str,
+    port: u16,
     private_key: &[u8],
     message: &str,
     deadline: Instant,
@@ -170,7 +186,7 @@ fn send_with_deadline(
         }
 
         let mut stream = TcpStream::connect_timeout(
-            &format!("{address}:{PORT}")
+            &format!("{address}:{port}")
                 .parse()
                 .map_err(|e| format!("address: {e}"))?,
             remaining(deadline)?,
@@ -393,7 +409,7 @@ fn short_hash(bytes: &[u8]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{decode_hex, encode_hex, short_hash, spawn_listener, send, SecureSendStatus, SecureEvent, SecureReply, PATTERN};
+    use super::{decode_hex, encode_hex, short_hash, spawn_listener_at, send_on_port, SecureSendStatus, SecureEvent, SecureReply, PATTERN};
     use snow::{params::NoiseParams, Builder};
     use std::thread;
     use std::time::{Duration, Instant};
@@ -416,15 +432,17 @@ mod tests {
         let sender = Builder::new(params.clone()).generate_keypair().expect("sender keypair");
         let receiver = Builder::new(params).generate_keypair().expect("receiver keypair");
 
-        let listener = spawn_listener("node-b-reject".to_string(), receiver.private.clone());
+        let port = 39401;
+        let listener = spawn_listener_at("node-b-reject".to_string(), receiver.private.clone(), port);
         thread::sleep(Duration::from_millis(100));
 
         let sender_key = sender.private.clone();
         let sender_thread = thread::spawn(move || {
-            send(
+            send_on_port(
                 "node-a",
                 "node-b-reject",
                 "127.0.0.1",
+                port,
                 &sender_key,
                 "rejection test",
             )
@@ -466,10 +484,11 @@ mod tests {
         let sender = Builder::new(params.clone()).generate_keypair().expect("sender keypair");
         let receiver = Builder::new(params).generate_keypair().expect("receiver keypair");
 
-        let listener = spawn_listener("node-b".to_string(), receiver.private.clone());
+        let port = 39402;
+        let listener = spawn_listener_at("node-b".to_string(), receiver.private.clone(), port);
         thread::sleep(Duration::from_millis(100));
 
-        let status = send("node-a", "node-b", "127.0.0.1", &sender.private, "loopback secure test");
+        let status = send_on_port("node-a", "node-b", "127.0.0.1", port, &sender.private, "loopback secure test");
 
         let message_id = match status {
             SecureSendStatus::Delivered { message_id, peer_id } => {
