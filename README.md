@@ -1,12 +1,14 @@
-# cybOS Demo 0.8 — CicadaFarm · RobotCYB · CybChat
+# cybOS 0.7 — CicadaFarm · RobotCYB · CybChat
 
-This repository is the visual/browser prototype of cybOS.
+This repository contains both the browser prototype and the native macOS-first Rust/egui application. The browser layer is the visual prototype; the native layer is the real desktop runtime.
 
-It is intentionally small and dependency-light: the current demo uses p5.js for the rendering layer and a local cooperative runtime layer for system/cell state.
+The native implementation lives under `src/`, with the macOS launcher and BLE helper under `START_cybOS.command` and `macos/`.
 
-> The native macOS-first Rust/egui application is a separate implementation. This repository must not claim Rust modules that are not actually present here.
+For the native desktop installation path, see [NATIVE_INSTALL.md](NATIVE_INSTALL.md).
 
 ## What is in this repository
+
+### Browser prototype
 
 - Cyberpunk neon-green cybOS interface
 - RADAR / contact visualization
@@ -19,9 +21,21 @@ It is intentionally small and dependency-light: the current demo uses p5.js for 
 - WARP / SPHERE / ORACLE / SENATE controls
 - Runtime status inspector
 
-## Runtime architecture
+### Native desktop
 
-runtime.js introduces the first explicit cell contract for the prototype.
+- Rust/egui macOS-first application
+- Local SQLite persistence
+- RobotCYB local Qwen runtime
+- CYB RADAR LAN + macOS BLE proximity discovery
+- Noise XX secure CYBChat with delivery ACK
+- TOFU peer identity persistence
+- Cybergraph secure-peer relationships
+
+See [NATIVE_INSTALL.md](NATIVE_INSTALL.md) for build and packaging instructions.
+
+## Browser runtime architecture
+
+runtime.js introduces the first explicit cell contract for the browser prototype.
 
 Each logical cell declares:
 - inputs — what the cell is allowed to consume
@@ -71,9 +85,9 @@ The inspector exposes:
 
 This is deliberately visible: cybOS should never claim that a subsystem is connected or alive when the runtime has not observed it.
 
-## Current limitations
+## Browser prototype limitations
 
-This is still a browser prototype, not the final cybOS kernel/runtime.
+The browser layer is still a prototype, not the final cybOS native runtime.
 
 - The p5 renderer remains a legacy monolithic frame.
 - The runtime currently observes that frame through runtime-bridge.js.
