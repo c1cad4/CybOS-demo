@@ -21,6 +21,7 @@ mod power;
 mod runtime;
 mod shell;
 mod state;
+mod stacks;
 mod theme;
 mod ui;
 
