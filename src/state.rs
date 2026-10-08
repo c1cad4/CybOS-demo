@@ -53,6 +53,12 @@ pub(crate) struct CybOs {
     pub(crate) runtime: crate::runtime::Runtime,
     pub(crate) status: String,
     pub(crate) database_integrity: String,
+    pub(crate) cyblex: crate::cyblex::CybLexRuntime,
+    pub(crate) cyblex_source: String,
+    pub(crate) cyblex_download_path: String,
+    pub(crate) cyblex_seed_path: String,
+    pub(crate) cyblex_status: String,
+    pub(crate) cyblex_torrents: Vec<crate::cyblex::CybLexTorrent>,
     pub(crate) qwen_child: Option<Child>,
     pub(crate) qwen_status: String,
     pub(crate) qwen_retry_after: Instant,
@@ -155,6 +161,12 @@ impl Default for CybOs {
             runtime: crate::runtime::Runtime::new(),
             status: "LOCAL-FIRST · READY".into(),
             database_integrity,
+            cyblex: crate::cyblex::CybLexRuntime::new(),
+            cyblex_source: String::new(),
+            cyblex_download_path: Self::cyblex_default_download_path(),
+            cyblex_seed_path: String::new(),
+            cyblex_status: "CYBLEX · STARTING".into(),
+            cyblex_torrents: Vec::new(),
             qwen_child: None,
             qwen_status: "QWEN · OFFLINE".into(),
             qwen_retry_after: Instant::now(),
@@ -195,6 +207,38 @@ impl Default for CybOs {
 }
 
 
+
+impl CybOs {
+    pub(crate) fn cyblex_default_download_path() -> String {
+        std::env::var("HOME")
+            .map(|home| format!("{home}/Downloads/CybLex"))
+            .unwrap_or_else(|_| "Downloads/CybLex".into())
+    }
+
+    pub(crate) fn poll_cyblex(&mut self) {
+        for event in self.cyblex.poll() {
+            match event {
+                crate::cyblex::CybLexEvent::Snapshot(torrents) => {
+                    self.cyblex_torrents = torrents;
+                    self.runtime.set_status(
+                        "CYBLEX",
+                        if self.cyblex_torrents.is_empty() { "READY" } else { "RUNNING" },
+                    );
+                }
+                crate::cyblex::CybLexEvent::Status(status) => {
+                    self.cyblex_status = status;
+                    self.runtime.set_status("CYBLEX", "READY");
+                    self.add_event("CYBLEX", self.cyblex_status.clone());
+                }
+                crate::cyblex::CybLexEvent::Error(error) => {
+                    self.cyblex_status = format!("CYBLEX · ERROR · {error}");
+                    self.runtime.set_status("CYBLEX", "ERROR");
+                    self.add_event("CYBLEX", self.cyblex_status.clone());
+                }
+            }
+        }
+    }
+}
 
 impl CybOs {
     pub(crate) fn refresh_proximity(&mut self) {
