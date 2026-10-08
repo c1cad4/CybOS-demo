@@ -1,6 +1,6 @@
 [package]
 name = "cybos"
-version = "0.7.0"
+version = "0.7.1"
 edition = "2024"
 
 [dependencies]
@@ -26,6 +26,6 @@ opt-level = 3
 name = "cybOS"
 identifier = "to.cicada.cybos"
 icon = []
-version = "0.7.0"
+version = "0.7.1"
 short_description = "CicadaFarm + RobotCYB + CybChat native desktop OS"
 long_description = "Native local-first cybOS combining RobotCYB, CicadaFarm, CybChat, Brain, Knowledge Graph and Assets."
