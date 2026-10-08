@@ -75,39 +75,3 @@ mod tests {
         assert_eq!(compact.chars().take(8).count(), 8);
     }
 }
-
-impl CybOs {
-    pub(crate) fn sync_ble_advertiser(&mut self) {
-        if !self.radar_visible {
-            if self.ble_advertiser.is_some() {
-                crate::network::ble_advertiser::stop(&mut self.ble_advertiser);
-                self.ble_status = "BLE · ADVERTISING STOPPED · HIDDEN".into();
-            }
-            return;
-        }
-
-        match crate::network::ble_advertiser::poll(&mut self.ble_advertiser) {
-            Some(false) => {
-                self.ble_status = "BLE · ADVERTISER EXITED".into();
-                self.runtime.set_status("RADAR", "ERROR");
-            }
-            Some(true) => {
-                self.ble_status = "BLE · ADVERTISING · OPT-IN".into();
-                self.runtime.set_status("RADAR", "READY");
-            }
-            None => {
-                match crate::network::ble_advertiser::start(&self.node_id) {
-                    Ok(child) => {
-                        self.ble_advertiser = Some(child);
-                        self.ble_status = "BLE · STARTING ADVERTISEMENT".into();
-                        self.runtime.set_status("RADAR", "RUNNING");
-                    }
-                    Err(error) => {
-                        self.ble_status = format!("BLE · ADVERTISER ERROR · {}", error);
-                        self.runtime.set_status("RADAR", "ERROR");
-                    }
-                }
-            }
-        }
-    }
-}
