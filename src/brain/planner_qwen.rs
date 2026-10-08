@@ -220,8 +220,8 @@ Return ONLY valid JSON.
                 0.0,
                 deadline,
             ) {
-                Some(value) => value,
-                None => continue,
+                Ok(value) => value,
+                Err(_) => continue,
             };
 
             let Some(content) = Self::qwen_visible_content(&value) else {
