@@ -1,6 +1,6 @@
 //! Bounded encrypted direct transport for CYBChat.
 use serde::{Deserialize, Serialize};
-use snow::{params::NoiseParams, Builder};
+use snow::Builder;
 use std::io::{ErrorKind, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -394,7 +394,7 @@ fn short_hash(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::{decode_hex, encode_hex, short_hash, spawn_listener, send, SecureSendStatus, SecureEvent, SecureReply, PATTERN};
-    use snow::Builder;
+    use snow::{params::NoiseParams, Builder};
     use std::thread;
     use std::time::{Duration, Instant};
 
