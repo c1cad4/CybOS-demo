@@ -22,7 +22,7 @@ impl CybOs {
             ("DATABASE", self.store.path.to_str().unwrap_or("—")),
             ("RENDERER", "egui / eframe"),
             ("QWEN", self.qwen_status.as_str()),
-            ("KEYS", "not stored"),
+            ("KEYS", "Noise static + TOFU peer keys stored locally"),
         ] {
             ui.horizontal(|ui| {
                 ui.label(RichText::new(k).size(11.0).strong().color(neon).extra_letter_spacing(1.2));
