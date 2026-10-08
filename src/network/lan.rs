@@ -20,14 +20,15 @@ const CHAT_PREFIX: &str = "CYBOS_CHAT";
 const ACK_PREFIX: &str = "CYBOS_ACK";
 const MAX_CHAT_BYTES: usize = 1800;
 const CHAT_ACK_TIMEOUT: Duration = Duration::from_millis(700);
+const PEER_TTL: Duration = Duration::from_secs(15);
 
 #[derive(Clone, Debug)]
 pub(crate) struct LanPeer {
     pub(crate) node_id: String,
     pub(crate) address: String,
     pub(crate) version: String,
-    /// LAN discovery does not expose physical distance. BLE can populate this later.
     pub(crate) distance_m: Option<f32>,
+    pub(crate) last_seen: std::time::Instant,
 }
 
 #[derive(Clone, Debug)]
@@ -94,7 +95,7 @@ pub(crate) fn spawn_listener(node_id: String) -> Receiver<LanEvent> {
                 }
 
                 let response = format!(
-                    "{} {} {}",
+                    "{} {} {} VISIBLE",
                     RESPONSE_PREFIX,
                     node_id,
                     APP_VERSION
@@ -189,6 +190,8 @@ pub(crate) fn scan(node_id: String) -> Vec<LanPeer> {
                 };
 
                 let version = parts.next().unwrap_or("unknown").to_string();
+                let visibility = parts.next().unwrap_or("VISIBLE");
+                if visibility != "VISIBLE" { continue; }
 
                 if peer_id == node_id {
                     continue;
@@ -203,6 +206,7 @@ pub(crate) fn scan(node_id: String) -> Vec<LanPeer> {
                     address: addr.ip().to_string(),
                     version,
                     distance_m: None,
+                    last_seen: std::time::Instant::now(),
                 });
             }
             Err(_) => break,
@@ -344,7 +348,10 @@ impl crate::state::CybOs {
 
         match rx.try_recv() {
             Ok(peers) => {
-                self.lan_peers = peers;
+                self.lan_peers = peers
+                    .into_iter()
+                    .filter(|peer| peer.last_seen.elapsed() <= PEER_TTL)
+                    .collect();
 
                 let target_still_exists = self
                     .lan_target
