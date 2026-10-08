@@ -21,7 +21,8 @@ Estimated readiness: **85–90%**.
 Remaining blockers are mostly productization and real-device validation:
 - signed/notarized distribution;
 - two-Mac interoperability test of RADAR + Secure CYBChat + TOFU;
-- upgrade/reinstall and recovery testing.
+- upgrade/reinstall and recovery testing;
+- publish the post-release replay-hardening changes as the next version.
 
 ## Production 1.0
 Estimated readiness: **70–75%**.
