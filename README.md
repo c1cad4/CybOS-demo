@@ -1,61 +1,115 @@
-# cybOS 0.7 — CicadaFarm + RobotCYB + CybChat
+# cybOS Demo 0.8 — CicadaFarm · RobotCYB · CybChat
 
-Native macOS-first desktop MVP. The goal is a fast local-first application,
-not a browser wrapper.
+This repository is the visual/browser prototype of cybOS.
 
-## Core implemented
+It is intentionally small and dependency-light: the current demo uses p5.js for the rendering layer and a local cooperative runtime layer for system/cell state.
 
-- Native egui/eframe desktop UI
-- CicadaFarm dashboard and farm event log
-- RobotCYB local contextual assistant
-- CybChat local conversation shell with persistent SQLite history
-- Cybergraph with nodes, links, zoom/pan and inspector
-- Persistent SQLite event, memory, graph and node-identity storage
-- Search/navigation shell with native page routing
-- Local Qwen runtime shared by planner, learning, RobotCYB and web answers
-- Real local LAN peer discovery with UDP broadcast and node/version reporting
-- Directed LAN CybChat with explicit recipient identity, message IDs and bounded delivery acknowledgements
-- Background market and Solana balance refreshes that do not block UI rendering
-- Public $CICADAFARM and $ROBOTCYB mint identifiers
-- No private keys
-- Rust CI checks for push and pull requests
+> The native macOS-first Rust/egui application is a separate implementation. This repository must not claim Rust modules that are not actually present here.
 
-## Architecture
+## What is in this repository
 
-The eframe application trait is kept in src/shell.rs.
-The complete native shell composition lives in src/ui/shell.rs.
-Brain planning, learning, tools, web intent and Qwen transport are separated
-into dedicated modules.
+- Cyberpunk neon-green cybOS interface
+- RADAR / contact visualization
+- CYBCORE energy visualization and throttle interaction
+- SIGNAL GRID with moving data packets
+- CYBCHAT visual conversation layer
+- CYBERGRAPH / knowledge graph visualization
+- Hologram panel
+- Interactive terminal
+- WARP / SPHERE / ORACLE / SENATE controls
+- Runtime status inspector
 
-The application is local-first: UI and storage do not require a web browser,
-and infrastructure is not presented as live until a real connection exists.
+## Runtime architecture
 
-The communication design borrows the useful protocol ideas from the Cyberia CybOS
-concept: persistent node identity, explicit message addressing, bounded delivery
-and graph-oriented state. The current desktop implementation intentionally stops
-short of cryptographic private messaging until a real key and encryption layer
-is added.
+runtime.js introduces the first explicit cell contract for the prototype.
 
-## What is deliberately not faked
+Each logical cell declares:
+- inputs — what the cell is allowed to consume
+- outputs — what it produces
+- status — BOOT, RUNNING, ONLINE, DEGRADED, ERROR, OFFLINE
+- heartbeat — freshness of the cell's liveness signal
+- budget — cooperative execution budget in milliseconds
+- run / overrun / error counters
 
-Bluetooth, P2P, Nostr and RTSP camera feeds are shown as transport/ready states,
-but the MVP does not claim them as connected. LAN discovery is implemented as a
-real local peer-discovery channel. Discovery is broadcast-only; CybChat messages
-are directed to a selected peer and acknowledged within a bounded timeout. The
-payload is still plaintext and must not carry secrets. End-to-end encryption is
-not implemented yet.
+Current cells:
 
+| Cell | Inputs | Outputs | Budget |
+|---|---|---|---:|
+| SYSTEM | clock, keyboard, pointer | global state, events | 4 ms |
+| RADAR | system state, scan command | contacts, scan history | 4 ms |
+| CYBCORE | throttle, warp, power | energy, resonance, status | 5 ms |
+| SIGNAL_GRID | core state, throttle | packets, activity | 5 ms |
+| CYBCHAT | messages, local events | conversation state | 5 ms |
+| CYBERGRAPH | entities, relations, events | nodes, connections, signals | 6 ms |
+| HOLOGRAM | system state, target | projection | 4 ms |
+| TERMINAL | commands | events, state changes | 8 ms |
 
-## One-click macOS launch
+### Bounded execution
 
-Double-click START_cybOS.command in Finder.
+A browser JavaScript function cannot be safely hard-killed in the middle of synchronous execution. Therefore the demo uses a cooperative bound:
 
-The launcher:
+1. execution is measured;
+2. overruns are recorded;
+3. the cell becomes DEGRADED when it exceeds its budget;
+4. errors transition the cell to ERROR;
+5. heartbeat freshness detects stalled cells.
 
-1. installs Rust/Cargo if needed;
-2. detects changes in any Rust source file, Cargo.toml or Cargo.lock;
-3. builds the release binary when required;
-4. creates cybOS.app;
-5. launches the app.
+runtime-bridge.js currently provides a frame-level heartbeat for the legacy p5 renderer. The next architectural step is to move each real cell into an isolated task/worker boundary so its budget becomes enforceable rather than observational.
 
-The first build requires internet access because Cargo downloads Rust crates.
+## Runtime inspector
+
+Click the RUNTIME indicator in the lower-right corner or press R.
+
+The inspector exposes:
+- cell state
+- heartbeat freshness
+- execution duration vs budget
+- run count
+- overrun count
+- error count
+- declared inputs and outputs
+
+This is deliberately visible: cybOS should never claim that a subsystem is connected or alive when the runtime has not observed it.
+
+## Current limitations
+
+This is still a browser prototype, not the final cybOS kernel/runtime.
+
+- The p5 renderer remains a legacy monolithic frame.
+- The runtime currently observes that frame through runtime-bridge.js.
+- P2P, Bluetooth, Nostr, cameras and external network services are not represented as connected unless a real implementation is added.
+- There is no cryptographic private-messaging layer in this demo.
+- Persistent graph/database state is not part of this browser repository.
+- The terminal is a local simulation and does not execute operating-system commands.
+
+## Direction
+
+The intended architecture is:
+
+CicadaFarm = physical world
+RobotCYB = mind
+CybChat = communication
+Cybergraph = memory/relations
+cybOS = connection + runtime
+
+The long-term target is a local-first cybernetic operating environment where components communicate through explicit inputs/outputs and bounded execution rather than directly calling arbitrary subsystems.
+
+## Run
+
+Open index.html in a modern browser.
+
+Because the demo loads p5.js from jsDelivr, the first load requires network access. The application itself does not claim external connectivity merely because the renderer loaded.
+
+## Repository structure
+
+CybOS-demo/
+├── index.html
+├── sketch.js
+├── runtime.js
+├── runtime-bridge.js
+├── style.css
+└── README.md
+
+## License
+
+See the repository license configuration.
