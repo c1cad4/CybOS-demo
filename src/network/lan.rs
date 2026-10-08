@@ -93,8 +93,10 @@ struct LanMessage {
     version: String,
 }
 
-pub(crate) fn spawn_listener(node_id: String, visibility: Arc<AtomicBool>) -> Receiver<LanEvent> {
+pub(crate) fn spawn_listener(node_id: String, visibility: Arc<AtomicBool>) -> Listener {
     let (tx, rx) = mpsc::channel();
+    let stop = Arc::new(AtomicBool::new(false));
+    let stop_thread = Arc::clone(&stop);
 
     thread::spawn(move || {
         let socket = match UdpSocket::bind(("0.0.0.0", LAN_DISCOVERY_PORT)) {
@@ -102,11 +104,21 @@ pub(crate) fn spawn_listener(node_id: String, visibility: Arc<AtomicBool>) -> Re
             Err(_) => return,
         };
 
+        let _ = socket.set_read_timeout(Some(Duration::from_millis(250)));
         let mut buffer = [0_u8; 4096];
 
-        loop {
-            let Ok((size, peer_addr)) = socket.recv_from(&mut buffer) else {
-                break;
+        while !stop_thread.load(Ordering::Relaxed) {
+            let (size, peer_addr) = match socket.recv_from(&mut buffer) {
+                Ok(value) => value,
+                Err(error)
+                    if matches!(
+                        error.kind(),
+                        std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+                    ) =>
+                {
+                    continue;
+                }
+                Err(_) => break,
             };
 
             let Ok(message) = std::str::from_utf8(&buffer[..size]) else {
@@ -121,8 +133,6 @@ pub(crate) fn spawn_listener(node_id: String, visibility: Arc<AtomicBool>) -> Re
                     continue;
                 }
 
-                // Hidden nodes do not answer discovery at all. This makes the
-                // opt-in visibility setting truthful at the packet level.
                 if !visibility.load(Ordering::Relaxed) {
                     continue;
                 }
@@ -175,7 +185,7 @@ pub(crate) fn spawn_listener(node_id: String, visibility: Arc<AtomicBool>) -> Re
         }
     });
 
-    rx
+    Listener { events: rx, stop }
 }
 
 pub(crate) fn scan(node_id: String) -> Vec<LanPeer> {
