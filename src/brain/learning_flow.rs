@@ -21,6 +21,13 @@ impl CybOs {
 
 
     pub(crate) fn learn_from_user_message(&mut self, q: &str) {
+        self.learn_from_user_message_with_deadline(
+            q,
+            std::time::Instant::now() + crate::brain::planner_agent::ROBOT_JOB_BUDGET,
+        );
+    }
+
+    pub(crate) fn learn_from_user_message_with_deadline(&mut self, q: &str, deadline: std::time::Instant) {
         let text = q.trim();
 
 
@@ -70,10 +77,12 @@ impl CybOs {
     "#;
 
 
-        let value = match self.qwen_chat_json(
+        let value = match self.qwen_chat_json_with_deadline(
             system_prompt,
             text,
             1200,
+            0.0,
+            deadline,
         ) {
             Some(value) => value,
             None => return,
