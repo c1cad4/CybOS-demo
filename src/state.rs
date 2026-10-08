@@ -20,6 +20,8 @@ pub(crate) struct CybOs {
     pub(crate) search: String,
     pub(crate) robot_input: String,
     pub(crate) robot_output: String,
+    pub(crate) robot_job: Option<Receiver<RobotJobResult>>,
+    pub(crate) robot_status: String,
     pub(crate) chat_input: String,
     pub(crate) chat_output: String,
     pub(crate) chat: Vec<(String, String, bool)>,
