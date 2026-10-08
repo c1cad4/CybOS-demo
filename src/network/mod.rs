@@ -17,3 +17,5 @@ pub mod ble;
 #[cfg(not(target_os = "macos"))]
 #[path = "ble_stub.rs"]
 pub mod ble;
+pub mod mesh;
+pub mod vpn;
