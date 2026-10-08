@@ -13,6 +13,15 @@ struct TokenMarketCache {
     loading: bool,
 }
 
+const MARKET_REQUEST_BUDGET: Duration = Duration::from_secs(8);
+
+fn market_agent() -> ureq::Agent {
+    ureq::Agent::config_builder()
+        .timeout_global(Some(MARKET_REQUEST_BUDGET))
+        .build()
+        .into()
+}
+
 static TOKEN_MARKET_CACHE: OnceLock<Mutex<TokenMarketCache>> = OnceLock::new();
 
 impl CybOs {
@@ -28,7 +37,7 @@ impl CybOs {
             mint
         );
 
-        if let Ok(response) = ureq::get(&price_url)
+        if let Ok(response) = market_agent().get(&price_url)
             .header("accept", "application/json")
             .call()
         {
@@ -50,7 +59,7 @@ impl CybOs {
             mint
         );
 
-        if let Ok(response) = ureq::get(&pools_url)
+        if let Ok(response) = market_agent().get(&pools_url)
             .header("accept", "application/json")
             .call()
         {
@@ -100,7 +109,7 @@ impl CybOs {
                 pool
             );
 
-            if let Ok(response) = ureq::get(&chart_url)
+            if let Ok(response) = market_agent().get(&chart_url)
                 .header("accept", "application/json")
                 .call()
             {
