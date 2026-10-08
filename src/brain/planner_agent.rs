@@ -238,6 +238,8 @@ TOOL RESULT:
             lan_send_task: None,
             lan_target: None,
             lan_delivery_status: String::new(),
+            radar_visible: false,
+            radar_visibility: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
             remember_note: String::new(),
         })
     }
