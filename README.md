@@ -1,4 +1,4 @@
-# cybOS 0.7.1 — CicadaFarm · RobotCYB · CybChat
+# cybOS 0.7.2 — CicadaFarm · RobotCYB · CybChat
 
 This repository contains both the browser prototype and the native macOS-first Rust/egui application. The browser layer is the visual prototype; the native layer is the real desktop runtime.
 
@@ -33,7 +33,9 @@ For the native desktop installation path, see [NATIVE_INSTALL.md](NATIVE_INSTALL
 
 See [NATIVE_INSTALL.md](NATIVE_INSTALL.md) for build and packaging instructions.
 
-**Download:** [cybOS v0.7.1 for macOS](https://github.com/c1cad4/cybOS/releases/download/v0.7.1/cybOS-0.7.1-macOS.zip)
+**Latest hardened release:** [cybOS v0.7.2 for macOS](https://github.com/c1cad4/cybOS/releases/tag/v0.7.2)  
+
+SHA-256 checksum is published as `cybOS-0.7.2-macOS.zip.sha256` alongside the release ZIP.
 
 ## Browser runtime architecture
 
@@ -147,12 +149,12 @@ The native macOS application is usable now for a technically capable user who ca
 | Noise XX secure chat | READY |
 | Worker budgets / lifecycle | READY |
 | macOS packaging | READY |
-| GitHub release publication | READY — [v0.7.1](https://github.com/c1cad4/cybOS/releases/tag/v0.7.1) |
+| GitHub release publication | v0.7.1 published; v0.7.2 hardening release pending final publication |
 | Developer ID signing / notarization | NOT CONFIGURED |
 | Hardware / camera integrations | FUTURE LAYER |
 | P2P / Nostr fallback | FUTURE LAYER |
 
-For the current state, the honest estimate is **~90% for a technical/private beta** and **~85% for a public macOS beta**. The remaining gap is mainly Developer ID signing/notarization plus two-Mac and upgrade/recovery validation, not the core desktop architecture.
+For the current state, the honest estimate is **~95% for a technical/private beta** and **~90% for a public macOS beta**; the remaining work is primarily Apple signing/notarization and real two-Mac/recovery validation. The remaining gap is mainly Developer ID signing/notarization plus two-Mac and upgrade/recovery validation, not the core desktop architecture.
 
 ## Runtime stack status
 
