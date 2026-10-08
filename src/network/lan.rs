@@ -38,6 +38,7 @@ const REPLAY_WINDOW_SECS: u64 = 300;
 const MAX_SESSIONS: usize = 128;
 const MAX_ONION_ROUTES: usize = 256;
 const MAX_ONION_SESSIONS: usize = 256;
+const MAX_ONION_SESSIONS_PER_PEER: usize = 8;
 const DELIVERED_ACK_CACHE_LIMIT: usize = 512;
 const ONION_ROUTE_ATTEMPT_LIMIT: usize = 5;
 const ONION_SESSION_TTL_SECS: u64 = 120;
@@ -319,6 +320,7 @@ struct OnionHopSession {
     key: [u8; 32],
     control_peer: SocketAddr,
     expires_at: u64,
+    bound_route: Option<(String, u8)>,
 }
 
 #[derive(Clone)]
@@ -372,6 +374,30 @@ fn now_secs() -> u64 {
 
 fn fresh_timestamp(ts: u64) -> bool {
     now_secs().abs_diff(ts) <= REPLAY_WINDOW_SECS
+}
+
+fn onion_session_quota_available(
+    sessions: &HashMap<String, OnionHopSession>,
+    peer: SocketAddr,
+) -> bool {
+    sessions.values().filter(|session| session.control_peer == peer).count()
+        < MAX_ONION_SESSIONS_PER_PEER
+}
+
+fn bind_onion_session_route(
+    session: &mut OnionHopSession,
+    route_id: &str,
+    hop_index: u8,
+) -> bool {
+    match &session.bound_route {
+        Some((bound_route, bound_hop)) => {
+            bound_route == route_id && *bound_hop == hop_index
+        }
+        None => {
+            session.bound_route = Some((route_id.to_string(), hop_index));
+            true
+        }
+    }
 }
 
 fn signed_key_init(from: &str, to: &str, public_key: &str, eph: &str, timestamp: u64) -> Vec<u8> {
@@ -566,7 +592,9 @@ fn spawn_listener_on_addr_with_stop(
                 if init_public.len() != 32 || onion_sessions.contains_key(&init.session_id) {
                     continue;
                 }
-                if onion_sessions.len() >= MAX_ONION_SESSIONS {
+                if onion_sessions.len() >= MAX_ONION_SESSIONS
+                    || !onion_session_quota_available(&onion_sessions, peer_addr)
+                {
                     continue;
                 }
 
@@ -590,6 +618,7 @@ fn spawn_listener_on_addr_with_stop(
                         key,
                         control_peer: peer_addr,
                         expires_at,
+                        bound_route: None,
                     },
                 );
 
@@ -708,6 +737,17 @@ fn spawn_listener_on_addr_with_stop(
 
                 if exit_on_onion_bind {
                     std::process::exit(87);
+                }
+
+                let Some(session_state) = onion_sessions.get_mut(&bind.session_id) else {
+                    continue;
+                };
+                if !bind_onion_session_route(
+                    session_state,
+                    &bind.route_id,
+                    bind.hop_index,
+                ) {
+                    continue;
                 }
 
                 let previous_address = if frame.hop_index == 0 {
@@ -2718,6 +2758,47 @@ mod tests {
         match rx.recv_timeout(Duration::from_secs(2)).unwrap() {
             LanEvent::Chat { message, .. } => assert_eq!(message, expected),
         }
+    }
+
+    #[test]
+    fn onion_session_quota_is_per_source_endpoint() {
+        let peer: SocketAddr = "127.0.0.1:41001".parse().unwrap();
+        let other: SocketAddr = "127.0.0.1:41002".parse().unwrap();
+        let mut sessions = HashMap::new();
+
+        for index in 0..MAX_ONION_SESSIONS_PER_PEER {
+            sessions.insert(
+                format!("session-{index}"),
+                OnionHopSession {
+                    key: [index as u8; 32],
+                    control_peer: peer,
+                    expires_at: now_secs() + 30,
+                    bound_route: None,
+                },
+            );
+        }
+
+        assert!(!onion_session_quota_available(&sessions, peer));
+        assert!(onion_session_quota_available(&sessions, other));
+    }
+
+    #[test]
+    fn onion_session_cannot_be_bound_to_two_routes() {
+        let peer: SocketAddr = "127.0.0.1:41003".parse().unwrap();
+        let mut session = OnionHopSession {
+            key: [3u8; 32],
+            control_peer: peer,
+            expires_at: now_secs() + 30,
+            bound_route: None,
+        };
+
+        assert!(bind_onion_session_route(&mut session, "route-a", 0));
+        assert!(bind_onion_session_route(&mut session, "route-a", 0));
+        assert!(!bind_onion_session_route(&mut session, "route-b", 1));
+        assert_eq!(
+            session.bound_route,
+            Some(("route-a".to_string(), 0))
+        );
     }
 
     #[test]
