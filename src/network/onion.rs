@@ -19,7 +19,9 @@ use std::time::Duration;
 use uuid::Uuid;
 
 pub(crate) const MAX_ONION_HOPS: usize = 4;
-pub(crate) const MAX_ONION_BYTES: usize = 4096;
+// Onion layers add authenticated JSON/base64 framing at every hop.
+// Keep the direct CybChat wire limit separate from the larger routed LAN frame.
+pub(crate) const MAX_ONION_BYTES: usize = 12 * 1024;
 pub(crate) const ONION_TTL_SECS: u64 = 120;
 const REPLAY_CACHE_LIMIT: usize = 512;
 const MAX_ROUTE_ID_BYTES: usize = 64;
