@@ -18,10 +18,10 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Cargo check
-        run: cargo check --locked
+        run: cargo check
 
       - name: Cargo test
-        run: cargo test --locked
+        run: cargo test
 
       - name: Diff whitespace check
         run: git diff --check
@@ -37,13 +37,13 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Cargo check
-        run: cargo check --locked
+        run: cargo check
 
       - name: Cargo test
-        run: cargo test --locked
+        run: cargo test
 
       - name: macOS release build
-        run: cargo build --release --locked
+        run: cargo build --release
 
       - name: Diff whitespace check
         run: git diff --check
