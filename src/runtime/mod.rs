@@ -127,3 +127,27 @@ pub(crate) fn load_events(store: &Store) -> Vec<crate::models::Event> {
 
     events
 }
+
+#[cfg(test)]
+mod tests {
+    use super::Runtime;
+
+    #[test]
+    fn all_core_cells_have_contracts() {
+        let runtime = Runtime::new();
+        assert!(runtime.cells.len() >= 7);
+        assert!(runtime.cells.iter().all(|cell| !cell.inputs.is_empty()));
+        assert!(runtime.cells.iter().all(|cell| !cell.outputs.is_empty()));
+        assert!(runtime.cells.iter().all(|cell| cell.budget.as_millis() > 0));
+    }
+
+    #[test]
+    fn tick_updates_heartbeats_and_run_counters() {
+        let mut runtime = Runtime::new();
+        runtime.tick();
+        assert_eq!(runtime.ticks, 1);
+        assert!(runtime.cells.iter().all(|cell| cell.runs == 1));
+        assert!(runtime.cells.iter().all(|cell| cell.heartbeat_age_ms() < 1000));
+        assert_eq!(runtime.healthy_count(), runtime.cells.len());
+    }
+}
