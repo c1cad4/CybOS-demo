@@ -88,6 +88,10 @@ fn main() -> eframe::Result {
                 println!("      Run the live two-relay routed transport self-test.");
                 println!("  cybOS --self-test onion-process");
                 println!("      Run the process-isolated relay fault-recovery self-test.");
+                println!("  cybOS --self-test onion-drop-process");
+                println!("      Run the process-isolated mid-route packet-drop recovery self-test.");
+                println!("  cybOS --self-test onion-bind-validation");
+                println!("      Run process-isolated malformed and expired route-bind validation.");
                 return Ok(());
             }
             #[cfg(any(debug_assertions, feature = "qa"))]
@@ -107,6 +111,24 @@ fn main() -> eframe::Result {
                             Ok(()) => return Ok(()),
                             Err(error) => {
                                 eprintln!("cybOS process-isolated onion self-test failed: {error}");
+                                std::process::exit(2);
+                            }
+                        }
+                    }
+                    Some("onion-drop-process") => {
+                        match network::lan::run_process_isolated_onion_packet_drop_test() {
+                            Ok(()) => return Ok(()),
+                            Err(error) => {
+                                eprintln!("cybOS onion packet-drop self-test failed: {error}");
+                                std::process::exit(2);
+                            }
+                        }
+                    }
+                    Some("onion-bind-validation") => {
+                        match network::lan::run_process_isolated_onion_bind_validation_test() {
+                            Ok(()) => return Ok(()),
+                            Err(error) => {
+                                eprintln!("cybOS onion-bind validation self-test failed: {error}");
                                 std::process::exit(2);
                             }
                         }
