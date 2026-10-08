@@ -247,10 +247,7 @@ TOOL RESULT:
             ble_status: "BLE · WORKER DISABLED".into(),
             nearby_peers: Vec::new(),
             noise_private_key: Vec::new(),
-            secure_listener: {
-                let (_tx, rx) = std::sync::mpsc::channel();
-                crate::network::secure_chat::Listener::empty()
-            },
+            secure_listener: crate::network::secure_chat::Listener::empty(),
             secure_send_task: None,
             secure_status: "SECURE CHAT · WORKER CONTEXT".into(),
             remember_note: String::new(),
