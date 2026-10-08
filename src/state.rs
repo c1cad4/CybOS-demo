@@ -119,6 +119,7 @@ impl Default for CybOs {
             robot_input: String::new(),
             robot_output: String::from("ROBOTCYB READY\n\nLOCAL AGENT · AWAITING QWEN\nAwaiting request..."),
             robot_job: None,
+            robot_contract: None,
             robot_status: "IDLE".into(),
             chat_input: String::new(),
             chat_output: String::from("CYBCHAT READY\n\nLOCAL-FIRST CHANNEL\nAwaiting message..."),
