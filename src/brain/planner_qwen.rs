@@ -35,6 +35,14 @@ impl CybOs {
     }
 
     pub(crate) fn select_tool_with_qwen(&self, q: &str) -> Option<(String, String)> {
+        self.select_tool_with_qwen_deadline(q, std::time::Instant::now() + std::time::Duration::from_secs(30))
+    }
+
+    pub(crate) fn select_tool_with_qwen_deadline(
+        &self,
+        q: &str,
+        deadline: std::time::Instant,
+    ) -> Option<(String, String)> {
 
         let system_prompt = r#"
 You are the action planner and autonomous brain of RobotCYB.
@@ -103,11 +111,13 @@ If the user can be answered without a tool:
 Never output explanations outside JSON.
 "#;
 
-        let value = self.qwen_chat_json(
+        let value = self.qwen_chat_json_with_deadline(
             system_prompt,
             q,
             250,
-        )?;
+            0.0,
+            deadline,
+        ).ok()?;
 
         let content = Self::qwen_visible_content(&value)?;
         let decision = Self::parse_planner_json(content)?;
@@ -124,6 +134,17 @@ Never output explanations outside JSON.
     }
 
     pub(crate) fn planner_decision_from_observation(&self, observation: &str) -> Option<serde_json::Value> {
+        self.planner_decision_from_observation_deadline(
+            observation,
+            std::time::Instant::now() + std::time::Duration::from_secs(30),
+        )
+    }
+
+    pub(crate) fn planner_decision_from_observation_deadline(
+        &self,
+        observation: &str,
+        deadline: std::time::Instant,
+    ) -> Option<serde_json::Value> {
 
         let system_prompt = r#"
 You are RobotCYB, the action planner of cybOS.
@@ -188,14 +209,16 @@ Return ONLY valid JSON.
                 "\n\nRETRY: Your previous planner output was invalid. Return ONLY one valid JSON object with action=tool or action=final. No prose.\n"
             };
 
-            let value = match self.qwen_chat_json(
+            if deadline <= std::time::Instant::now() {
+                return None;
+            }
+
+            let value = match self.qwen_chat_json_with_deadline(
                 system_prompt,
-                &format!(
-                    "{}{}",
-                    observation,
-                    retry_note
-                ),
+                &format!("{}{}", observation, retry_note),
                 350,
+                0.0,
+                deadline,
             ) {
                 Some(value) => value,
                 None => continue,
