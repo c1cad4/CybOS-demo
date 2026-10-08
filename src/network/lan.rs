@@ -66,7 +66,7 @@ struct LanMessage {
     version: String,
 }
 
-pub(crate) fn spawn_listener(node_id: String) -> Receiver<LanEvent> {
+pub(crate) fn spawn_listener(node_id: String, visible: bool) -> Receiver<LanEvent> {
     let (tx, rx) = mpsc::channel();
 
     thread::spawn(move || {
@@ -95,10 +95,11 @@ pub(crate) fn spawn_listener(node_id: String) -> Receiver<LanEvent> {
                 }
 
                 let response = format!(
-                    "{} {} {} VISIBLE",
+                    "{} {} {} {}",
                     RESPONSE_PREFIX,
                     node_id,
-                    APP_VERSION
+                    APP_VERSION,
+                    if visible { "VISIBLE" } else { "HIDDEN" }
                 );
 
                 let _ = socket.send_to(response.as_bytes(), peer_addr);
