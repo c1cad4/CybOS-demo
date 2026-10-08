@@ -106,8 +106,12 @@ if [[ -n "$NOTARY_PROFILE" ]]; then
 fi
 
 if command -v shasum >/dev/null 2>&1; then
+  CHECKSUM="$ZIP.sha256"
+  shasum -a 256 "$ZIP" > "$CHECKSUM"
   echo "SHA-256:"
-  shasum -a 256 "$ZIP"
+  cat "$CHECKSUM"
+  echo "Checksum file:"
+  echo "  $CHECKSUM"
 fi
 
 rm -rf "$BUILD"
