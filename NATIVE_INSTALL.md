@@ -2,13 +2,16 @@
 
 ## Current status
 
-The native Rust/egui application builds as a real macOS .app bundle. Repository CI verifies:
+cybOS is a working native macOS technical beta. Repository CI verifies:
 
-- Linux cargo check + cargo test
-- macOS cargo check + cargo test
-- macOS release build
-- CoreBluetooth advertiser compilation
-- whitespace validation
+- Linux `cargo check` + `cargo test`;
+- macOS `cargo check` + `cargo test`;
+- macOS release build;
+- CoreBluetooth advertiser compilation;
+- macOS packaging-script validation;
+- whitespace validation.
+
+The current native runtime includes local SQLite state, RobotCYB/Qwen integration, CYB RADAR, unified LAN+BLE proximity, Noise XX secure CYBChat, TOFU peer identity and Cybergraph persistence.
 
 ## Build locally
 
@@ -25,7 +28,7 @@ dist/cybOS.app
 dist/cybOS-<version>-macOS.zip
 ~~~
 
-Open the app by double-clicking dist/cybOS.app.
+Open the app by double-clicking `dist/cybOS.app`.
 
 ## RobotCYB / local Qwen
 
@@ -43,16 +46,27 @@ The current macOS launcher looks for:
 
 and starts the configured local Qwen model automatically when available.
 
+The model weights are intentionally not bundled into the repository. This keeps the application package small, but it means the current beta is not yet a zero-setup AI distribution.
+
 ## Network permissions
 
-CYB RADAR is opt-in. LAN discovery uses the local network; macOS BLE discovery uses CoreBluetooth. Hidden mode disables CYB visibility/advertising.
+CYB RADAR is opt-in.
 
-Secure CYBChat uses a separate Noise XX encrypted transport and persists first-seen peer keys as TOFU.
+LAN discovery uses the local network. macOS BLE discovery uses CoreBluetooth. Hidden mode disables CYB visibility and BLE advertising.
+
+Secure CYBChat uses Noise XX encrypted transport and stores first-seen peer public keys locally as TOFU.
 
 ## What is not bundled yet
 
-The Qwen model weights are not bundled into the application package. Farm hardware, cameras and RobotCYB physical hardware integrations are also outside the desktop package.
+- Qwen model weights;
+- farm hardware integration;
+- live camera hardware;
+- P2P and Nostr fallback transports.
 
-## First public release path
+These are separate product layers, not prerequisites for the current desktop core.
 
-Tagging the repository with a v* tag triggers .github/workflows/release-macos.yml, which builds and publishes the macOS ZIP as a GitHub Release asset.
+## Public release path
+
+Tagging the repository with a `v*` tag triggers `.github/workflows/release-macos.yml`, which builds and publishes the macOS ZIP as a GitHub Release asset.
+
+For a smooth end-user macOS installation experience, the remaining distribution step is Developer ID signing + Apple notarization. The repository does not contain Apple signing credentials, so that step cannot be honestly marked complete from CI alone.
