@@ -39,7 +39,7 @@ Both defects were fixed on this branch.
 
 - Persistent Ed25519 identity.
 - Node ID derived from SHA-256(public key).
-- TOFU peer-key pinning.
+- Discovery responses are bound to a fresh per-scan challenge nonce, preventing stale response replay across scans.\n- TOFU peer-key pinning.
 - Ephemeral X25519 handshake.
 - HKDF-SHA256 session derivation.
 - ChaCha20-Poly1305 confidentiality and integrity.
@@ -73,9 +73,9 @@ Some broader process-level fault cases are still not covered.
 Recommended next step: extend the process harness with controlled relay crash, route-expiry, malformed-binding and mid-route packet-drop scenarios.
 
 ### LOW — Discovery address is not cryptographically bound
-The signed discovery response authenticates node ID, version and public key, but not the observed source address. A valid discovery response can therefore be replayed from a different address. The subsequent signed handshake prevents identity impersonation, but stale/misrouted discovery can still cause connection failure or denial of service.
+The signed discovery response now includes a fresh per-scan challenge nonce, so an old authenticated `CYBOS_PEER` response cannot be replayed into a new scan. The observed response source address is still treated as a locator rather than a cryptographic identity binding. The subsequent signed handshake remains the authoritative identity check.
 
-Recommended next step: include a challenge/nonce and observed endpoint in the discovery exchange, or treat discovery only as a locator and require the authenticated handshake before showing the peer as fully trusted.
+Recommended next step: optionally advertise an authenticated listen endpoint/capability record for deployments where discovery needs stronger address semantics.
 
 ### LOW — Traffic metadata remains visible
 The direct-LAN channel still exposes packet timing, approximate size, node IDs, message IDs, counters and network endpoints to a passive LAN observer. Encryption protects message content, not traffic analysis.
