@@ -1535,7 +1535,7 @@ pub(crate) fn run_process_isolated_onion_packet_drop_test() -> Result<(), String
             println!(
                 "ONION_DROP_PROCESS_TEST OK · mid-route drop recovered · {} → {}",
                 source.node_id(),
-                destination.node_id()
+                destination.node_id
             );
             Ok(())
         } else {
@@ -1558,7 +1558,7 @@ pub(crate) fn run_process_isolated_onion_bind_validation_test() -> Result<(), St
         .map_err(|error| format!("cannot resolve cybOS test binary: {error}"))?;
     let source = NodeIdentity::generate_ephemeral();
     let relay_port = free_udp_port()?;
-    let relay = spawn_process_test_node(&binary, relay_port, ProcessTestFault::None)?;
+    let mut relay = spawn_process_test_node(&binary, relay_port, ProcessTestFault::None)?;
 
     let result = (|| {
         let relay_peer = relay.peer.clone();
