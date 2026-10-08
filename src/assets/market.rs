@@ -13,7 +13,8 @@ struct TokenMarketCache {
     loading: bool,
 }
 
-const MARKET_REQUEST_BUDGET: Duration = Duration::from_secs(8);
+const MARKET_REQUEST_BUDGET: Duration = Duration::from_secs(2);
+const MARKET_WORKER_BUDGET: Duration = Duration::from_secs(15);
 
 fn market_agent() -> ureq::Agent {
     ureq::Agent::config_builder()
@@ -170,10 +171,14 @@ impl CybOs {
 
         if spawn_refresh {
             std::thread::spawn(|| {
+                let contract = crate::runtime::WorkerContract::new("ASSETS", MARKET_WORKER_BUDGET);
+                contract.heartbeat();
                 let markets = vec![
                     CybOs::fetch_token_market("$CICADAFARM", CICADAFARM_MINT),
                     CybOs::fetch_token_market("$ROBOTCYB", ROBOTCYB_MINT),
                 ];
+
+                contract.finish("READY");
 
                 if let Some(cache) = TOKEN_MARKET_CACHE.get() {
                     let mut guard = cache.lock().unwrap();
