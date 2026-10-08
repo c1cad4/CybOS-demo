@@ -17,6 +17,8 @@ Hardening release for the native local-first cybOS runtime.
 ## Distribution
 
 - Universal macOS packaging builds Apple Silicon (arm64) and Intel (x86_64) binaries.
+- Packaging writes a SHA-256 checksum file next to the release ZIP.
+- Optional Developer ID signing and Apple notarization are supported through environment-based release credentials.
 - v0.7.1 remains the previously published compatibility release; v0.7.2 is the hardened release line.
 
 # cybOS 0.7.1
