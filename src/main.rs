@@ -28,12 +28,57 @@ pub(crate) use state::CybOs;
 
 use eframe::egui;
 
+fn print_identity() -> eframe::Result {
+    let store = store::Store::open();
+    let identity = identity::NodeIdentity::load_or_create(&store);
+    println!("NODE_ID {}", identity.node_id());
+    println!("FINGERPRINT {}", crypto::fingerprint(identity.public_key()));
+    println!("PUBLIC_KEY {}", base64::engine::general_purpose::STANDARD.encode(identity.public_key()));
+    Ok(())
+}
+
+fn provision_peer(node_id: &str, fingerprint: &str) -> eframe::Result {
+    let normalized = fingerprint.to_ascii_lowercase();
+    let valid = normalized.len() == 64
+        && normalized
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit());
+    if !valid {
+        eprintln!("invalid fingerprint: expected 64 hexadecimal SHA-256 characters");
+        std::process::exit(2);
+    }
+    if node_id.trim().is_empty() || node_id.len() > 128 {
+        eprintln!("invalid peer node id");
+        std::process::exit(2);
+    }
+
+    let store = store::Store::open();
+    store.provision_peer_fingerprint(node_id, &normalized);
+    println!(
+        "OOB_PROVISIONED node_id={} fingerprint={}",
+        node_id, normalized
+    );
+    Ok(())
+}
+
 fn main() -> eframe::Result {
-    #[cfg(debug_assertions)]
-    {
-        let mut args = std::env::args().skip(1);
-        if let Some(command) = args.next() {
-            if command == "--self-test" {
+    let mut args = std::env::args().skip(1);
+    if let Some(command) = args.next() {
+        match command.as_str() {
+            "--identity" => return print_identity(),
+            "--provision-peer" => {
+                let Some(node_id) = args.next() else {
+                    eprintln!("usage: cybOS --provision-peer NODE_ID FINGERPRINT");
+                    std::process::exit(2);
+                };
+                let Some(fingerprint) = args.next() else {
+                    eprintln!("usage: cybOS --provision-peer NODE_ID FINGERPRINT");
+                    std::process::exit(2);
+                };
+                return provision_peer(&node_id, &fingerprint);
+            }
+            "--self-test" => {
+                #[cfg(debug_assertions)]
                 match args.next().as_deref() {
                     Some("onion") | None => {
                         match network::lan::run_headless_onion_test() {
@@ -44,19 +89,42 @@ fn main() -> eframe::Result {
                             }
                         }
                     }
+                    Some("onion-process") => {
+                        match network::lan::run_process_isolated_onion_test() {
+                            Ok(()) => return Ok(()),
+                            Err(error) => {
+                                eprintln!("cybOS process-isolated onion self-test failed: {error}");
+                                std::process::exit(2);
+                            }
+                        }
+                    }
                     Some("help") | Some("--help") | Some("-h") => {
                         println!("cybOS self-tests:");
-                        println!("  cargo run -- --self-test onion");
+                        println!("  cybOS --self-test onion");
+                        println!("  cybOS --self-test onion-process");
                         return Ok(());
                     }
+                    #[cfg(not(debug_assertions))]
+                    _ => {
+                        eprintln!("self-tests are available only in debug builds");
+                        std::process::exit(2);
+                    }
+                    #[cfg(debug_assertions)]
                     Some(name) => {
                         eprintln!("unknown self-test '{name}'. Use '--self-test help'.");
                         std::process::exit(2);
                     }
                 }
+                #[cfg(not(debug_assertions))]
+                {
+                    eprintln!("self-tests are available only in debug builds");
+                    std::process::exit(2);
+                }
             }
+            _ => {}
         }
     }
+
     #[cfg(debug_assertions)]
     if std::env::var_os("CYBOS_HEADLESS_TEST_NODE").is_some() {
         if let Err(error) = network::lan::run_headless_test_node() {
