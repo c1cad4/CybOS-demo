@@ -113,3 +113,16 @@ CybOS-demo/
 ## License
 
 See the repository license configuration.
+
+## Runtime stack status
+
+The current native stack is organized as bounded local-first cells:
+
+- **CYB RADAR:** opt-in LAN discovery + macOS BLE RSSI discovery; no GPS and no fabricated meter distances.
+- **Unified proximity:** LAN and BLE observations are correlated into one peer projection.
+- **CYBChat:** direct TCP transport protected by Noise XX with encrypted frames and delivery ACKs.
+- **Identity:** the first authenticated Noise public key for a peer is persisted as TOFU; a changed key is rejected.
+- **Cybergraph:** secure peers and secure-chat relationships are persisted as graph nodes/links.
+- **Bounded execution:** discovery and secure transport use explicit time windows, I/O deadlines and connection limits.
+
+A peer is not considered geographically located merely because BLE RSSI is available.
