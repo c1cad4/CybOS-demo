@@ -34,6 +34,13 @@ Hardening release for the native local-first cybOS runtime.
 
 Core release for the native local-first cybOS runtime.
 
+## CybBrowser
+
+- bounded native protocol router for HTTP(S), IPFS/IPNS and Arweave links;
+- local IPFS/IPNS gateways are preferred, with explicit gateway fallback;
+- remote JavaScript is not executed by the text/document backend;
+- navigation, protocol resolution, fetching and parsing run as a dedicated runtime cell.
+
 ## Runtime hardening
 
 - explicit runtime cell contracts expose inputs, outputs, status, heartbeat and execution budgets;
