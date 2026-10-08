@@ -30,6 +30,34 @@ impl CybOs {
             });
             ui.add_space(4.0);
         }
+        ui.add_space(12.0);
+        ui.label(RichText::new("RUNTIME CELLS").size(11.0).strong().color(neon));
+        ui.add_space(6.0);
+        ui.label(
+            RichText::new(format!(
+                "{} / {} cells READY · tick {}",
+                self.runtime.healthy_count(),
+                self.runtime.cells.len(),
+                self.runtime.ticks
+            ))
+            .size(10.0)
+            .color(dim),
+        );
+        for cell in &self.runtime.cells {
+            ui.horizontal(|ui| {
+                ui.label(
+                    RichText::new(format!(
+                        "{} · {} · {}ms budget · heartbeat {}ms ago",
+                        cell.id,
+                        cell.status,
+                        cell.budget.as_millis(),
+                        cell.heartbeat_age_ms()
+                    ))
+                    .size(9.0)
+                    .color(Color32::from_rgb(165, 220, 190)),
+                );
+            });
+        }
         ui.add_space(10.0);
         ui.horizontal(|ui| {
             if ui.button("COPY NODE ID").clicked() {
