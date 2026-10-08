@@ -3,7 +3,7 @@
 //! CybLex keeps the long-lived rqbit session off the egui thread. The UI
 //! exchanges explicit commands and periodic snapshots with the worker.
 
-use librqbit::{AddTorrent, AddTorrentOptions, CreateTorrentOptions, Session};
+use librqbit::{AddTorrent, AddTorrentOptions, CreateTorrentOptions, Session, SessionOptions, SessionPersistenceConfig};
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -137,11 +137,15 @@ fn run_worker(command_rx: Receiver<CybLexCommand>, event_tx: Sender<CybLexEvent>
     let event_tx_inner = event_tx.clone();
     let result = runtime.block_on(async move {
         let download_dir = default_download_dir();
+        let persistence_dir = default_persistence_dir();
+
         fs::create_dir_all(&download_dir)
             .map_err(|e| format!("create CybLex directory: {e}"))?;
+        fs::create_dir_all(&persistence_dir)
+            .map_err(|e| format!("create CybLex persistence directory: {e}"))?;
 
         let _ = event_tx_inner.send(CybLexEvent::Status(format!(
-            "CYBLEX · IDLE · P2P OFF · {}",
+            "CYBLEX · IDLE · P2P OFF · {} · PERSISTENCE READY",
             download_dir.display()
         )));
 
@@ -155,7 +159,15 @@ fn run_worker(command_rx: Receiver<CybLexCommand>, event_tx: Sender<CybLexEvent>
                     Ok(CybLexCommand::AddSource { source, output_folder }) => {
                         if session.is_none() {
                             session = Some(
-                                Session::new(download_dir.clone())
+                                Session::new_with_opts(
+                                    download_dir.clone(),
+                                    SessionOptions {
+                                        persistence: Some(SessionPersistenceConfig::Json {
+                                            folder: Some(persistence_dir.clone()),
+                                        }),
+                                        ..Default::default()
+                                    },
+                                )
                                     .await
                                     .map_err(|e| format!("CybLex session init: {e:#}"))?,
                             );
@@ -398,6 +410,17 @@ fn default_download_dir() -> PathBuf {
         .unwrap_or_else(|_| PathBuf::from("."))
         .join("Downloads")
         .join("CybLex")
+}
+
+fn default_persistence_dir() -> PathBuf {
+    std::env::var("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from("."))
+        .join("Library")
+        .join("Application Support")
+        .join("cybOS")
+        .join("CybLex")
+        .join("rqbit")
 }
 
 fn torrent_sidecar_path(path: &Path) -> PathBuf {
