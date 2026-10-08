@@ -64,7 +64,7 @@ pub(crate) fn web_search(query: &str) -> String {
         while let Some(start) = remaining.find("result__a") {
             remaining = &remaining[start..];
 
-            let href_start = match remaining.find("href="") {
+            let href_start = match remaining.find("href=\"") {
                 Some(pos) => pos + 6,
                 None => break,
             };
