@@ -18,11 +18,14 @@ pub(crate) const QWEN_MODEL: &str =
 const QWEN_REQUEST_BUDGET: Duration = Duration::from_secs(30);\n\nfn qwen_agent(budget: Duration) -> ureq::Agent {\n    ureq::Agent::config_builder()\n        .timeout_global(Some(budget))\n        .build()\n        .into()\n}
 
 fn bounded_qwen_request(payload: Value, budget: Duration) -> Result<Value, String> {
+    let budget = budget.min(QWEN_REQUEST_BUDGET);
     let (tx, rx) = mpsc::channel();
 
     thread::spawn(move || {
         let result = (|| {
-            let response = ureq::post(QWEN_CHAT_URL)
+            let agent = qwen_agent(budget);
+            let response = agent
+                .post(QWEN_CHAT_URL)
                 .header("Content-Type", "application/json")
                 .send_json(&payload)
                 .map_err(|error| error.to_string())?;
@@ -39,7 +42,6 @@ fn bounded_qwen_request(payload: Value, budget: Duration) -> Result<Value, Strin
         let _ = tx.send(result);
     });
 
-    let budget = budget.min(QWEN_REQUEST_BUDGET);
     rx.recv_timeout(budget)
         .map_err(|_| format!("Qwen request exceeded its {} second runtime budget.", budget.as_secs()))?
 }
