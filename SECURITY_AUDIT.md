@@ -55,10 +55,14 @@ Both defects were fixed on this branch.
 
 ## Residual risks / next hardening
 
-### MEDIUM — First contact still depends on operator trust
-A new peer is now shown with its SHA-256 public-key fingerprint and requires explicit "TRUST KEY" confirmation. This makes first-contact trust visible, but it is still TOFU: the operator should compare the fingerprint through an independent channel when identity authenticity matters.
+### MEDIUM — First contact can use TOFU or out-of-band provisioning
+A new peer is shown with its SHA-256 public-key fingerprint and normally requires explicit "TRUST KEY" confirmation. For deployments that need stronger initial trust, cybOS now supports out-of-band fingerprint provisioning through the CLI:
 
-Recommended next step: support out-of-band key provisioning for deployments that need stronger initial trust.
+`cybOS --identity` exports the local node ID and fingerprint, and
+`cybOS --provision-peer NODE_ID FINGERPRINT` stores the expected fingerprint.
+A subsequent LAN scan automatically pins the peer's authenticated public key only when the observed fingerprint matches the provisioned value; mismatches are rejected and logged.
+
+TOFU remains available for interactive local deployments where independent fingerprint verification is not required.
 
 ### MEDIUM — Local storage still exposes structural metadata
 On macOS, the Ed25519 private identity is protected by the system Keychain. CybChat history, memories, events and graph node/link payloads are AEAD-encrypted before SQLite persistence using a key derived from that Keychain-backed identity. Legacy plaintext rows are migrated on first access. Non-macOS builds still keep the legacy identity in SQLite, so their local-storage encryption is not yet a theft-resistant keystore boundary. Primary/relationship identifiers needed for graph integrity, row counts and SQLite file metadata remain observable.
