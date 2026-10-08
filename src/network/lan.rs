@@ -8,7 +8,9 @@
 use crate::config::APP_VERSION;
 use serde::{Deserialize, Serialize};
 use std::net::UdpSocket;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, TryRecvError};
+use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 use uuid::Uuid;
@@ -66,7 +68,7 @@ struct LanMessage {
     version: String,
 }
 
-pub(crate) fn spawn_listener(node_id: String, visible: bool) -> Receiver<LanEvent> {
+pub(crate) fn spawn_listener(node_id: String, visibility: Arc<AtomicBool>) -> Receiver<LanEvent> {
     let (tx, rx) = mpsc::channel();
 
     thread::spawn(move || {
@@ -99,7 +101,7 @@ pub(crate) fn spawn_listener(node_id: String, visible: bool) -> Receiver<LanEven
                     RESPONSE_PREFIX,
                     node_id,
                     APP_VERSION,
-                    if visible { "VISIBLE" } else { "HIDDEN" }
+                    if visibility.load(Ordering::Relaxed) { "VISIBLE" } else { "HIDDEN" }
                 );
 
                 let _ = socket.send_to(response.as_bytes(), peer_addr);
