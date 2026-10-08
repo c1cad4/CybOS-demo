@@ -42,6 +42,8 @@ pub(crate) fn merge(
         if let Some(existing) = peers.iter_mut().find(|x| {
             let id_suffix = x
                 .node_id
+                .strip_prefix("cyb-")
+                .unwrap_or(&x.node_id)
                 .replace('-', "")
                 .chars()
                 .take(8)

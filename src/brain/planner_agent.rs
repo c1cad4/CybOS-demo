@@ -240,6 +240,16 @@ TOOL RESULT:
             lan_delivery_status: String::new(),
             radar_visible: false,
             radar_visibility: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            ble_advertiser: None,
+            ble_advertiser_retry_after: std::time::Instant::now(),
+            ble_peers: Vec::new(),
+            ble_scan: None,
+            ble_status: "BLE · WORKER DISABLED".into(),
+            nearby_peers: Vec::new(),
+            noise_private_key: Vec::new(),
+            secure_listener: crate::network::secure_chat::Listener::empty(),
+            secure_send_task: None,
+            secure_status: "SECURE CHAT · WORKER CONTEXT".into(),
             remember_note: String::new(),
         })
     }

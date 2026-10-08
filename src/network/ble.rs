@@ -42,6 +42,7 @@ fn scan_blocking() -> Result<Vec<BlePeer>, String> {
     #[derive(Clone)]
     struct Delegate {
         peers: Arc<Mutex<Vec<BlePeer>>>,
+        state: Arc<Mutex<CBManagerState>>,
     }
 
     impl CentralManagerDelegate for Delegate {
@@ -49,7 +50,14 @@ fn scan_blocking() -> Result<Vec<BlePeer>, String> {
             Box::new(PeripheralDelegateImpl)
         }
 
-        fn did_update_state(&self, _central: CentralManager) {}
+        fn did_update_state(&self, central: CentralManager) {
+            if let Ok(mut state) = self.state.lock() {
+                *state = central.state();
+            }
+            if central.state() == CBManagerState::PoweredOn {
+                central.scan(None, true, None);
+            }
+        }
 
         fn did_discover(
             &self,
@@ -82,24 +90,25 @@ fn scan_blocking() -> Result<Vec<BlePeer>, String> {
     impl PeripheralDelegate for PeripheralDelegateImpl {}
 
     let peers = Arc::new(Mutex::new(Vec::new()));
-    let delegate = Delegate { peers: peers.clone() };
+    let manager_state = Arc::new(Mutex::new(CBManagerState::Unknown));
+    let delegate = Delegate {
+        peers: peers.clone(),
+        state: manager_state.clone(),
+    };
 
-    let manager = CentralManager::background(
+    CentralManager::background(
         Default::default(),
-        move |_| Box::new(delegate),
+        move |_executor| Box::new(delegate),
         false,
         None,
-        |central, _executor| {
-            central.scan(None, true, None);
-            central
-        },
+        |_central, _executor| {},
     );
 
     thread::sleep(SCAN_WINDOW);
-    manager.stop_scan();
 
-    if manager.state() != CBManagerState::PoweredOn {
-        return Err(format!("Bluetooth unavailable: {:?}", manager.state()));
+    let state = *manager_state.lock().unwrap();
+    if state != CBManagerState::PoweredOn {
+        return Err(format!("Bluetooth unavailable: {:?}", state));
     }
 
     peers.lock().map_err(|_| "BLE peer state poisoned".to_string()).map(|peers| peers.clone())

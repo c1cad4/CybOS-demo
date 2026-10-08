@@ -51,6 +51,14 @@ impl Listener {
     pub(crate) fn try_recv(&self) -> Result<SecureEvent, mpsc::TryRecvError> {
         self.events.try_recv()
     }
+
+    pub(crate) fn empty() -> Self {
+        let (_tx, events) = mpsc::channel();
+        Self {
+            events,
+            stop: Arc::new(AtomicBool::new(true)),
+        }
+    }
 }
 
 impl Drop for Listener {
@@ -59,7 +67,27 @@ impl Drop for Listener {
     }
 }
 
-pub(crate) fn spawn_listener(node_id: String, private_key: Vec<u8>) -> Receiver<SecureEvent> {
+pub(crate) fn load_or_create_static_key(store: &crate::store::Store) -> Result<Vec<u8>, String> {
+    if let Some(encoded) = store.get("noise_static_private_hex") {
+        if encoded.len() == 64 && encoded.chars().all(|c| c.is_ascii_hexdigit()) {
+            let mut key = Vec::with_capacity(32);
+            for i in (0..encoded.len()).step_by(2) {
+                key.push(u8::from_str_radix(&encoded[i..i + 2], 16).map_err(|e| e.to_string())?);
+            }
+            return Ok(key);
+        }
+    }
+
+    let params = PATTERN.parse().map_err(|e| format!("noise params: {e}"))?;
+    let keypair = Builder::new(params)
+        .generate_keypair()
+        .map_err(|e| format!("noise key generation: {e}"))?;
+    let encoded = keypair.private.iter().map(|b| format!("{b:02x}")).collect::<String>();
+    store.set("noise_static_private_hex", &encoded);
+    Ok(keypair.private)
+}
+
+pub(crate) fn spawn_listener(node_id: String, private_key: Vec<u8>) -> Listener {
     let (tx, rx) = mpsc::channel();
     let stop = Arc::new(AtomicBool::new(false));
     let stop_thread = Arc::clone(&stop);
@@ -103,9 +131,7 @@ pub(crate) fn spawn_listener(node_id: String, private_key: Vec<u8>) -> Receiver<
             }
         }
     });
-    // Keep the stop flag alive in the listener thread; the current CybOs
-    // contract exposes only the event receiver.
-    rx
+    Listener { events: rx, stop }
 }
 
 pub(crate) fn send(
@@ -299,7 +325,7 @@ fn short_hash(bytes: &[u8]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{decode_hex, encode_hex, public_fingerprint};
+    use super::{decode_hex, encode_hex, short_hash};
 
     #[test]
     fn hex_roundtrip() {
@@ -310,6 +336,6 @@ mod tests {
     #[test]
     fn fingerprint_is_stable_for_public_key() {
         let key = [7_u8; 32];
-        assert_eq!(public_fingerprint(&key), public_fingerprint(&key));
+        assert_eq!(short_hash(&key), short_hash(&key));
     }
 }

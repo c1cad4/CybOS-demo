@@ -75,7 +75,7 @@ pub(crate) struct CybOs {
     pub(crate) ble_status: String,
     pub(crate) nearby_peers: Vec<crate::network::proximity::NearbyPeer>,
     pub(crate) noise_private_key: Vec<u8>,
-    pub(crate) secure_events: std::sync::mpsc::Receiver<crate::network::secure_chat::SecureEvent>,
+    pub(crate) secure_listener: crate::network::secure_chat::Listener,
     pub(crate) secure_send_task: Option<std::sync::mpsc::Receiver<crate::network::secure_chat::SecureSendStatus>>,
     pub(crate) secure_status: String,
 
@@ -107,7 +107,7 @@ impl Default for CybOs {
         let lan_events = crate::network::lan::spawn_listener(node_id.clone(), radar_visibility.clone());
         let noise_private_key = crate::network::secure_chat::load_or_create_static_key(&store)
             .unwrap_or_default();
-        let secure_events = crate::network::secure_chat::spawn_listener(
+        let secure_listener = crate::network::secure_chat::spawn_listener(
             node_id.clone(),
             noise_private_key.clone(),
         );
@@ -167,7 +167,7 @@ impl Default for CybOs {
             ble_status: "BLE · IDLE".into(),
             nearby_peers: Vec::new(),
             noise_private_key,
-            secure_events,
+            secure_listener,
             secure_send_task: None,
             secure_status: "SECURE CHAT · READY".into(),
 
@@ -191,7 +191,7 @@ impl CybOs {
 impl CybOs {
     pub(crate) fn poll_secure_events(&mut self) {
         loop {
-            let event = match self.secure_events.try_recv() {
+            let event = match self.secure_listener.try_recv() {
                 Ok(event) => event,
                 Err(std::sync::mpsc::TryRecvError::Empty) => break,
                 Err(std::sync::mpsc::TryRecvError::Disconnected) => {
@@ -361,7 +361,7 @@ impl CybOs {
                     self.runtime.set_status("RADAR", "READY");
                 }
                 Some(false) => {
-                    self.ble_status = "BLE · ADVERTISER EXITED · RETRYING";
+                    self.ble_status = "BLE · ADVERTISER EXITED · RETRYING".into();
                     self.runtime.set_status("RADAR", "ERROR");
                     self.ble_advertiser_retry_after =
                         Instant::now() + std::time::Duration::from_secs(5);
