@@ -15,7 +15,14 @@ pub(crate) const QWEN_CHAT_URL: &str =
 pub(crate) const QWEN_MODEL: &str =
     "mlx-community/Qwen3.5-9B-MLX-4bit";
 
-const QWEN_REQUEST_BUDGET: Duration = Duration::from_secs(30);\n\nfn qwen_agent(budget: Duration) -> ureq::Agent {\n    ureq::Agent::config_builder()\n        .timeout_global(Some(budget))\n        .build()\n        .into()\n}
+const QWEN_REQUEST_BUDGET: Duration = Duration::from_secs(30);
+
+fn qwen_agent(budget: Duration) -> ureq::Agent {
+    ureq::Agent::config_builder()
+        .timeout_global(Some(budget))
+        .build()
+        .into()
+}
 
 fn bounded_qwen_request(payload: Value, budget: Duration) -> Result<Value, String> {
     let budget = budget.min(QWEN_REQUEST_BUDGET);
