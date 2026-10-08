@@ -1,5 +1,6 @@
 use crate::CybOs;
 use super::web_urls;
+use std::time::Instant;
 
 impl CybOs {
 
@@ -10,11 +11,27 @@ impl CybOs {
         super::web_search::web_search(query)
     }
 
+    pub(crate) fn tool_web_search_with_deadline(&self, query: &str, deadline: Instant) -> String {
+        super::web_search::web_search_with_deadline(query, deadline)
+    }
+
     pub(crate) fn tool_web_fetch(&self, url: &str) -> String {
         super::web_fetch::web_fetch(url)
     }
 
+    pub(crate) fn tool_web_fetch_with_deadline(&self, url: &str, deadline: Instant) -> String {
+        super::web_fetch::web_fetch_with_deadline(url, deadline)
+    }
+
     pub(crate) fn web_answer_from_source(&self, user_request: &str, source_result: &str) -> String {
+        self.web_answer_from_source_with_deadline(
+            user_request,
+            source_result,
+            Instant::now() + std::time::Duration::from_secs(30),
+        )
+    }
+
+    pub(crate) fn web_answer_from_source_with_deadline(&self, user_request: &str, source_result: &str, deadline: Instant) -> String {
         let system_prompt = r#"
 You are RobotCYB, the answer engine of cybOS.
 
@@ -42,7 +59,7 @@ SOURCE-GROUNDED RULES:
 Return only the final user-facing answer.
 "#;
 
-        let value = match self.qwen_chat_json_with_temperature(
+        let value = match self.qwen_chat_json_with_deadline(
             system_prompt,
             &format!(
                 "USER REQUEST:\n{}\n\nWEB SOURCE:\n{}",
@@ -51,6 +68,7 @@ Return only the final user-facing answer.
             ),
             350,
             0.0,
+            deadline,
         ) {
             Ok(value) => value,
             Err(error) => {
