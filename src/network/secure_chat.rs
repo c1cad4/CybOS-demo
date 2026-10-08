@@ -364,7 +364,10 @@ fn short_hash(bytes: &[u8]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{decode_hex, encode_hex, short_hash};
+    use super::{decode_hex, encode_hex, short_hash, spawn_listener, send, SecureSendStatus, SecureEvent, PATTERN};
+    use snow::Builder;
+    use std::thread;
+    use std::time::{Duration, Instant};
 
     #[test]
     fn hex_roundtrip() {
@@ -376,5 +379,44 @@ mod tests {
     fn fingerprint_is_stable_for_public_key() {
         let key = [7_u8; 32];
         assert_eq!(short_hash(&key), short_hash(&key));
+    }
+
+    #[test]
+    fn secure_loopback_delivery_uses_noise_and_ack() {
+        let params = PATTERN.parse().expect("noise params");
+        let sender = Builder::new(params.clone()).generate_keypair().expect("sender keypair");
+        let receiver = Builder::new(params).generate_keypair().expect("receiver keypair");
+
+        let listener = spawn_listener("node-b".to_string(), receiver.private.clone());
+        thread::sleep(Duration::from_millis(100));
+
+        let status = send("node-a", "node-b", "127.0.0.1", &sender.private, "loopback secure test");
+
+        let message_id = match status {
+            SecureSendStatus::Delivered { message_id, peer_id } => {
+                assert_eq!(peer_id, "node-b");
+                message_id
+            }
+            other => panic!("expected delivered secure message, got {other:?}"),
+        };
+
+        let deadline = Instant::now() + Duration::from_secs(2);
+        loop {
+            match listener.try_recv() {
+                Ok(SecureEvent::Received { message_id: received_id, node_id, message, .. }) => {
+                    assert_eq!(received_id, message_id);
+                    assert_eq!(node_id, "node-a");
+                    assert_eq!(message, "loopback secure test");
+                    break;
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) if Instant::now() < deadline => {
+                    thread::sleep(Duration::from_millis(20));
+                }
+                Err(error) => panic!("secure listener did not receive message: {error:?}"),
+                _ => panic!("secure listener timed out"),
+            }
+        }
+
+        drop(listener);
     }
 }
