@@ -72,12 +72,12 @@ impl Default for CybOs {
         if chat.is_empty() {
             chat.push((
                 "ROBOTCYB".into(),
-                "CicadaFarm is online. Your local cybOS node is ready.".into(),
+                "Local cybOS node initialized. Qwen availability is detected separately.".into(),
                 false,
             ));
             store.add_chat_message(
                 "ROBOTCYB",
-                "CicadaFarm is online. Your local cybOS node is ready.",
+                "Local cybOS node initialized. Qwen availability is detected separately.",
                 false,
             );
         }
@@ -89,7 +89,7 @@ impl Default for CybOs {
             page: Page::Dashboard,
             search: String::new(),
             robot_input: String::new(),
-            robot_output: String::from("ROBOTCYB READY\n\nLOCAL AGENT ONLINE\nAwaiting request..."),
+            robot_output: String::from("ROBOTCYB READY\n\nLOCAL AGENT · AWAITING QWEN\nAwaiting request..."),
             chat_input: String::new(),
             chat_output: String::from("CYBCHAT READY\n\nLOCAL-FIRST CHANNEL\nAwaiting message..."),
             chat,
@@ -114,7 +114,7 @@ impl Default for CybOs {
             node_id,
             status: "LOCAL-FIRST · READY".into(),
             qwen_child: None,
-            qwen_status: "QWEN · STARTING".into(),
+            qwen_status: "QWEN · OFFLINE".into(),
             qwen_retry_after: Instant::now(),
             toast: None,
             camera_zone: 0,
