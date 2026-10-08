@@ -53,7 +53,7 @@ impl RuntimeCell {
         if self.last_run > self.budget {
             self.status = "OVER_BUDGET";
             self.overruns = self.overruns.saturating_add(1);
-        } else {
+        } else if !matches!(self.status, "RUNNING" | "ERROR") {
             self.status = "READY";
         }
     }
