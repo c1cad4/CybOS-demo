@@ -23,6 +23,9 @@ jobs:
       - name: Cargo test
         run: cargo test
 
+      - name: Validate macOS packaging script
+        run: bash -n scripts/package_macos.sh
+
       - name: Diff whitespace check
         run: git diff --check
 
