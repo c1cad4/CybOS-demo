@@ -547,13 +547,13 @@ fn spawn_listener_on_addr_with_stop(
         let mut onion_sessions: HashMap<String, OnionHopSession> = HashMap::new();
         let mut onion_cache = onion::OnionRelayCache::new();
         let exit_on_onion_packet =
-            cfg!(debug_assertions)
+            cfg!(any(debug_assertions, feature = "qa"))
                 && std::env::var_os("CYBOS_HEADLESS_TEST_EXIT_ON_ONION_PACKET").is_some();
         let exit_on_onion_bind =
-            cfg!(debug_assertions)
+            cfg!(any(debug_assertions, feature = "qa"))
                 && std::env::var_os("CYBOS_HEADLESS_TEST_EXIT_ON_ONION_BIND").is_some();
         let mut drop_first_onion_packet =
-            cfg!(debug_assertions)
+            cfg!(any(debug_assertions, feature = "qa"))
                 && std::env::var_os("CYBOS_HEADLESS_TEST_DROP_ONION_PACKET").is_some();
 
         loop {
