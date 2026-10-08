@@ -1,15 +1,22 @@
 #!/bin/bash
-set -e
-cd "$(dirname "$0")"
-APP="$PWD/cybOS.app"
-BIN="$PWD/target/release/cybos"
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")" && pwd)"
+cd "$ROOT"
+
+APP="$ROOT/cybOS.app"
+BIN="$ROOT/target/release/cybos"
+
+# Prefer an existing Cargo installation, then the standard rustup location.
 if ! command -v cargo >/dev/null 2>&1; then
-  echo "Rust/Cargo is not installed. Installing rustup..."
-  if ! command -v curl >/dev/null 2>&1; then echo "curl is required."; exit 1; fi
-  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-  source "$HOME/.cargo/env"
+  if [ -x "$HOME/.cargo/bin/cargo" ]; then
+    export PATH="$HOME/.cargo/bin:$PATH"
+  else
+    echo "Rust/Cargo is not installed."
+    echo "Install Rust from https://rustup.rs/ and run this launcher again."
+    exit 1
+  fi
 fi
-source "$HOME/.cargo/env" 2>/dev/null || true
 
 need_build=0
 if [ ! -x "$BIN" ]; then
@@ -19,15 +26,23 @@ elif find src -type f -name '*.rs' -newer "$BIN" -print -quit | grep -q .; then
 elif [ "Cargo.toml" -nt "$BIN" ] || [ "Cargo.lock" -nt "$BIN" ]; then
   need_build=1
 fi
+
 if [ "$need_build" = "1" ]; then
-  echo "Building cybOS..."
+  echo "Building cybOS release..."
   cargo build --release
+fi
+
+if [ ! -x "$BIN" ]; then
+  echo "Release binary was not produced: $BIN"
+  exit 1
 fi
 
 echo "Creating cybOS.app..."
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/cybOS"
+chmod +x "$APP/Contents/MacOS/cybOS"
+
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -43,5 +58,10 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <key>NSHighResolutionCapable</key><true/>
 </dict></plist>
 PLIST
+
+# Finder may quarantine files downloaded from the internet. Clear quarantine
+# only for the app we just built; this does not disable Gatekeeper globally.
+xattr -dr com.apple.quarantine "$APP" 2>/dev/null || true
+
+echo "Launching cybOS..."
 open "$APP"
-echo "cybOS launched. You can close this Terminal window."
