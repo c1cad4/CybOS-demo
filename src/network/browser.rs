@@ -309,10 +309,10 @@ fn fetch_document(
 
             let mut document = parse_document(resolved, &body)?;
             document.resolved_url = fallback.clone();
-            document.route = match resolved.route {
+            document.route = match &resolved.route {
                 BrowserRoute::IpfsLocal => BrowserRoute::IpfsGateway,
                 BrowserRoute::IpnsLocal => BrowserRoute::IpnsGateway,
-                other => other,
+                other => other.clone(),
             };
             Ok(document)
         }
