@@ -8,6 +8,7 @@ mod ai;
 mod assets;
 mod brain;
 mod config;
+mod cyblaunch;
 mod cyblex;
 mod cybdex;
 mod graph;
