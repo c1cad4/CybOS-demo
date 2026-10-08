@@ -284,6 +284,7 @@ TOOL RESULT:
             node_id: snapshot.node_id,
             runtime: crate::runtime::Runtime::new(),
             status: snapshot.status,
+            database_integrity: "WORKER CONTEXT".into(),
             qwen_child: None,
             qwen_status: snapshot.qwen_status,
             qwen_retry_after: std::time::Instant::now(),
