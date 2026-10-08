@@ -132,7 +132,8 @@ impl CybOs {
                                 "⌂ LOCAL · READY\n⟶ DIRECT LAN · {} PEER(S)\n◈ TARGET · {}\n✓ DELIVERY ACK · {}\n◌ BLE · RSSI PROXIMITY\n🔒 SECURE CHAT · {}\n↔ P2P · ADAPTER ONLY\n∴ NOSTR · ADAPTER ONLY",
                                 self.lan_peers.len(),
                                 target,
-                                self.lan_delivery_status
+                                self.lan_delivery_status,
+                                self.secure_status
                             ))
                             .size(9.0)
                             .color(Color32::from_rgb(150, 215, 180)),
