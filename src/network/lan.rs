@@ -1235,6 +1235,11 @@ fn spawn_process_test_node(
 
     let mut command = Command::new(binary);
     command
+        .env_remove("CYBOS_HEADLESS_ONION_TEST")
+        .env_remove("CYBOS_HEADLESS_ONION_PROCESS_TEST")
+        .env_remove("CYBOS_HEADLESS_TEST_NODE")
+        .env_remove("CYBOS_HEADLESS_TEST_EXIT_ON_ONION_PACKET")
+        .env_remove("CYBOS_HEADLESS_TEST_EXIT_ON_ONION_BIND")
         .env("CYBOS_HEADLESS_TEST_NODE", "1")
         .env("CYBOS_HEADLESS_TEST_PORT", port.to_string())
         .env("CYBOS_HEADLESS_TEST_ACK", "1")
