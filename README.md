@@ -69,7 +69,13 @@ For the normal native UI on macOS:
 ./START_cybOS.command
 ```
 
-For the routed transport smoke test, use the explicit self-test command:
+For the full routed transport acceptance test:
+
+```bash
+cargo run -- --self-test all
+```
+
+For the basic in-process routed smoke test only:
 
 ```bash
 cargo run -- --self-test onion
