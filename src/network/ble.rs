@@ -84,9 +84,15 @@ fn scan_blocking() -> Result<Vec<BlePeer>, String> {
     let peers = Arc::new(Mutex::new(Vec::new()));
     let delegate = Delegate { peers: peers.clone() };
 
-    let manager = CentralManager::background(
+    let manager_state = std::sync::Arc::new(std::sync::Mutex::new(CBManagerState::Unknown));
+    let state_ref = manager_state.clone();
+
+    CentralManager::background(
         Default::default(),
-        move |_| Box::new(delegate),
+        move |central| {
+            *state_ref.lock().unwrap() = central.state();
+            Box::new(delegate)
+        },
         false,
         None,
         |central, _executor| {
@@ -95,10 +101,10 @@ fn scan_blocking() -> Result<Vec<BlePeer>, String> {
     );
 
     thread::sleep(SCAN_WINDOW);
-    manager.stop_scan();
 
-    if manager.state() != CBManagerState::PoweredOn {
-        return Err(format!("Bluetooth unavailable: {:?}", manager.state()));
+    let state = *manager_state.lock().unwrap();
+    if state != CBManagerState::PoweredOn {
+        return Err(format!("Bluetooth unavailable: {:?}", state));
     }
 
     peers.lock().map_err(|_| "BLE peer state poisoned".to_string()).map(|peers| peers.clone())
