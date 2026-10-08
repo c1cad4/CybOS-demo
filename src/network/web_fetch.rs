@@ -7,7 +7,7 @@ use std::time::Duration;
 
 const WEB_BUDGET: Duration = Duration::from_secs(8);
 
-fn bounded_fetch<F>(work: F) -> String
+fn bounded_fetch<F>(work: F, budget: Duration) -> String
 where
     F: FnOnce() -> String + Send + 'static,
 {
@@ -17,7 +17,7 @@ where
         let _ = tx.send(work());
     });
 
-    match rx.recv_timeout(WEB_BUDGET) {
+    match rx.recv_timeout(budget) {
         Ok(result) => result,
         Err(_) => "Web fetch timed out after 8 seconds; no unverified content was returned.".into(),
     }
@@ -31,6 +31,18 @@ fn web_agent() -> ureq::Agent {
 }
 
 pub(crate) fn web_fetch(url: &str) -> String {
+    bounded_web_fetch(url, WEB_BUDGET)
+}
+
+pub(crate) fn web_fetch_with_deadline(url: &str, deadline: std::time::Instant) -> String {
+    let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+    if remaining.is_zero() {
+        return "Web fetch deadline expired before request start.".into();
+    }
+    bounded_web_fetch(url, remaining)
+}
+
+fn bounded_web_fetch(url: &str, budget: Duration) -> String {
     let url = url.trim().to_string();
 
     if !(url.starts_with("http://") || url.starts_with("https://")) {
@@ -78,5 +90,5 @@ URL: {}
 
 SOURCE TEXT:
 {}", url, excerpt)
-    })
+    }, budget)
 }
