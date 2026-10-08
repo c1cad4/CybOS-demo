@@ -45,5 +45,8 @@ jobs:
       - name: macOS release build
         run: cargo build --release
 
+      - name: Compile CoreBluetooth advertiser
+        run: swiftc macos/CybOSBLEAdvertiser.swift -o /tmp/cybOS-ble-advertiser -framework CoreBluetooth
+
       - name: Diff whitespace check
         run: git diff --check
