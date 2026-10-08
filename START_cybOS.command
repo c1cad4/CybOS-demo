@@ -56,6 +56,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>LSMinimumSystemVersion</key><string>11.0</string>
 <key>NSHighResolutionCapable</key><true/>
+<key>NSBluetoothAlwaysUsageDescription</key><string>cybOS uses Bluetooth Low Energy for opt-in CYB RADAR proximity discovery.</string>
 </dict></plist>
 PLIST
 
