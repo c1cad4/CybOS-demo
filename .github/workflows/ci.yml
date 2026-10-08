@@ -39,17 +39,34 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Install universal macOS targets
+        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
+
       - name: Cargo check
         run: cargo check
 
       - name: Cargo test
         run: cargo test
 
-      - name: macOS release build
-        run: cargo build --release
+      - name: macOS ARM64 release build
+        run: cargo build --release --target aarch64-apple-darwin
 
-      - name: Compile CoreBluetooth advertiser
-        run: swiftc macos/CybOSBLEAdvertiser.swift -o /tmp/cybOS-ble-advertiser -framework CoreBluetooth
+      - name: macOS Intel release build
+        run: cargo build --release --target x86_64-apple-darwin
+
+      - name: Compile CoreBluetooth advertiser ARM64
+        run: swiftc -arch arm64 macos/CybOSBLEAdvertiser.swift -o /tmp/cybOS-ble-arm64 -framework CoreBluetooth
+
+      - name: Compile CoreBluetooth advertiser Intel
+        run: swiftc -arch x86_64 macos/CybOSBLEAdvertiser.swift -o /tmp/cybOS-ble-x86_64 -framework CoreBluetooth
+
+      - name: Verify universal packaging
+        run: |
+          set -euo pipefail
+          lipo -create target/aarch64-apple-darwin/release/cybos target/x86_64-apple-darwin/release/cybos -output /tmp/cybos-universal
+          lipo -create /tmp/cybOS-ble-arm64 /tmp/cybOS-ble-x86_64 -output /tmp/cybOS-ble-universal
+          lipo -info /tmp/cybos-universal
+          lipo -info /tmp/cybOS-ble-universal
 
       - name: Diff whitespace check
         run: git diff --check
