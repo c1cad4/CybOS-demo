@@ -3,6 +3,9 @@
 use crate::CybOs;
 
 use serde_json::{json, Value};
+use std::sync::mpsc;
+use std::thread;
+use std::time::Duration;
 
 pub(crate) const QWEN_ADDRESS: &str = "127.0.0.1:8080";
 
@@ -11,6 +14,34 @@ pub(crate) const QWEN_CHAT_URL: &str =
 
 pub(crate) const QWEN_MODEL: &str =
     "mlx-community/Qwen3.5-9B-MLX-4bit";
+
+const QWEN_REQUEST_BUDGET: Duration = Duration::from_secs(30);
+
+fn bounded_qwen_request(payload: Value) -> Result<Value, String> {
+    let (tx, rx) = mpsc::channel();
+
+    thread::spawn(move || {
+        let result = (|| {
+            let response = ureq::post(QWEN_CHAT_URL)
+                .header("Content-Type", "application/json")
+                .send_json(&payload)
+                .map_err(|error| error.to_string())?;
+
+            let body = response
+                .into_body()
+                .read_to_string()
+                .map_err(|error| error.to_string())?;
+
+            serde_json::from_str::<Value>(&body)
+                .map_err(|error| error.to_string())
+        })();
+
+        let _ = tx.send(result);
+    });
+
+    rx.recv_timeout(QWEN_REQUEST_BUDGET)
+        .map_err(|_| "Qwen request exceeded the 30 second runtime budget.".to_string())?
+}
 
 impl CybOs {
     pub(crate) fn qwen_chat_json(
@@ -54,17 +85,6 @@ impl CybOs {
             }
         });
 
-        let response = ureq::post(QWEN_CHAT_URL)
-            .header("Content-Type", "application/json")
-            .send_json(&payload)
-            .map_err(|error| error.to_string())?;
-
-        let body = response
-            .into_body()
-            .read_to_string()
-            .map_err(|error| error.to_string())?;
-
-        serde_json::from_str(&body)
-            .map_err(|error| error.to_string())
+        bounded_qwen_request(payload)
     }
 }
