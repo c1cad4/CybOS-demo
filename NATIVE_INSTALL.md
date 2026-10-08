@@ -67,6 +67,10 @@ These are separate product layers, not prerequisites for the current desktop cor
 
 ## Public release path
 
+The current public beta is **v0.7.1**:
+
+[Download cybOS v0.7.1 for macOS](https://github.com/c1cad4/cybOS/releases/download/v0.7.1/cybOS-0.7.1-macOS.zip)
+
 Tagging the repository with a `v*` tag triggers `.github/workflows/release-macos.yml`, which builds and publishes the macOS ZIP as a GitHub Release asset.
 
 For a smooth end-user macOS installation experience, the remaining distribution step is Developer ID signing + Apple notarization. The repository does not contain Apple signing credentials, so that step cannot be honestly marked complete from CI alone.
