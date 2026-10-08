@@ -3,6 +3,7 @@ use crate::CybOs;
 use eframe::egui;
 use egui::{Color32, RichText};
 use std::process::Command;
+use std::fs;
 
 impl CybOs {
     pub(crate) fn system(&mut self, ui: &mut egui::Ui) {
@@ -59,7 +60,55 @@ impl CybOs {
             });
         }
         ui.add_space(10.0);
+
+        let integrity = self.store.database_integrity();
         ui.horizontal(|ui| {
+            ui.label(
+                RichText::new(format!("DATABASE INTEGRITY · {}", integrity))
+                    .size(10.0)
+                    .color(if integrity == "ok" {
+                        neon
+                    } else {
+                        Color32::from_rgb(255, 150, 120)
+                    }),
+            );
+
+            if ui.button("EXPORT STATE").clicked() {
+                let timestamp = chrono::Local::now().format("%Y%m%d-%H%M%S");
+                let path = dirs_fallback_for_export()
+                    .join(format!("cybOS-state-{timestamp}.json"));
+
+                let payload = serde_json::json!({
+                    "version": APP_VERSION,
+                    "node_id": self.node_id,
+                    "status": self.status,
+                    "qwen_status": self.qwen_status,
+                    "runtime": self.runtime.cells.iter().map(|cell| serde_json::json!({
+                        "id": cell.id,
+                        "status": cell.status,
+                        "budget_ms": cell.budget.as_millis(),
+                        "last_run_ms": cell.last_run.as_millis(),
+                        "runs": cell.runs,
+                        "overruns": cell.overruns,
+                    })).collect::<Vec<_>>(),
+                    "events": self.store.exportable_events(),
+                    "memories": self.store.exportable_memories(),
+                    "graph_nodes": self.nodes,
+                    "graph_links": self.links,
+                    "chat": self.store.exportable_chat(),
+                    "note": "Private Noise keys and peer TOFU keys are intentionally excluded."
+                });
+
+                match serde_json::to_string_pretty(&payload)
+                    .map_err(|error| error.to_string())
+                    .and_then(|content| {
+                        fs::write(&path, content).map_err(|error| error.to_string())
+                    }) {
+                    Ok(()) => self.notify(format!("STATE EXPORTED: {}", path.display())),
+                    Err(error) => self.notify(format!("STATE EXPORT FAILED: {}", error)),
+                }
+            }
+
             if ui.button("COPY NODE ID").clicked() {
                 ui.ctx().copy_text(self.node_id.clone());
                 self.notify("NODE ID COPIED");
@@ -76,4 +125,11 @@ impl CybOs {
             }
         });
     }
+}
+
+fn dirs_fallback_for_export() -> std::path::PathBuf {
+    std::env::var("HOME")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| std::path::PathBuf::from("."))
+        .join("Desktop")
 }
