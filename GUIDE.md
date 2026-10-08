@@ -110,7 +110,10 @@ LAN discovery
 ## 9. Multi-hop onion transport
 
 The routed CybChat path uses a real UDP onion transport with a separate anonymous
-X25519 session for each relay hop.
+X25519 session for each relay hop. Before a relay allocates that session state,
+the initiator must answer a signed stateless cookie challenge bound to its UDP
+endpoint and ephemeral key; this prevents unauthenticated UDP traffic from
+consuming relay session slots.
 
 The persistent node identity remains Ed25519. It is used to authenticate a relay's
 ephemeral onion session reply, but the source node identity is deliberately not
@@ -182,8 +185,11 @@ The live loopback harness currently exercises:
 The current harness also exercises a full live source → relay-a → relay-b →
 destination route with reverse ACK delivery, route rebuild after an unavailable
 relay, and duplicate-delivery ACK recovery, plus a standalone headless onion
-smoke test. Process-isolated active-relay crash, expiry-refresh and malformed
-packet fault injection remain separate hardening milestones.
+smoke test. Process-isolated active-relay crash, controlled mid-route packet
+drop, route-bind crash/expiry validation, and malformed packet fault injection
+are also exercised. Onion session admission now uses a signed stateless cookie
+challenge so the relay does not allocate session state until the initiator proves
+control of the same UDP endpoint.
 
 ## 12. Operational status
 
