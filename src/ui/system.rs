@@ -61,17 +61,22 @@ impl CybOs {
         }
         ui.add_space(10.0);
 
-        let integrity = self.store.database_integrity();
         ui.horizontal(|ui| {
+            let integrity_ok = self.database_integrity == "ok";
             ui.label(
-                RichText::new(format!("DATABASE INTEGRITY · {}", integrity))
+                RichText::new(format!("DATABASE INTEGRITY · {}", self.database_integrity))
                     .size(10.0)
-                    .color(if integrity == "ok" {
+                    .color(if integrity_ok {
                         neon
                     } else {
                         Color32::from_rgb(255, 150, 120)
                     }),
             );
+
+            if ui.button("CHECK DATABASE").clicked() {
+                self.database_integrity = self.store.database_integrity();
+                self.notify(format!("DATABASE CHECK: {}", self.database_integrity));
+            }
 
             if ui.button("EXPORT STATE").clicked() {
                 let timestamp = chrono::Local::now().format("%Y%m%d-%H%M%S");
