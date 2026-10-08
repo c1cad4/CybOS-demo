@@ -41,12 +41,18 @@ pub(crate) struct CybOs {
 
     // Local identity and runtime
     pub(crate) node_id: String,
+    pub(crate) identity: crate::identity::NodeIdentity,
     pub(crate) status: String,
     pub(crate) qwen_child: Option<Child>,
     pub(crate) qwen_status: String,
     pub(crate) toast: Option<(String, Instant)>,
     pub(crate) camera_zone: usize,
     pub(crate) search_focus: bool,
+
+    // CicadaFarm Digital Twin UI state
+    pub(crate) farm_season: usize,
+    pub(crate) farm_panel: Option<String>,
+    pub(crate) farm_knowledge: String,
 
     // Directed LAN communication
     pub(crate) last_scan: Option<Instant>,
@@ -56,6 +62,7 @@ pub(crate) struct CybOs {
     pub(crate) lan_send_task:
         Option<std::sync::mpsc::Receiver<crate::network::lan::LanSendStatus>>,
     pub(crate) lan_target: Option<String>,
+    pub(crate) lan_onion_relays: Vec<String>,
     pub(crate) lan_delivery_status: String,
 
     pub(crate) remember_note: String,
@@ -63,8 +70,15 @@ pub(crate) struct CybOs {
 
 impl Default for CybOs {
     fn default() -> Self {
-        let store = crate::runtime::open_store();
-        let node_id = crate::runtime::load_or_create_node_id(&store);
+        let mut store = crate::runtime::open_store();
+        let identity = crate::identity::NodeIdentity::load_or_create(&store);
+
+        let local_storage_key = crate::crypto::local_storage_key(identity.pkcs8());
+        store.configure_local_storage_key(local_storage_key);
+        #[cfg(target_os = "macos")]
+        store.configure_chat_key(local_storage_key);
+
+        let node_id = crate::runtime::load_or_create_node_id(&store, &identity);
         let events = crate::runtime::load_events(&store);
 
         let mut chat = store.chat_messages();
@@ -81,7 +95,9 @@ impl Default for CybOs {
             );
         }
 
-        let lan_events = crate::network::lan::spawn_listener(node_id.clone());
+        let lan_events = crate::network::lan::spawn_listener(node_id.clone(), identity.clone());
+        let farm_season = store.get("cicadafarm_season").and_then(|v| v.parse::<usize>().ok()).unwrap_or(0).min(3);
+        let farm_knowledge = store.get("cicadafarm_knowledge").unwrap_or_default();
 
         let mut app = Self {
             store,
@@ -111,12 +127,16 @@ impl Default for CybOs {
             battery: 100.0,
 
             node_id,
+            identity,
             status: "LOCAL-FIRST · READY".into(),
             qwen_child: None,
             qwen_status: "QWEN · STARTING".into(),
             toast: None,
             camera_zone: 0,
             search_focus: false,
+            farm_season,
+            farm_panel: None,
+            farm_knowledge,
 
             last_scan: None,
             lan_peers: Vec::new(),
@@ -124,6 +144,7 @@ impl Default for CybOs {
             lan_events,
             lan_send_task: None,
             lan_target: None,
+            lan_onion_relays: Vec::new(),
             lan_delivery_status: "NO DIRECT LAN MESSAGE YET".into(),
 
             remember_note: String::new(),

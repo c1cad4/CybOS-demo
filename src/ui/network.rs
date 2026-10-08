@@ -169,7 +169,7 @@ impl CybOs {
         for (name, status, live) in [
             ("LOCAL LOOPBACK", "READY", true),
             ("LAN DISCOVERY", "ACTIVE · UDP BROADCAST · DISCOVERY ONLY", true),
-            ("LAN CHAT", "DIRECT UDP · DELIVERY ACK · PLAINTEXT", true),
+            ("LAN CHAT", "DIRECT UDP · DELIVERY ACK · ENCRYPTED WIRE", true),
             ("BLUETOOTH MESH", "ADAPTER ONLY · NOT CONNECTED", false),
             ("P2P", "ADAPTER ONLY · NOT CONNECTED", false),
             ("NOSTR FALLBACK", "AVAILABLE · NOT CONNECTED", false),

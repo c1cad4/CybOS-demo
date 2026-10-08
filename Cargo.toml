@@ -3,9 +3,15 @@ name = "cybos"
 version = "0.7.0"
 edition = "2024"
 
+[features]
+default = []
+qa = []
+
 [dependencies]
+base64 = "0.23"
 eframe = "0.36.2"
 egui = "0.36.2"
+ring = "0.17"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 chrono = { version = "0.4", features = ["clock", "serde"] }
@@ -25,3 +31,6 @@ icon = []
 version = "0.7.0"
 short_description = "CicadaFarm + RobotCYB + CybChat native desktop OS"
 long_description = "Native local-first cybOS combining RobotCYB, CicadaFarm, CybChat, Brain, Knowledge Graph and Assets."
+
+[target.'cfg(target_os = "macos")'.dependencies]
+security-framework = "3.7"

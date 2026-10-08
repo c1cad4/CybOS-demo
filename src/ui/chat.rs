@@ -10,6 +10,18 @@ impl CybOs {
         let neon = Color32::from_rgb(0, 255, 150);
         let dim = Color32::from_rgb(55, 145, 105);
         let panel = Color32::from_rgb(5, 18, 13);
+        let onion_relay_candidates = self
+            .lan_peers
+            .iter()
+            .filter(|peer| {
+                peer.trusted
+                    && self.lan_target.as_deref() != Some(peer.node_id.as_str())
+            })
+            .count()
+            .min(crate::network::onion::MAX_ONION_HOPS);
+        let onion_relay_count = self.lan_onion_relays.len().min(
+            crate::network::onion::MAX_ONION_HOPS,
+        );
 
         ui.vertical(|ui| {
             ui.label(RichText::new("∴  CYBCHAT").size(24.0).strong().color(neon));
@@ -64,7 +76,11 @@ impl CybOs {
                                 let selected = self.lan_target.as_deref() == Some(peer.node_id.as_str());
 
                                 ui.horizontal(|ui| {
-                                    ui.label(RichText::new("◈").size(16.0).color(neon));
+                                    ui.label(
+                                        RichText::new(if peer.trusted { "◈" } else { "◇" })
+                                            .size(16.0)
+                                            .color(neon),
+                                    );
 
                                     ui.vertical(|ui| {
                                         ui.label(
@@ -83,23 +99,59 @@ impl CybOs {
                                             .size(8.0)
                                             .color(dim),
                                         );
+
+                                        let fingerprint = peer
+                                            .fingerprint
+                                            .as_deref()
+                                            .unwrap_or("UNKNOWN");
+                                        let fingerprint_short = if fingerprint.len() > 24 {
+                                            format!("{}…", &fingerprint[..24])
+                                        } else {
+                                            fingerprint.to_string()
+                                        };
+                                        ui.label(
+                                            RichText::new(format!(
+                                                "{} · {}",
+                                                if peer.trusted { "TRUSTED" } else { "NEW KEY" },
+                                                fingerprint_short
+                                            ))
+                                            .size(7.5)
+                                            .color(if peer.trusted { neon } else { dim }),
+                                        );
                                     });
 
-                                    let label = if selected { "TARGET" } else { "SELECT" };
-                                    if ui
+                                    if peer.trusted {
+                                        let label = if selected { "TARGET" } else { "SELECT" };
+                                        if ui
+                                            .add(
+                                                egui::Button::new(
+                                                    RichText::new(label)
+                                                        .size(8.0)
+                                                        .strong()
+                                                        .color(neon),
+                                                )
+                                                .min_size(Vec2::new(58.0, 24.0)),
+                                            )
+                                            .clicked()
+                                        {
+                                            self.lan_target = Some(peer.node_id.clone());
+                                            self.lan_onion_relays
+                                                .retain(|relay_id| relay_id != &peer.node_id);
+                                            self.notify(format!("LAN TARGET: {}", peer.node_id));
+                                        }
+                                    } else if ui
                                         .add(
                                             egui::Button::new(
-                                                RichText::new(label)
+                                                RichText::new("TRUST KEY")
                                                     .size(8.0)
                                                     .strong()
                                                     .color(neon),
                                             )
-                                            .min_size(Vec2::new(58.0, 24.0)),
+                                            .min_size(Vec2::new(82.0, 24.0)),
                                         )
                                         .clicked()
                                     {
-                                        self.lan_target = Some(peer.node_id.clone());
-                                        self.notify(format!("LAN TARGET: {}", peer.node_id));
+                                        self.trust_lan_peer(&peer.node_id);
                                     }
                                 });
 
@@ -127,9 +179,12 @@ impl CybOs {
 
                         ui.label(
                             RichText::new(format!(
-                                "⌂ LOCAL · READY\n⟶ DIRECT LAN · {} PEER(S)\n◈ TARGET · {}\n✓ DELIVERY ACK · {}\n◌ BLE · ADAPTER ONLY\n↔ P2P · ADAPTER ONLY\n∴ NOSTR · ADAPTER ONLY",
+                                "⌂ LOCAL · READY\n⟶ DIRECT LAN · {} PEER(S)\n◈ TARGET · {}\n◈ ONION ROUTE · {}/{} HOP(S)\n◈ TRUSTED RELAY CANDIDATES · {}\n✓ DELIVERY ACK · {}\n◌ BLE · ADAPTER ONLY\n↔ P2P · ADAPTER ONLY\n∴ NOSTR · ADAPTER ONLY",
                                 self.lan_peers.len(),
                                 target,
+                                onion_relay_count,
+                                crate::network::onion::MAX_ONION_HOPS,
+                                onion_relay_candidates,
                                 self.lan_delivery_status
                             ))
                             .size(9.0)
@@ -147,13 +202,188 @@ impl CybOs {
 
                         ui.label(
                             RichText::new(
-                                "Directed UDP only. Messages are not end-to-end encrypted yet.",
+                                "Direct LAN transport and routed onion transport are active. Onion delivery wraps the same authenticated E2E WireEnvelope in layered relay encryption; relay bindings, hop lineage, replay and signed destination ACKs are enforced.",
                             )
                             .size(8.0)
                             .color(dim),
                         );
                     });
             });
+
+            ui.add_space(12.0);
+
+            egui::Frame::NONE
+                .fill(panel)
+                .corner_radius(egui::CornerRadius::same(12))
+                .inner_margin(12.0)
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            RichText::new("◈ ONION ROUTE")
+                                .size(11.0)
+                                .strong()
+                                .color(neon),
+                        );
+                        ui.label(
+                            RichText::new(format!(
+                                "{}/{} SELECTED · H{} → DESTINATION",
+                                onion_relay_count,
+                                crate::network::onion::MAX_ONION_HOPS,
+                                onion_relay_count
+                            ))
+                            .size(8.0)
+                            .color(dim),
+                        );
+
+                        if ui
+                            .add(
+                                egui::Button::new(
+                                    RichText::new("AUTO")
+                                        .size(8.0)
+                                        .strong()
+                                        .color(neon),
+                                )
+                                .min_size(Vec2::new(48.0, 22.0)),
+                            )
+                            .clicked()
+                        {
+                            let target_id = self.lan_target.clone();
+                            let relay_peers: Vec<_> = self
+                                .lan_peers
+                                .iter()
+                                .filter(|peer| {
+                                    peer.trusted
+                                        && target_id.as_deref()
+                                            != Some(peer.node_id.as_str())
+                                })
+                                .filter_map(|peer| {
+                                    Some(crate::network::lan::OnionRoutePeer {
+                                        node_id: peer.node_id.clone(),
+                                        address: peer.address.clone(),
+                                        public_key_b64: peer.public_key.clone()?,
+                                    })
+                                })
+                                .collect();
+                            let ranked =
+                                crate::network::lan::rank_onion_relays(&relay_peers);
+                            self.lan_onion_relays = ranked
+                                .into_iter()
+                                .take(crate::network::onion::MAX_ONION_HOPS)
+                                .map(|peer| peer.node_id)
+                                .collect();
+                            self.notify("ONION AUTO · HEALTH-RANKED ROUTE SELECTED");
+                        }
+
+                        if ui
+                            .add(
+                                egui::Button::new(
+                                    RichText::new("CLEAR")
+                                        .size(8.0)
+                                        .strong()
+                                        .color(neon),
+                                )
+                                .min_size(Vec2::new(52.0, 22.0)),
+                            )
+                            .clicked()
+                        {
+                            self.lan_onion_relays.clear();
+                        }
+                    });
+
+                    ui.add_space(6.0);
+
+                    if self.lan_onion_relays.is_empty() {
+                        ui.label(
+                            RichText::new(
+                                "AUTO ranks trusted relays by recent delivery health and RTT. Manual selection remains available.",
+                            )
+                            .size(8.0)
+                            .color(dim),
+                        );
+                    } else {
+                        ui.horizontal_wrapped(|ui| {
+                            for (index, relay_id) in self.lan_onion_relays.iter().enumerate() {
+                                let label = if let Some(peer) =
+                                    self.lan_peers.iter().find(|peer| &peer.node_id == relay_id)
+                                {
+                                    format!("H{} {}", index + 1, peer.node_id)
+                                } else {
+                                    format!("H{} {}", index + 1, relay_id)
+                                };
+                                ui.label(
+                                    RichText::new(label)
+                                        .size(8.0)
+                                        .strong()
+                                        .color(neon),
+                                );
+                            }
+                        });
+                    }
+
+                    ui.add_space(7.0);
+
+                    for peer in self
+                        .lan_peers
+                        .iter()
+                        .filter(|peer| {
+                            peer.trusted
+                                && self.lan_target.as_deref()
+                                    != Some(peer.node_id.as_str())
+                        })
+                        .take(crate::network::onion::MAX_ONION_HOPS)
+                        .cloned()
+                        .collect::<Vec<_>>()
+                    {
+                        let selected_index = self
+                            .lan_onion_relays
+                            .iter()
+                            .position(|id| id == &peer.node_id);
+
+                        ui.horizontal(|ui| {
+                            ui.label(
+                                RichText::new(match selected_index {
+                                    Some(index) => format!("H{}", index + 1),
+                                    None => "—".into(),
+                                })
+                                .size(9.0)
+                                .strong()
+                                .color(neon),
+                            );
+
+                            ui.label(
+                                RichText::new(&peer.node_id)
+                                    .size(8.0)
+                                    .color(Color32::from_rgb(175, 235, 205)),
+                            );
+
+                            let button = match selected_index {
+                                Some(_) => "REMOVE",
+                                None => "ADD",
+                            };
+
+                            if ui
+                                .add(
+                                    egui::Button::new(
+                                        RichText::new(button)
+                                            .size(8.0)
+                                            .strong()
+                                            .color(neon),
+                                    )
+                                    .min_size(Vec2::new(64.0, 22.0)),
+                                )
+                                .clicked()
+                            {
+                                if selected_index.is_some() {
+                                    self.lan_onion_relays.retain(|id| id != &peer.node_id);
+                                } else if self.lan_onion_relays.len()
+                                    < crate::network::onion::MAX_ONION_HOPS
+                                {
+                                    self.lan_onion_relays.push(peer.node_id.clone());
+                                }
+                            }
+                        });
+                    }
+                });
 
             ui.add_space(12.0);
 
@@ -237,6 +467,10 @@ impl CybOs {
 
                         let can_send_lan =
                             self.lan_target.is_some() && self.lan_send_task.is_none();
+                        let can_send_onion =
+                            self.lan_target.is_some()
+                                && onion_relay_count > 0
+                                && self.lan_send_task.is_none();
 
                         let send_lan = ui
                             .add_enabled(
@@ -291,8 +525,44 @@ impl CybOs {
                             }
                         }
 
+                        let send_onion = ui
+                            .add_enabled(
+                                can_send_onion,
+                                egui::Button::new(
+                                    RichText::new(format!("◈ SEND ONION · {}", onion_relay_count))
+                                        .size(10.0)
+                                        .strong()
+                                        .color(neon),
+                                )
+                                .min_size(Vec2::new(150.0, 34.0)),
+                            )
+                            .on_disabled_hover_text(
+                                "Select a trusted destination and keep at least one other trusted peer available as a relay.",
+                            )
+                            .clicked();
+
+                        if send_onion {
+                            let t = self.chat_input.trim().to_string();
+
+                            if !t.is_empty() {
+                                let target = self
+                                    .lan_target
+                                    .as_deref()
+                                    .unwrap_or("selected peer")
+                                    .to_string();
+
+                                self.push_chat_message(
+                                    format!("YOU ◈→ {}", target),
+                                    t.clone(),
+                                    true,
+                                );
+                                self.send_lan_onion_chat(&t);
+                                self.chat_input.clear();
+                            }
+                        }
+
                         ui.label(
-                            RichText::new("LOCAL-FIRST · DELIVERY IS ACKNOWLEDGED · PLAINTEXT")
+                            RichText::new("LOCAL-FIRST · AUTHENTICATED PEERS · X25519 HANDSHAKE · ENCRYPTED WIRE · REPLAY WINDOW")
                                 .size(8.0)
                                 .color(dim),
                         );
