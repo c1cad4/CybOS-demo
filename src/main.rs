@@ -129,6 +129,14 @@ fn main() -> eframe::Result {
                             eprintln!("cybOS process-isolated onion self-test failed: {error}");
                             std::process::exit(2);
                         }
+                        if let Err(error) = network::lan::run_process_isolated_onion_packet_drop_test() {
+                            eprintln!("cybOS onion packet-drop self-test failed: {error}");
+                            std::process::exit(2);
+                        }
+                        if let Err(error) = network::lan::run_process_isolated_onion_bind_validation_test() {
+                            eprintln!("cybOS onion-bind validation self-test failed: {error}");
+                            std::process::exit(2);
+                        }
                         if let Err(error) = network::lan::run_process_isolated_onion_bind_crash_test() {
                             eprintln!("cybOS onion-bind crash self-test failed: {error}");
                             std::process::exit(2);
@@ -139,6 +147,8 @@ fn main() -> eframe::Result {
                         println!("cybOS self-tests:");
                         println!("  cybOS --self-test onion");
                         println!("  cybOS --self-test onion-process");
+                        println!("  cybOS --self-test onion-drop-process");
+                        println!("  cybOS --self-test onion-bind-validation");
                         println!("  cybOS --self-test onion-bind-process");
                         println!("  cybOS --self-test all");
                         return Ok(());
@@ -180,6 +190,24 @@ fn main() -> eframe::Result {
     if std::env::var_os("CYBOS_HEADLESS_ONION_PROCESS_TEST").is_some() {
         if let Err(error) = network::lan::run_process_isolated_onion_test() {
             eprintln!("cybOS process-isolated onion test failed: {error}");
+            std::process::exit(2);
+        }
+        return Ok(());
+    }
+
+    #[cfg(any(debug_assertions, feature = "qa"))]
+    if std::env::var_os("CYBOS_HEADLESS_ONION_DROP_PROCESS_TEST").is_some() {
+        if let Err(error) = network::lan::run_process_isolated_onion_packet_drop_test() {
+            eprintln!("cybOS onion packet-drop test failed: {error}");
+            std::process::exit(2);
+        }
+        return Ok(());
+    }
+
+    #[cfg(any(debug_assertions, feature = "qa"))]
+    if std::env::var_os("CYBOS_HEADLESS_ONION_BIND_VALIDATION_TEST").is_some() {
+        if let Err(error) = network::lan::run_process_isolated_onion_bind_validation_test() {
+            eprintln!("cybOS onion-bind validation test failed: {error}");
             std::process::exit(2);
         }
         return Ok(());
