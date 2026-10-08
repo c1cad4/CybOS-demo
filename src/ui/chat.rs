@@ -8,6 +8,12 @@ impl CybOs {
         self.poll_lan_send();
         self.poll_secure_events();
         self.poll_secure_send();
+        if let Some(answer) = self.poll_robot_job() {
+            self.robot_output = answer.clone();
+            self.push_chat_message("ROBOTCYB", answer, false);
+            self.add_event("ROBOT", "RobotCYB local chat worker completed the request");
+            self.chat_output = self.robot_output.clone();
+        }
 
         let neon = Color32::from_rgb(0, 255, 150);
         let dim = Color32::from_rgb(55, 145, 105);
@@ -226,8 +232,10 @@ impl CybOs {
                     ui.add_space(7.0);
 
                     ui.horizontal(|ui| {
+                        let local_busy = self.robot_job.is_some();
                         let send = ui
-                            .add(
+                            .add_enabled(
+                                !local_busy,
                                 egui::Button::new(
                                     RichText::new("∴  SEND MESSAGE")
                                         .size(12.0)
@@ -237,9 +245,6 @@ impl CybOs {
                                 .min_size(Vec2::new(170.0, 34.0)),
                             )
                             .clicked();
-
-                        let can_send_lan =
-                            self.lan_target.is_some() && self.lan_send_task.is_none();
 
                         let can_send_secure =
                             self.lan_target.is_some() && self.secure_send_task.is_none();
@@ -267,13 +272,12 @@ impl CybOs {
                             let t = self.chat_input.trim().to_string();
 
                             if !t.is_empty() {
-                                self.chat_output = t.clone();
+                                self.chat_output = "ROBOTCYB · PROCESSING".into();
                                 self.push_chat_message("YOU", t.clone(), true);
-                                let reply = self.agent_answer(&t);
-                                self.push_chat_message("ROBOTCYB", reply, false);
+                                let _ = self.start_robot_job(t.clone());
                                 self.chat_input.clear();
-                                self.add_event("CHAT", &format!("Local message sent: {}", t));
-                                self.notify("MESSAGE SENT ON LOCAL CHANNEL");
+                                self.add_event("CHAT", &format!("Local message accepted by RobotCYB: {}", t));
+                                self.notify("MESSAGE ACCEPTED BY BOUNDED ROBOT WORKER");
                             }
                         }
 
@@ -298,7 +302,11 @@ impl CybOs {
                         }
 
                         ui.label(
-                            RichText::new("LOCAL-FIRST · DISCOVERY UDP · CHAT ENCRYPTED · ACKNOWLEDGED")
+                            RichText::new(if local_busy {
+                                "LOCAL-FIRST · ROBOT WORKER RUNNING · SECURE CHAT READY"
+                            } else {
+                                "LOCAL-FIRST · ROBOT WORKER BOUNDED · CHAT ENCRYPTED · ACKNOWLEDGED"
+                            })
                                 .size(8.0)
                                 .color(dim),
                         );
