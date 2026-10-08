@@ -23,6 +23,13 @@ where
     }
 }
 
+fn web_agent() -> ureq::Agent {
+    ureq::Agent::config_builder()
+        .timeout_global(Some(WEB_BUDGET))
+        .build()
+        .into()
+}
+
 pub(crate) fn web_fetch(url: &str) -> String {
     let url = url.trim().to_string();
 
@@ -31,7 +38,8 @@ pub(crate) fn web_fetch(url: &str) -> String {
     }
 
     bounded_fetch(move || {
-        let response = match ureq::get(&url)
+        let response = match web_agent()
+            .get(&url)
             .header(
                 "User-Agent",
                 "Mozilla/5.0 (Macintosh; Intel Mac OS X) cybOS/0.7",
@@ -65,6 +73,10 @@ pub(crate) fn web_fetch(url: &str) -> String {
             text
         };
 
-        format!("WEB SOURCE\nURL: {}\n\nSOURCE TEXT:\n{}", url, excerpt)
+        format!("WEB SOURCE
+URL: {}
+
+SOURCE TEXT:
+{}", url, excerpt)
     })
 }
