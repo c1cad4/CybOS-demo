@@ -247,9 +247,9 @@ TOOL RESULT:
             ble_status: "BLE · WORKER DISABLED".into(),
             nearby_peers: Vec::new(),
             noise_private_key: Vec::new(),
-            secure_events: {
+            secure_listener: {
                 let (_tx, rx) = std::sync::mpsc::channel();
-                rx
+                crate::network::secure_chat::Listener::from_receiver(rx)
             },
             secure_send_task: None,
             secure_status: "SECURE CHAT · WORKER CONTEXT".into(),
