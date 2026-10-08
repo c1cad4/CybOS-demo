@@ -112,17 +112,17 @@ impl CybOs {
             .corner_radius(12)
             .inner_margin(egui::Margin::same(14))
             .show(ui, |ui| {
+                let title = if self.browser_title.is_empty() {
+                    "NO DOCUMENT LOADED"
+                } else {
+                    self.browser_title.as_str()
+                };
+
                 ui.label(
-                    RichText::new(
-                        if self.browser_title.is_empty() {
-                            "NO DOCUMENT LOADED"
-                        } else {
-                            &self.browser_title
-                        },
-                    )
-                    .size(16.0)
-                    .strong()
-                    .color(neon),
+                    RichText::new(title)
+                        .size(16.0)
+                        .strong()
+                        .color(neon),
                 );
 
                 if !self.browser_resolved_url.is_empty() {
