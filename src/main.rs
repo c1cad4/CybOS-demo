@@ -78,6 +78,18 @@ fn main() -> eframe::Result {
                 };
                 return provision_peer(&node_id, &fingerprint);
             }
+            "--help" | "-h" => {
+                println!("cybOS commands:");
+                println!("  cybOS --identity");
+                println!("      Print local node ID, SHA-256 fingerprint and public key.");
+                println!("  cybOS --provision-peer NODE_ID FINGERPRINT");
+                println!("      Pre-provision a peer fingerprint for automatic LAN trust.");
+                println!("  cybOS --self-test onion");
+                println!("      Run the live two-relay routed transport self-test.");
+                println!("  cybOS --self-test onion-process");
+                println!("      Run the process-isolated relay fault-recovery self-test.");
+                return Ok(());
+            }
             "--self-test" => {
                 #[cfg(debug_assertions)]
                 match args.next().as_deref() {
