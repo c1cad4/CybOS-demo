@@ -248,23 +248,6 @@ impl OnionRelayCache {
         }
     }
 
-    fn check_and_mark(
-        &mut self,
-        cache_key: String,
-        expires_at: u64,
-        now: u64,
-    ) -> Result<(), &'static str> {
-        self.purge(now);
-        if expires_at < now {
-            return Err("onion packet expired");
-        }
-        if self.seen.contains_key(&cache_key) {
-            return Err("onion packet replayed");
-        }
-        self.mark(cache_key, expires_at);
-        Ok(())
-    }
-
     fn mark(&mut self, cache_key: String, expires_at: u64) {
         if self.seen.len() >= REPLAY_CACHE_LIMIT {
             if let Some(oldest) = self.order.pop_front() {
@@ -533,6 +516,7 @@ pub(crate) fn peel(
         "{}:{}:{}:{}",
         packet.route_id, packet.packet_id, packet.session_id, packet.hop_index
     );
+    relay.purge(now);
     if relay.seen.contains_key(&cache_key) {
         return Err("onion packet replayed");
     }
@@ -556,7 +540,6 @@ pub(crate) fn peel(
     let frame = serde_json::from_slice::<LayerFrame>(&frame_bytes)
         .map_err(|_| "invalid onion frame")?;
     validate_frame(&frame)?;
-    relay.mark(cache_key, packet.expires_at);
 
     match frame {
         LayerFrame::Forward {
@@ -573,6 +556,7 @@ pub(crate) fn peel(
             {
                 return Err("invalid nested onion packet");
             }
+            relay.mark(cache_key, packet.expires_at);
             Ok(PeelResult::Forward(ForwardPacket {
                 next_node_id,
                 next_address,
@@ -583,11 +567,14 @@ pub(crate) fn peel(
             destination_id,
             destination_address,
             payload,
-        } => Ok(PeelResult::Deliver(DeliverPacket {
-            destination_id,
-            destination_address,
-            payload,
-        })),
+        } => {
+            relay.mark(cache_key, packet.expires_at);
+            Ok(PeelResult::Deliver(DeliverPacket {
+                destination_id,
+                destination_address,
+                payload,
+            }))
+        }
     }
 }
 
