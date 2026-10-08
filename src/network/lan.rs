@@ -37,6 +37,7 @@ pub(crate) struct LanPeer {
 
 #[derive(Clone, Debug)]
 pub(crate) enum LanEvent {
+    Error(String),
     Chat {
         message_id: String,
         node_id: String,
@@ -103,7 +104,13 @@ pub(crate) fn spawn_listener(node_id: String, visibility: Arc<AtomicBool>) -> Li
     thread::spawn(move || {
         let socket = match UdpSocket::bind(("0.0.0.0", LAN_DISCOVERY_PORT)) {
             Ok(socket) => socket,
-            Err(_) => return,
+            Err(error) => {
+                let _ = tx.send(LanEvent::Error(format!(
+                    "LAN listener bind failed on UDP {}: {}",
+                    LAN_DISCOVERY_PORT, error
+                )));
+                return;
+            }
         };
 
         let _ = socket.set_read_timeout(Some(Duration::from_millis(250)));
@@ -592,6 +599,12 @@ impl crate::state::CybOs {
             };
 
             match event {
+                LanEvent::Error(error) => {
+                    self.lan_delivery_status = format!("LAN LISTENER ERROR · {}", error);
+                    self.add_event("NETWORK", error.clone());
+                    self.notify("LAN LISTENER ERROR");
+                    self.runtime.set_status("NETWORK", "ERROR");
+                }
                 LanEvent::Chat {
                     message_id,
                     node_id,
