@@ -33,3 +33,6 @@ release/support workflows.
 
 Physical RobotCYB hardware, farm sensor/camera integrations and Cyblex are
 future product layers and do not block the first desktop beta.
+
+
+Verification note: this document is intentionally the only branch-specific file; the code under test is the current main runtime at branch base.
