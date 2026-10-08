@@ -408,7 +408,7 @@ fn torrent_sidecar_path(path: &Path) -> PathBuf {
 
 #[cfg(test)]
 mod tests {
-    use super::validate_source;
+    use super::{validate_source, MAX_SOURCE_LEN};
 
     #[test]
     fn accepts_magnet_sources() {
