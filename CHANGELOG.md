@@ -16,6 +16,7 @@ Core release for the native local-first cybOS runtime.
 - secure CYBChat uses Noise XX with encrypted transport frames and delivery ACK;
 - first-seen peer identity keys are persisted locally as TOFU;
 - changed peer identity keys are rejected at the application trust boundary;
+- recently seen secure message IDs are persisted in a bounded 1024-entry replay cache;
 - secure peers and relationships are persisted into Cybergraph;
 - macOS BLE advertising is opt-in and exposes only a short node identifier;
 - BLE proximity uses measured RSSI and never fabricates GPS coordinates or meter distances;
