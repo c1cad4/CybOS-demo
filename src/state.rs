@@ -59,6 +59,14 @@ pub(crate) struct CybOs {
     pub(crate) cyblex_seed_path: String,
     pub(crate) cyblex_status: String,
     pub(crate) cyblex_torrents: Vec<crate::cyblex::CybLexTorrent>,
+    pub(crate) cybdex: crate::cybdex::CybDexRuntime,
+    pub(crate) cybdex_query: String,
+    pub(crate) cybdex_pairs: Vec<crate::cybdex::CybDexPair>,
+    pub(crate) cybdex_selected_pair: Option<crate::cybdex::CybDexPair>,
+    pub(crate) cybdex_candles: Vec<crate::cybdex::CybDexCandle>,
+    pub(crate) cybdex_timeframe: crate::cybdex::CybDexTimeframe,
+    pub(crate) cybdex_status: String,
+    pub(crate) cybdex_last_refresh: Instant,
     pub(crate) qwen_child: Option<Child>,
     pub(crate) qwen_status: String,
     pub(crate) qwen_retry_after: Instant,
@@ -167,6 +175,14 @@ impl Default for CybOs {
             cyblex_seed_path: String::new(),
             cyblex_status: "CYBLEX · STARTING".into(),
             cyblex_torrents: Vec::new(),
+            cybdex: crate::cybdex::CybDexRuntime::new(),
+            cybdex_query: String::new(),
+            cybdex_pairs: Vec::new(),
+            cybdex_selected_pair: None,
+            cybdex_candles: Vec::new(),
+            cybdex_timeframe: crate::cybdex::CybDexTimeframe::Hour1,
+            cybdex_status: "CYBDEX · READY · READ-ONLY MARKET DATA".into(),
+            cybdex_last_refresh: Instant::now(),
             qwen_child: None,
             qwen_status: "QWEN · OFFLINE".into(),
             qwen_retry_after: Instant::now(),
@@ -207,6 +223,73 @@ impl Default for CybOs {
 }
 
 
+
+impl CybOs {
+    pub(crate) fn poll_cybdex(&mut self) {
+        for event in self.cybdex.poll() {
+            match event {
+                crate::cybdex::CybDexEvent::SearchResults(pairs) => {
+                    self.cybdex_pairs = pairs;
+                    self.cybdex_status =
+                        format!("CYBDEX · {} SOLANA PAIR(S) FOUND", self.cybdex_pairs.len());
+                    self.runtime.set_status("CYBDEX", "READY");
+                }
+                crate::cybdex::CybDexEvent::PairLoaded { pair, candles } => {
+                    self.cybdex_selected_pair = Some(pair);
+                    self.cybdex_candles = candles;
+                    self.cybdex_last_refresh = Instant::now();
+                    self.cybdex_status = format!(
+                        "CYBDEX · LIVE · {} · {}",
+                        self.cybdex_selected_pair
+                            .as_ref()
+                            .map(|p| format!("{}/{}", p.base_symbol, p.quote_symbol))
+                            .unwrap_or_else(|| "PAIR".into()),
+                        self.cybdex_timeframe.label()
+                    );
+                    self.runtime.set_status("CYBDEX", "READY");
+                }
+                crate::cybdex::CybDexEvent::Status(status) => {
+                    self.cybdex_status = status;
+                    if !self.cybdex.is_busy() {
+                        self.runtime.set_status("CYBDEX", "READY");
+                    }
+                }
+                crate::cybdex::CybDexEvent::Error(error) => {
+                    self.cybdex_status = error.clone();
+                    self.runtime.set_status("CYBDEX", "ERROR");
+                    self.add_event("CYBDEX", error);
+                }
+            }
+        }
+
+        if self.cybdex_selected_pair.is_some()
+            && self.cybdex_last_refresh.elapsed() >= std::time::Duration::from_secs(20)
+            && !self.cybdex.is_busy()
+        {
+            self.refresh_cybdex_pair();
+        }
+    }
+
+    pub(crate) fn refresh_cybdex_pair(&mut self) {
+        let Some(pair) = self.cybdex_selected_pair.clone() else {
+            return;
+        };
+
+        if self.cybdex.is_busy() {
+            return;
+        }
+
+        if self
+            .cybdex
+            .load_pair(pair.pair_address, self.cybdex_timeframe)
+            .is_ok()
+        {
+            self.cybdex_status =
+                format!("CYBDEX · AUTO REFRESH · {}", self.cybdex_timeframe.label());
+            self.runtime.set_status("CYBDEX", "RUNNING");
+        }
+    }
+}
 
 impl CybOs {
     pub(crate) fn cyblex_default_download_path() -> String {
