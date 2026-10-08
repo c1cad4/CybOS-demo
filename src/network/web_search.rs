@@ -8,7 +8,7 @@ use std::time::Duration;
 
 const WEB_SEARCH_BUDGET: Duration = Duration::from_secs(8);
 
-fn bounded_search<F>(work: F) -> String
+fn bounded_search<F>(work: F, budget: Duration) -> String
 where
     F: FnOnce() -> String + Send + 'static,
 {
@@ -16,7 +16,7 @@ where
     thread::spawn(move || {
         let _ = tx.send(work());
     });
-    match rx.recv_timeout(WEB_SEARCH_BUDGET) {
+    match rx.recv_timeout(budget) {
         Ok(result) => result,
         Err(_) => "Web search timed out after 8 seconds.".into(),
     }
@@ -30,6 +30,18 @@ fn web_agent() -> ureq::Agent {
 }
 
 pub(crate) fn web_search(query: &str) -> String {
+    bounded_web_search(query, WEB_SEARCH_BUDGET)
+}
+
+pub(crate) fn web_search_with_deadline(query: &str, deadline: std::time::Instant) -> String {
+    let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+    if remaining.is_zero() {
+        return "Web search deadline expired before request start.".into();
+    }
+    bounded_web_search(query, remaining)
+}
+
+fn bounded_web_search(query: &str, budget: Duration) -> String {
     let query = query.trim().to_string();
 
     if query.is_empty() {
@@ -126,5 +138,5 @@ Search results are discovery data only. Read a relevant source with web_fetch be
 
 ")
         )
-    })
+    }, budget)
 }
