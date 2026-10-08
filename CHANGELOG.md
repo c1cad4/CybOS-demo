@@ -1,4 +1,4 @@
-# cybOS 0.7.0
+# cybOS 0.7.1
 
 Core release for the native local-first cybOS runtime.
 
