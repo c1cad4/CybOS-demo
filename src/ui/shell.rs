@@ -110,6 +110,7 @@ impl CybOs {
                         (Page::Dashboard, "DASHBOARD"),
                         (Page::Graph, "GRAPH"),
                         (Page::Network, "NETWORK"),
+                        (Page::Radar, "RADAR"),
                         (Page::Brain, "BRAIN"),
                         (Page::Farm, "FARM"),
                         (Page::Robot, "ROBOT"),
@@ -241,7 +242,7 @@ impl CybOs {
                                 .auto_shrink([false, false])
                                 .show(ui, |ui| self.brain(ui));
                         }
-                        Page::Network => {
+                        Page::Network | Page::Radar => {
                             egui::ScrollArea::vertical()
                                 .auto_shrink([false, false])
                                 .show(ui, |ui| self.network(ui));
