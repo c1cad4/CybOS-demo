@@ -70,13 +70,10 @@ On macOS, the Ed25519 private identity is protected by the system Keychain. CybC
 A process with access to the running application can still request decrypted records through the live process, and the current design does not encrypt the SQLite schema itself.
 
 ### MEDIUM — Adversarial integration coverage is still bounded
-The harness now covers live routed delivery, replay injection and ciphertext tampering
-in the real UDP listener path, plus process-isolated relay failure after packet entry
-and immediately after route binding. Broader route-expiry and packet-drop fault cases
-remain outside the process harness.
-
-Recommended next step: extend the process harness with controlled route-expiry,
-mid-route packet-drop and malformed route-binding scenarios.
+The harness covers live routed delivery, replay injection and ciphertext tampering
+in the real UDP listener path, plus process-isolated relay crash, controlled
+mid-route packet-drop recovery, route-binding expiry rejection, and malformed
+route-binding rejection without relay process failure.
 
 ### LOW — Discovery address is not cryptographically bound
 The signed discovery response now includes a fresh per-scan challenge nonce, so an old authenticated `CYBOS_PEER` response cannot be replayed into a new scan. The observed response source address is still treated as a locator rather than a cryptographic identity binding. The subsequent signed handshake remains the authoritative identity check.
@@ -104,6 +101,9 @@ Current automated integration coverage also includes:
 - routed fallback after an unavailable relay
 - process-isolated recovery after relay crash during packet forwarding
 - process-isolated recovery after relay crash during route binding
+- process-isolated recovery after a controlled mid-route packet drop
+- process-isolated rejection of malformed route bindings without relay crash
+- process-isolated rejection of expired route bindings
 - idempotent duplicate-delivery ACK recovery
 
 
@@ -137,6 +137,5 @@ Completed:
 - explicit route selection and ordered relay hops in CybChat UI.
 
 Still to harden:
-- route-expiry refresh under long-lived sessions;
-- broader malformed route-binding and packet-drop fault injection across process boundaries;
+- route-expiry refresh/renewal semantics for long-lived sessions;
 - broader traffic-analysis and endpoint privacy protections.
