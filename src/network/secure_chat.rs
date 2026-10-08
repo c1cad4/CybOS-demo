@@ -498,25 +498,32 @@ mod tests {
         let listener = spawn_listener_at("node-b".to_string(), receiver.private.clone(), port);
         thread::sleep(Duration::from_millis(100));
 
-        let status = send_on_port("node-a", "node-b", "127.0.0.1", port, &sender.private, "loopback secure test");
+        let sender_key = sender.private.clone();
+        let sender_thread = thread::spawn(move || {
+            send_on_port(
+                "node-a",
+                "node-b",
+                "127.0.0.1",
+                port,
+                &sender_key,
+                "loopback secure test",
+            )
+        });
 
-        let message_id = match status {
-            SecureSendStatus::Delivered { message_id, peer_id } => {
-                assert_eq!(peer_id, "node-b");
-                message_id
-            }
-            other => panic!("expected delivered secure message, got {other:?}"),
-        };
-
-        let deadline = Instant::now() + Duration::from_secs(2);
-        loop {
+        let deadline = Instant::now() + Duration::from_secs(4);
+        let message_id = loop {
             match listener.try_recv() {
-                Ok(SecureEvent::Received { message_id: received_id, node_id, message, reply, .. }) => {
-                    assert_eq!(received_id, message_id);
+                Ok(SecureEvent::Received {
+                    message_id,
+                    node_id,
+                    message,
+                    reply,
+                    ..
+                }) => {
                     assert_eq!(node_id, "node-a");
                     assert_eq!(message, "loopback secure test");
                     reply.send(SecureReply::Ack).expect("send ACK decision");
-                    break;
+                    break message_id;
                 }
                 Err(std::sync::mpsc::TryRecvError::Empty) if Instant::now() < deadline => {
                     thread::sleep(Duration::from_millis(20));
@@ -524,6 +531,18 @@ mod tests {
                 Err(error) => panic!("secure listener did not receive message: {error:?}"),
                 _ => panic!("secure listener timed out"),
             }
+        };
+
+        let status = sender_thread.join().expect("sender thread join");
+        match status {
+            SecureSendStatus::Delivered {
+                message_id: delivered_id,
+                peer_id,
+            } => {
+                assert_eq!(peer_id, "node-b");
+                assert_eq!(delivered_id, message_id);
+            }
+            other => panic!("expected delivered secure message, got {other:?}"),
         }
 
         drop(listener);
