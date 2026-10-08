@@ -24,3 +24,8 @@ fn configuration_is_release_ready() {
     assert!(config::ROBOTCYB_MINT.len() > 20);
     assert_eq!(config::DEFAULT_CICADA_WALLET.len(), 44);
 }
+
+#[test]
+fn package_metadata_version_matches_app_version() {
+    assert_eq!(env!("CARGO_PKG_VERSION"), config::APP_VERSION);
+}
