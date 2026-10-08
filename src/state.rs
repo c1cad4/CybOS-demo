@@ -143,6 +143,7 @@ impl Default for CybOs {
             lan_target: None,
             lan_delivery_status: "NO DIRECT LAN MESSAGE YET".into(),
             radar_visible,
+            radar_visibility,
 
             remember_note: String::new(),
         };
