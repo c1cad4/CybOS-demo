@@ -68,6 +68,15 @@ impl Store {
 
             CREATE INDEX IF NOT EXISTS idx_chat_messages_time
                 ON chat_messages(time);
+
+            CREATE TABLE IF NOT EXISTS secure_message_ids(
+                message_id TEXT PRIMARY KEY,
+                time TEXT NOT NULL,
+                sender TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_secure_message_ids_time
+                ON secure_message_ids(time);
             "#,
         )
         .expect("cannot initialize database");
@@ -251,6 +260,38 @@ impl Store {
                 if mine { 1 } else { 0 }
             ],
         );
+    }
+
+    /// Claims a secure message id exactly once, retaining the latest 1024 ids.
+    pub(crate) fn claim_secure_message_id(&self, message_id: &str, sender: &str) -> bool {
+        let inserted = self
+            .conn
+            .execute(
+                "INSERT OR IGNORE INTO secure_message_ids(message_id,time,sender)
+                 VALUES(?1,?2,?3)",
+                params![
+                    message_id,
+                    Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+                    sender
+                ],
+            )
+            .map(|count| count == 1)
+            .unwrap_or(false);
+
+        if inserted {
+            let _ = self.conn.execute(
+                "DELETE FROM secure_message_ids
+                 WHERE message_id NOT IN (
+                     SELECT message_id
+                     FROM secure_message_ids
+                     ORDER BY rowid DESC
+                     LIMIT 1024
+                 )",
+                [],
+            );
+        }
+
+        inserted
     }
 
     pub(crate) fn events(&self) -> Vec<Event> {
