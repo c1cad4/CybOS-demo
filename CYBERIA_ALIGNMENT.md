@@ -73,27 +73,29 @@ rather than hard-coded UI counters.
 
 ## Deliberately defer
 
-### Cryptographic private messaging
+### Advanced private-network protocol research
 
-The Cyberia communication design uses non-interactive CSIDH key agreement,
-ephemeral session keys and encrypted message payloads. That is a serious
-cryptographic protocol, not something to approximate with homemade crypto.
+The Cyberia design also discusses non-interactive key agreement, relay/onion routing,
+delivery proofs and deeper protocol-native addressing. Those are separate research layers.
 
-For cybOS the correct sequence is:
+For current cybOS the concrete secure path is:
 
-    stable identity
+    stable local node
         ↓
-    authenticated public keys
+    Noise XX static keys
         ↓
-    standard audited key agreement
+    authenticated encrypted transport
         ↓
-    authenticated encryption
+    TOFU key persistence
         ↓
-    replay protection + sequence numbers
+    changed-key rejection
         ↓
-    optional relay / onion routing
+    bounded delivery ACK + replay cache
+        ↓
+    optional future relay / onion routing
 
-Until this layer exists, LAN chat remains explicitly plaintext.
+Secure CYBChat is therefore already part of the current desktop beta; the more advanced
+Cyberia-specific protocol is deliberately deferred.
 
 ### Onion routing and delivery proofs
 
