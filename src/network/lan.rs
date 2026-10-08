@@ -539,7 +539,9 @@ fn spawn_listener_on_addr_with_stop(
     let handle = thread::spawn(move || {
         let socket = match UdpSocket::bind((listen_addr, listen_port)) { Ok(s) => s, Err(_) => return };
         let _ = socket.set_read_timeout(Some(Duration::from_millis(100)));
-        let mut buffer = [0u8; 8192];
+        // Routed onion packets are larger than direct CybChat envelopes because
+        // every hop adds an authenticated transport layer.
+        let mut buffer = [0u8; 16 * 1024];
         let mut sessions: HashMap<String, Session> = HashMap::new();
         let mut seen_messages: HashMap<String, u64> = HashMap::new();
         let mut delivered_acks: HashMap<String, (u64, LanAck)> = HashMap::new();
