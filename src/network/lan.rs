@@ -31,6 +31,10 @@ const ONION_PREFIX: &str = onion::ONION_PREFIX;
 const ONION_DELIVERY_PREFIX: &str = onion::ONION_DELIVERY_PREFIX;
 const ONION_REVERSE_PREFIX: &str = "CYBOS_ONION_REVERSE";
 const MAX_CHAT_BYTES: usize = 1800;
+
+// Direct CybChat envelopes remain capped at MAX_WIRE_BYTES.
+// Routed onion frames are larger because each hop adds an authenticated layer.
+const MAX_LAN_DATAGRAM_BYTES: usize = 16 * 1024;
 const MAX_WIRE_BYTES: usize = 4096;
 const CHAT_ACK_TIMEOUT: Duration = Duration::from_millis(900);
 const KEY_TIMEOUT: Duration = Duration::from_millis(900);
@@ -606,7 +610,9 @@ fn spawn_listener_on_addr_with_stop(
                 }
                 Err(_) => break,
             };
-            if size > MAX_WIRE_BYTES { continue; }
+            if size > MAX_LAN_DATAGRAM_BYTES {
+                continue;
+            }
             let Ok(message) = std::str::from_utf8(&buffer[..size]) else { continue };
 
             let now = now_secs();
