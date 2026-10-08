@@ -1,6 +1,6 @@
 //! Bounded encrypted direct transport for CYBChat.
 use serde::{Deserialize, Serialize};
-use snow::Builder;
+use snow::{params::NoiseParams, Builder};
 use std::io::{ErrorKind, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -412,7 +412,7 @@ mod tests {
 
     #[test]
     fn secure_loopback_rejection_is_not_reported_as_delivery() {
-        let params: snow::NoiseParams = PATTERN.parse().expect("noise params");
+        let params: NoiseParams = PATTERN.parse().expect("noise params");
         let sender = Builder::new(params.clone()).generate_keypair().expect("sender keypair");
         let receiver = Builder::new(params).generate_keypair().expect("receiver keypair");
 
@@ -462,7 +462,7 @@ mod tests {
 
     #[test]
     fn secure_loopback_delivery_uses_noise_and_ack() {
-        let params = PATTERN.parse().expect("noise params");
+        let params: NoiseParams = PATTERN.parse().expect("noise params");
         let sender = Builder::new(params.clone()).generate_keypair().expect("sender keypair");
         let receiver = Builder::new(params).generate_keypair().expect("receiver keypair");
 
