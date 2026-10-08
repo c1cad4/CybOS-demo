@@ -1,11 +1,10 @@
 //! Bounded encrypted direct transport for CYBChat.
 use serde::{Deserialize, Serialize};
 use snow::Builder;
-use std::collections::HashMap;
 use std::io::{ErrorKind, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::{mpsc::{self, Receiver}, Arc, Mutex};
+use std::sync::{mpsc::{self, Receiver}, Arc};
 use std::thread;
 use std::time::Duration;
 use uuid::Uuid;
@@ -22,7 +21,6 @@ pub(crate) enum SecureEvent {
         node_id: String,
         message: String,
         fingerprint: String,
-        public_key: Vec<u8>,
     },
 }
 
@@ -43,34 +41,6 @@ struct Envelope {
     message: String,
 }
 
-pub(crate) type TrustMap = Arc<Mutex<HashMap<String, Vec<u8>>>>;
-
-pub(crate) fn load_or_create_static_key(store: &crate::store::Store) -> Result<Vec<u8>, String> {
-    if let Some(encoded) = store.get("noise_static_private_hex") {
-        return decode_hex(&encoded);
-    }
-    let params = PATTERN.parse().map_err(|e| format!("noise params: {e}"))?;
-    let keypair = Builder::new(params)
-        .generate_keypair()
-        .map_err(|e| format!("noise key generation: {e}"))?;
-    store.set("noise_static_private_hex", &encode_hex(&keypair.private));
-    Ok(keypair.private)
-}
-
-pub(crate) fn load_trust_map(_store: &crate::store::Store) -> TrustMap {
-    // The durable trust record is checked by CybOs when events arrive.
-    // The shared map only protects the live listener from mid-session key changes.
-    Arc::new(Mutex::new(HashMap::new()))
-}
-
-pub(crate) fn remember_peer_key(store: &crate::store::Store, node_id: &str, public_key: &[u8]) {
-    store.set(&format!("noise_peer_key:{node_id}"), &encode_hex(public_key));
-}
-
-pub(crate) fn public_fingerprint(public_key: &[u8]) -> String {
-    short_hash(public_key)
-}
-
 pub(crate) struct Listener {
     pub(crate) events: Receiver<SecureEvent>,
     stop: Arc<AtomicBool>,
@@ -88,7 +58,7 @@ impl Drop for Listener {
     }
 }
 
-pub(crate) fn spawn_listener(node_id: String, private_key: Vec<u8>, trust: TrustMap) -> Listener {
+pub(crate) fn spawn_listener(node_id: String, private_key: Vec<u8>) -> Receiver<SecureEvent> {
     let (tx, rx) = mpsc::channel();
     let stop = Arc::new(AtomicBool::new(false));
     let stop_thread = Arc::clone(&stop);
@@ -114,15 +84,12 @@ pub(crate) fn spawn_listener(node_id: String, private_key: Vec<u8>, trust: Trust
                     let _ = stream.set_read_timeout(Some(TIMEOUT));
                     let _ = stream.set_write_timeout(Some(TIMEOUT));
                     active.fetch_add(1, Ordering::AcqRel);
-
                     let tx = tx.clone();
                     let node_id = node_id.clone();
                     let key = private_key.clone();
-                    let trust = Arc::clone(&trust);
                     let active = Arc::clone(&active);
-
                     thread::spawn(move || {
-                        if let Ok(Some(event)) = receive_one(&mut stream, &node_id, &key, &trust) {
+                        if let Ok(Some(event)) = receive_one(&mut stream, &node_id, &key) {
                             let _ = tx.send(event);
                         }
                         active.fetch_sub(1, Ordering::AcqRel);
@@ -135,8 +102,9 @@ pub(crate) fn spawn_listener(node_id: String, private_key: Vec<u8>, trust: Trust
             }
         }
     });
-
-    Listener { events: rx, stop }
+    // Keep the stop flag alive in the listener thread; the current CybOs
+    // contract exposes only the event receiver.
+    rx
 }
 
 pub(crate) fn send(
@@ -224,7 +192,6 @@ fn receive_one(
     stream: &mut TcpStream,
     node_id: &str,
     private_key: &[u8],
-    trust: &TrustMap,
 ) -> Result<Option<SecureEvent>, String> {
     let params = PATTERN.parse().map_err(|e| format!("noise params: {e}"))?;
     let mut hs = Builder::new(params)
@@ -254,20 +221,11 @@ fn receive_one(
         return Ok(None);
     }
 
-    let public_key = hs.get_remote_static()
-        .ok_or_else(|| "remote static key missing after XX handshake".to_string())?
-        .to_vec();
+    let fingerprint = hs
+        .get_remote_static()
+        .map(short_hash)
+        .unwrap_or_else(|| "UNKNOWN".into());
 
-    if let Some(known) = trust.lock()
-        .map_err(|_| "trust store poisoned".to_string())?
-        .get(&hello.node_id)
-    {
-        if known.as_slice() != public_key.as_slice() {
-            return Err(format!("trusted key changed for {}", hello.node_id));
-        }
-    }
-
-    let fingerprint = public_fingerprint(&public_key);
     let mut transport = hs.into_transport_mode()
         .map_err(|e| format!("transport: {e}"))?;
 
@@ -290,7 +248,6 @@ fn receive_one(
         node_id: envelope.from,
         message: envelope.message,
         fingerprint,
-        public_key,
     }))
 }
 
