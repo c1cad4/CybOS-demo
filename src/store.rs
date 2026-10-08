@@ -1,6 +1,6 @@
 use chrono::Local;
 use rusqlite::{params, Connection};
-use std::{fs, path::PathBuf};
+use std::{fs, path::PathBuf, time::Duration};
 use uuid::Uuid;
 
 use crate::models::{Event, GraphLink, GraphNode, Memory};
@@ -15,6 +15,8 @@ impl Store {
         let _ = fs::create_dir_all(&base);
         let path = base.join("cybos.db");
         let conn = Connection::open(&path).expect("cannot open cybOS database");
+        let _ = conn.busy_timeout(Duration::from_secs(3));
+        let _ = conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;");
         conn.execute_batch(
             r#"
             CREATE TABLE IF NOT EXISTS events(
@@ -349,3 +351,42 @@ fn dirs_fallback() -> PathBuf {
     }
 }
 
+
+
+#[cfg(test)]
+mod tests {
+    use super::Store;
+    use rusqlite::Connection;
+
+    #[test]
+    fn secure_message_id_claim_is_idempotent() {
+        let conn = Connection::open_in_memory().expect("in-memory sqlite");
+        conn.execute_batch(
+            "CREATE TABLE secure_message_ids(
+                message_id TEXT PRIMARY KEY,
+                time TEXT NOT NULL,
+                sender TEXT NOT NULL
+            );",
+        )
+        .expect("schema");
+
+        let store = Store {
+            path: std::path::PathBuf::from(":memory:"),
+            conn,
+        };
+
+        assert!(store.claim_secure_message_id("message-1", "node-a"));
+        assert!(!store.claim_secure_message_id("message-1", "node-a"));
+        assert!(store.claim_secure_message_id("message-2", "node-a"));
+    }
+
+    #[test]
+    fn database_integrity_check_reports_ok() {
+        let conn = Connection::open_in_memory().expect("in-memory sqlite");
+        let store = Store {
+            path: std::path::PathBuf::from(":memory:"),
+            conn,
+        };
+        assert_eq!(store.database_integrity(), "ok");
+    }
+}
