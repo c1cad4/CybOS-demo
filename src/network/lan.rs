@@ -507,7 +507,7 @@ fn spawn_listener_on_addr(
     (rx, ack_enabled)
 }
 
-#[cfg(debug_assertions)]
+#[cfg(any(debug_assertions, feature = "qa"))]
 fn spawn_listener_on_port_with_control(
     node_id: String,
     identity: NodeIdentity,
@@ -1176,7 +1176,7 @@ fn spawn_listener_on_addr_with_stop(
     (rx, ack_enabled, handle)
 }
 
-#[cfg(debug_assertions)]
+#[cfg(any(debug_assertions, feature = "qa"))]
 fn free_udp_port() -> Result<u16, String> {
     let socket = UdpSocket::bind(("127.0.0.1", 0))
         .map_err(|e| format!("cannot allocate test UDP port: {e}"))?;
@@ -1186,7 +1186,7 @@ fn free_udp_port() -> Result<u16, String> {
         .map_err(|e| format!("cannot inspect test UDP port: {e}"))
 }
 
-#[cfg(debug_assertions)]
+#[cfg(any(debug_assertions, feature = "qa"))]
 pub(crate) fn run_headless_onion_test() -> Result<(), String> {
     let alice = NodeIdentity::generate_ephemeral();
     let relay_a = NodeIdentity::generate_ephemeral();
@@ -1285,14 +1285,14 @@ pub(crate) fn run_headless_onion_test() -> Result<(), String> {
     }
 }
 
-#[cfg(debug_assertions)]
+#[cfg(any(debug_assertions, feature = "qa"))]
 struct ProcessTestNode {
     child: std::process::Child,
     stdin: Option<std::process::ChildStdin>,
     peer: OnionRoutePeer,
 }
 
-#[cfg(debug_assertions)]
+#[cfg(any(debug_assertions, feature = "qa"))]
 fn spawn_process_test_node(
     binary: &std::path::Path,
     port: u16,
@@ -1371,7 +1371,7 @@ fn spawn_process_test_node(
     })
 }
 
-#[cfg(debug_assertions)]
+#[cfg(any(debug_assertions, feature = "qa"))]
 fn stop_process_test_node(node: &mut ProcessTestNode) {
     node.stdin.take();
     match node.child.try_wait() {
@@ -1383,7 +1383,7 @@ fn stop_process_test_node(node: &mut ProcessTestNode) {
     }
 }
 
-#[cfg(debug_assertions)]
+#[cfg(any(debug_assertions, feature = "qa"))]
 pub(crate) fn run_process_isolated_onion_test() -> Result<(), String> {
     let binary = std::env::current_exe()
         .map_err(|error| format!("cannot resolve cybOS test binary: {error}"))?;
@@ -1456,7 +1456,7 @@ pub(crate) fn run_process_isolated_onion_test() -> Result<(), String> {
     result
 }
 
-#[cfg(debug_assertions)]
+#[cfg(any(debug_assertions, feature = "qa"))]
 pub(crate) fn run_headless_test_node() -> Result<(), String> {
     use std::io::{Read, Write};
 
