@@ -15,6 +15,7 @@ use std::sync::{
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
+use ring::hmac;
 
 const LAN_DISCOVERY_PORT: u16 = 39393;
 const DISCOVERY_PREFIX: &str = "CYBOS_DISCOVER";
@@ -24,6 +25,7 @@ const KEY_REPLY_PREFIX: &str = "CYBOS_KEY_REPLY";
 const CHAT_PREFIX: &str = "CYBOS_CHAT";
 const ACK_PREFIX: &str = "CYBOS_ACK";
 const ONION_SESSION_INIT_PREFIX: &str = "CYBOS_ONION_SESSION_INIT";
+const ONION_SESSION_COOKIE_PREFIX: &str = "CYBOS_ONION_SESSION_COOKIE";
 const ONION_SESSION_REPLY_PREFIX: &str = "CYBOS_ONION_SESSION_REPLY";
 const ONION_BIND_PREFIX: &str = "CYBOS_ONION_BIND";
 const ONION_BIND_ACK_PREFIX: &str = "CYBOS_ONION_BIND_ACK";
@@ -289,6 +291,17 @@ struct OnionSessionInit {
     to_node_id: String,
     ephemeral_public_key: String,
     timestamp: u64,
+    cookie: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct OnionSessionCookie {
+    session_id: String,
+    relay_id: String,
+    initiator_ephemeral_public_key: String,
+    timestamp: u64,
+    cookie: String,
+    signature: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -448,6 +461,71 @@ fn signed_key_reply(from: &str, to: &str, init_eph: &str, reply_eph: &str, times
     [crypto::PROTOCOL, "key-reply", from, to, init_eph, reply_eph, &timestamp.to_string()].join("|").into_bytes()
 }
 
+fn onion_cookie_payload(
+    peer_addr: SocketAddr,
+    session_id: &str,
+    initiator_ephemeral_public_key: &str,
+    timestamp: u64,
+) -> Vec<u8> {
+    [
+        crypto::PROTOCOL,
+        "onion-session-cookie-v1",
+        &peer_addr.to_string(),
+        session_id,
+        initiator_ephemeral_public_key,
+        &timestamp.to_string(),
+    ]
+    .join("|")
+    .into_bytes()
+}
+
+fn onion_cookie(
+    secret: &[u8; 32],
+    peer_addr: SocketAddr,
+    session_id: &str,
+    initiator_ephemeral_public_key: &str,
+    timestamp: u64,
+) -> String {
+    let key = hmac::Key::new(hmac::HMAC_SHA256, secret);
+    STANDARD.encode(
+        hmac::sign(
+            &key,
+            &onion_cookie_payload(
+                peer_addr,
+                session_id,
+                initiator_ephemeral_public_key,
+                timestamp,
+            ),
+        )
+        .as_ref(),
+    )
+}
+
+fn valid_onion_cookie(
+    secret: &[u8; 32],
+    peer_addr: SocketAddr,
+    init: &OnionSessionInit,
+) -> bool {
+    let Ok(cookie) = STANDARD.decode(&init.cookie) else {
+        return false;
+    };
+    if cookie.len() != 32 {
+        return false;
+    }
+    let key = hmac::Key::new(hmac::HMAC_SHA256, secret);
+    hmac::verify(
+        &key,
+        &onion_cookie_payload(
+            peer_addr,
+            &init.session_id,
+            &init.ephemeral_public_key,
+            init.timestamp,
+        ),
+        &cookie,
+    )
+    .is_ok()
+}
+
 fn signed_onion_session_reply(reply: &OnionSessionReply) -> Vec<u8> {
     [
         crypto::PROTOCOL,
@@ -588,6 +666,9 @@ fn spawn_listener_on_addr_with_stop(
         let mut onion_bindings: HashMap<String, OnionRouteBinding> = HashMap::new();
         let mut onion_sessions: HashMap<String, OnionHopSession> = HashMap::new();
         let mut onion_cache = onion::OnionRelayCache::new();
+        let mut onion_cookie_secret = [0u8; 32];
+        onion_cookie_secret[..16].copy_from_slice(Uuid::new_v4().as_bytes());
+        onion_cookie_secret[16..].copy_from_slice(Uuid::new_v4().as_bytes());
         let exit_on_onion_packet =
             cfg!(any(debug_assertions, feature = "qa"))
                 && std::env::var_os("CYBOS_HEADLESS_TEST_EXIT_ON_ONION_PACKET").is_some();
@@ -630,6 +711,7 @@ fn spawn_listener_on_addr_with_stop(
                 if init.to_node_id != node_id
                     || init.session_id.trim().is_empty()
                     || init.session_id.len() > 64
+                    || !bounded_text(&init.cookie, 128)
                     || !fresh_timestamp(init.timestamp)
                 {
                     continue;
@@ -639,6 +721,53 @@ fn spawn_listener_on_addr_with_stop(
                 if init_public.len() != 32 || onion_sessions.contains_key(&init.session_id) {
                     continue;
                 }
+
+                // Stateless admission cookie: do not allocate relay session state
+                // until the sender proves it controls the same UDP endpoint.
+                if init.cookie.is_empty() {
+                    let cookie = onion_cookie(
+                        &onion_cookie_secret,
+                        peer_addr,
+                        &init.session_id,
+                        &init.ephemeral_public_key,
+                        init.timestamp,
+                    );
+                    let challenge = OnionSessionCookie {
+                        session_id: init.session_id.clone(),
+                        relay_id: node_id.clone(),
+                        initiator_ephemeral_public_key: init.ephemeral_public_key.clone(),
+                        timestamp: init.timestamp,
+                        cookie,
+                        signature: String::new(),
+                    };
+                    let signed = [
+                        crypto::PROTOCOL,
+                        "onion-session-cookie-v1",
+                        challenge.session_id.as_str(),
+                        challenge.relay_id.as_str(),
+                        challenge.initiator_ephemeral_public_key.as_str(),
+                        &challenge.timestamp.to_string(),
+                        challenge.cookie.as_str(),
+                    ]
+                    .join("|")
+                    .into_bytes();
+                    let challenge = OnionSessionCookie {
+                        signature: STANDARD.encode(crypto::sign(&identity, &signed)),
+                        ..challenge
+                    };
+                    if let Ok(body) = serde_json::to_string(&challenge) {
+                        let _ = socket.send_to(
+                            format!("{} {}", ONION_SESSION_COOKIE_PREFIX, body).as_bytes(),
+                            peer_addr,
+                        );
+                    }
+                    continue;
+                }
+
+                if !valid_onion_cookie(&onion_cookie_secret, peer_addr, &init) {
+                    continue;
+                }
+
                 if onion_sessions.len() >= MAX_ONION_SESSIONS
                     || !onion_session_quota_available(&onion_sessions, peer_addr)
                 {
@@ -652,79 +781,40 @@ fn spawn_listener_on_addr_with_stop(
                     &init_public,
                     &reply_public,
                 );
-                let Ok(key) =
-                    crypto::derive_session_key(private, &init_public, &transcript)
-                else {
+                let Ok(key) = crypto::derive_session_key(private, &init_public, &transcript) else {
                     continue;
                 };
 
-                let expires_at = now.saturating_add(ONION_SESSION_TTL_SECS);
                 onion_sessions.insert(
                     init.session_id.clone(),
                     OnionHopSession {
                         key,
                         control_peer: peer_addr,
-                        expires_at,
+                        expires_at: now + ONION_SESSION_TTL_SECS,
                         bound_route: None,
                     },
                 );
 
                 let reply_public_b64 = STANDARD.encode(&reply_public);
-                let mut reply = OnionSessionReply {
-                    session_id: init.session_id,
+                let reply = OnionSessionReply {
+                    session_id: init.session_id.clone(),
                     relay_id: node_id.clone(),
-                    initiator_ephemeral_public_key: init.ephemeral_public_key,
-                    responder_ephemeral_public_key: reply_public_b64,
-                    timestamp: now,
+                    initiator_ephemeral_public_key: init.ephemeral_public_key.clone(),
+                    responder_ephemeral_public_key: reply_public_b64.clone(),
+                    timestamp: now_secs(),
                     signature: String::new(),
                 };
-                reply.signature =
-                    STANDARD.encode(crypto::sign(&identity, &signed_onion_session_reply(&reply)));
-
+                let signed = signed_onion_session_reply(&reply);
+                let reply = OnionSessionReply {
+                    signature: STANDARD.encode(crypto::sign(&identity, &signed)),
+                    ..reply
+                };
                 if let Ok(body) = serde_json::to_string(&reply) {
                     let _ = socket.send_to(
                         format!("{} {}", ONION_SESSION_REPLY_PREFIX, body).as_bytes(),
                         peer_addr,
                     );
                 }
-                continue;
-            }
-
-            if let Some(discovery_payload) = message
-                .strip_prefix(DISCOVERY_PREFIX)
-                .and_then(|r| r.strip_prefix(' '))
-            {
-                let mut parts = discovery_payload.split_whitespace();
-                let Some(sender_id) = parts.next() else { continue };
-                let Some(challenge) = parts.next() else { continue };
-                if sender_id == node_id
-                    || challenge.is_empty()
-                    || challenge.len() > 64
-                    || !challenge
-                        .bytes()
-                        .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
-                {
-                    continue;
-                }
-
-                let public_key_b64 = STANDARD.encode(identity.public_key());
-                let binding = crypto::peer_discovery_binding(
-                    &node_id,
-                    APP_VERSION,
-                    &public_key_b64,
-                    challenge,
-                );
-                let sig = crypto::sign(&identity, &binding);
-                let response = format!(
-                    "{} {} {} {} {} {}",
-                    RESPONSE_PREFIX,
-                    node_id,
-                    APP_VERSION,
-                    public_key_b64,
-                    challenge,
-                    STANDARD.encode(sig),
-                );
-                let _ = socket.send_to(response.as_bytes(), peer_addr);
                 continue;
             }
 
@@ -2200,11 +2290,13 @@ fn ensure_anonymous_onion_session(
     let (private, init_public) =
         crypto::ephemeral().map_err(|e| e.to_string())?;
     let init_public_b64 = STANDARD.encode(&init_public);
-    let init = OnionSessionInit {
+    let timestamp = now_secs();
+    let mut init = OnionSessionInit {
         session_id: session_id.clone(),
         to_node_id: peer.node_id.clone(),
         ephemeral_public_key: init_public_b64.clone(),
-        timestamp: now_secs(),
+        timestamp,
+        cookie: String::new(),
     };
     let body = serde_json::to_string(&init).map_err(|e| e.to_string())?;
     socket
@@ -2216,44 +2308,97 @@ fn ensure_anonymous_onion_session(
 
     let mut buffer = [0u8; 8192];
     let reply = loop {
-        let (size, sender) = socket
-            .recv_from(&mut buffer)
-            .map_err(|_| format!("onion session timeout for {}", peer.node_id))?;
-        if sender.to_string() != peer.address {
-            continue;
-        }
+        match socket.recv_from(&mut buffer) {
+            Ok((size, sender)) => {
+                if sender.to_string() != peer.address {
+                    continue;
+                }
+                let Ok(text) = std::str::from_utf8(&buffer[..size]) else {
+                    continue;
+                };
 
-        let Ok(text) = std::str::from_utf8(&buffer[..size]) else {
-            continue;
-        };
-        let Some(payload) = text
-            .strip_prefix(ONION_SESSION_REPLY_PREFIX)
-            .and_then(|r| r.strip_prefix(' '))
-        else {
-            continue;
-        };
-        let Ok(reply) = serde_json::from_str::<OnionSessionReply>(payload) else {
-            continue;
-        };
-        if reply.session_id != session_id
-            || reply.relay_id != peer.node_id
-            || reply.initiator_ephemeral_public_key != init_public_b64
-            || !fresh_timestamp(reply.timestamp)
-        {
-            continue;
-        }
+                if let Some(payload) = text
+                    .strip_prefix(ONION_SESSION_COOKIE_PREFIX)
+                    .and_then(|r| r.strip_prefix(' '))
+                {
+                    let Ok(challenge) = serde_json::from_str::<OnionSessionCookie>(payload) else {
+                        continue;
+                    };
+                    if challenge.session_id != session_id
+                        || challenge.relay_id != peer.node_id
+                        || challenge.initiator_ephemeral_public_key != init_public_b64
+                        || challenge.timestamp != timestamp
+                        || challenge.cookie.len() > 128
+                    {
+                        continue;
+                    }
+                    let Ok(signature) = STANDARD.decode(&challenge.signature) else {
+                        continue;
+                    };
+                    let signed = [
+                        crypto::PROTOCOL,
+                        "onion-session-cookie-v1",
+                        challenge.session_id.as_str(),
+                        challenge.relay_id.as_str(),
+                        challenge.initiator_ephemeral_public_key.as_str(),
+                        &challenge.timestamp.to_string(),
+                        challenge.cookie.as_str(),
+                    ]
+                    .join("|")
+                    .into_bytes();
+                    if !crypto::verify_signature(
+                        &peer_public_key,
+                        &signed,
+                        &signature,
+                    ) {
+                        continue;
+                    }
 
-        let Ok(signature) = STANDARD.decode(&reply.signature) else {
-            continue;
-        };
-        if !crypto::verify_signature(
-            &peer_public_key,
-            &signed_onion_session_reply(&reply),
-            &signature,
-        ) {
-            continue;
+                    init.cookie = challenge.cookie;
+                    let body = serde_json::to_string(&init)
+                        .map_err(|e| e.to_string())?;
+                    socket
+                        .send_to(
+                            format!("{} {}", ONION_SESSION_INIT_PREFIX, body).as_bytes(),
+                            &peer.address,
+                        )
+                        .map_err(|e| e.to_string())?;
+                    continue;
+                }
+
+                let Some(payload) = text
+                    .strip_prefix(ONION_SESSION_REPLY_PREFIX)
+                    .and_then(|r| r.strip_prefix(' '))
+                else {
+                    continue;
+                };
+                let Ok(reply) = serde_json::from_str::<OnionSessionReply>(payload) else {
+                    continue;
+                };
+                if reply.session_id != session_id
+                    || reply.relay_id != peer.node_id
+                    || reply.initiator_ephemeral_public_key != init_public_b64
+                    || !fresh_timestamp(reply.timestamp)
+                {
+                    continue;
+                }
+
+                let Ok(signature) = STANDARD.decode(&reply.signature) else {
+                    continue;
+                };
+                if !crypto::verify_signature(
+                    &peer_public_key,
+                    &signed_onion_session_reply(&reply),
+                    &signature,
+                ) {
+                    continue;
+                }
+                break reply;
+            }
+            Err(_) => {
+                return Err(format!("onion session timeout for {}", peer.node_id));
+            }
         }
-        break reply;
     };
 
     let reply_public = STANDARD
