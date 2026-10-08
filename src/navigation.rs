@@ -14,6 +14,7 @@ pub(crate) enum Page {
     Radar,
     Assets,
     Cameras,
+    CybLex,
     System,
 }
 
@@ -51,6 +52,7 @@ impl Page {
             Page::Chat => "CYBCHAT",
             Page::Assets => "ASSETS",
             Page::Cameras => "FARM CAMERAS",
+            Page::CybLex => "CYBLEX",
         }
     }
 
@@ -67,6 +69,7 @@ impl Page {
             Page::Chat => Icon::Chat,
             Page::Assets => Icon::Assets,
             Page::Cameras => Icon::Camera,
+            Page::CybLex => Icon::Network,
         }
     }
 
@@ -82,6 +85,7 @@ impl Page {
             Page::Radar => "radar proximity nearby peers bluetooth ble nearby узлы друзья",
             Page::Assets => "assets tokens cicadafarm robotcyb mint solana токены токен",
             Page::Cameras => "cameras camera rtsp farm live",
+            Page::CybLex => "cyblex archive torrent bittorrent magnet seed share download p2p files",
             Page::System => "system energy battery node database",
         };
 
