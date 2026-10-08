@@ -11,7 +11,7 @@ cybOS is a working native macOS technical beta. Repository CI verifies:
 - macOS packaging-script validation;
 - whitespace validation.
 
-The current native runtime includes local SQLite state, RobotCYB/Qwen integration, CYB RADAR, unified LAN+BLE proximity, Noise XX secure CYBChat, TOFU peer identity and Cybergraph persistence.
+The current native runtime includes local SQLite state with WAL/busy-timeout hardening, RobotCYB/Qwen integration, CYB RADAR, unified LAN+BLE proximity, Noise XX secure CYBChat, replay protection, TOFU peer identity and Cybergraph persistence.
 
 ## Download the macOS beta
 
