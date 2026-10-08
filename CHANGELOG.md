@@ -1,3 +1,24 @@
+# cybOS 0.7.2
+
+Hardening release for the native local-first cybOS runtime.
+
+## Reliability and persistence
+
+- SQLite enables WAL mode and a bounded busy timeout for concurrent local workers.
+- Database integrity status is cached in the native UI; full checks run only on startup or on demand.
+- System diagnostics can export a user-visible state snapshot without exporting Noise private keys or TOFU keys.
+
+## Secure CYBChat
+
+- Persistent replay cache rejects already-seen secure message IDs and retains the latest 1024 IDs.
+- Added a localhost end-to-end Noise XX test covering encrypted delivery and ACK.
+- Existing TOFU identity-key change rejection remains enforced at the application trust boundary.
+
+## Distribution
+
+- Universal macOS packaging builds Apple Silicon (arm64) and Intel (x86_64) binaries.
+- v0.7.1 remains the previously published compatibility release; v0.7.2 is the hardened release line.
+
 # cybOS 0.7.1
 
 Core release for the native local-first cybOS runtime.
