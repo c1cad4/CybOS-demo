@@ -38,6 +38,21 @@ Successful output is:
 ONION_TEST OK · 2 relays · cyb-... → cyb-...
 ```
 
+## 3. Run the full routed acceptance check
+
+Use one command to execute both the live multi-hop smoke test and the process-isolated relay-crash recovery test:
+
+```bash
+cargo run -- --self-test all
+```
+
+Expected output includes both:
+
+```text
+ONION_TEST OK · 2 relays · <source-id> → <destination-id>
+ONION_PROCESS_TEST OK · relay crash recovered · <source-id> → <destination-id>
+```
+
 ## 3. Run the complete Rust suite
 
 ```bash
