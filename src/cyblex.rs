@@ -240,10 +240,12 @@ fn run_worker(command_rx: Receiver<CybLexCommand>, event_tx: Sender<CybLexEvent>
                     Ok(CybLexCommand::Pause { id }) => {
                         match session.as_ref().and_then(|s| s.get(id.into())) {
                             Some(handle) => {
-                                if let Err(error) = session.pause(&handle).await {
-                                    let _ = event_tx.send(CybLexEvent::Error(format!(
-                                        "CybLex pause failed: {error:#}"
-                                    )));
+                                if let Some(active) = session.as_ref() {
+                                    if let Err(error) = active.pause(&handle).await {
+                                        let _ = event_tx.send(CybLexEvent::Error(format!(
+                                            "CybLex pause failed: {error:#}"
+                                        )));
+                                    }
                                 }
                             }
                             None => {
