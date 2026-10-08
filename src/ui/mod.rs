@@ -1,4 +1,5 @@
 pub mod dashboard;
+pub mod cyblex;
 pub mod brain;
 pub mod graph;
 pub mod farm;
