@@ -157,4 +157,13 @@ mod tests {
         assert!(runtime.cells.iter().all(|cell| cell.heartbeat_age_ms() < 1000));
         assert_eq!(runtime.healthy_count(), runtime.cells.len());
     }
+
+    #[test]
+    fn cell_status_can_track_running_worker() {
+        let mut runtime = Runtime::new();
+        runtime.set_status("ROBOTCYB", "RUNNING");
+        assert_eq!(runtime.cell("ROBOTCYB").unwrap().status, "RUNNING");
+        runtime.set_status("ROBOTCYB", "READY");
+        assert_eq!(runtime.cell("ROBOTCYB").unwrap().status, "READY");
+    }
 }
