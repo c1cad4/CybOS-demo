@@ -12,6 +12,7 @@ impl CybOs {
         self.ensure_qwen();
         self.poll_lan_send();
         self.poll_lan_events();
+        self.poll_cyblex();
         self.neon_theme(ui.ctx());
 
         let neon = Self::neon();
@@ -118,6 +119,7 @@ impl CybOs {
                         (Page::System, "SYSTEM"),
                         (Page::Assets, "TOKENS"),
                         (Page::Chat, "CYBCHAT"),
+                        (Page::CybLex, "CYBLEX"),
                     ];
                     for (page, tooltip) in items {
                         if self.rail_icon(ui, page.icon(), tooltip, self.page == page) {
@@ -261,6 +263,11 @@ impl CybOs {
                             egui::ScrollArea::vertical()
                                 .auto_shrink([false, false])
                                 .show(ui, |ui| self.cameras(ui));
+                        }
+                        Page::CybLex => {
+                            egui::ScrollArea::vertical()
+                                .auto_shrink([false, false])
+                                .show(ui, |ui| self.cyblex(ui));
                         }
                     }
                 });
