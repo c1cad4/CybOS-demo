@@ -3,6 +3,11 @@ name = "cybos"
 version = "0.7.2"
 edition = "2024"
 
+[features]
+default = []
+hardware-serial = ["dep:serialport"]
+hardware-rpi = ["dep:rppal", "dep:embedded-hal"]
+oracle-switchboard = ["dep:switchboard-on-demand"]
 
 [dependencies]
 eframe = "0.36.2"
@@ -16,6 +21,11 @@ snow = "0.10.0"
 ureq = { version = "3", features = ["json"] }
 librqbit = "9.0.1"
 tokio = { version = "1", features = ["rt-multi-thread", "time"] }
+
+serialport = { version = "4", optional = true }
+embedded-hal = { version = "1", optional = true }
+rppal = { version = "0.22.1", optional = true }
+switchboard-on-demand = { version = "0.10", default-features = false, features = ["client", "solana-v2"], optional = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 corebluetooth = "0.1.0"
