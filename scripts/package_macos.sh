@@ -71,10 +71,47 @@ if command -v xattr >/dev/null 2>&1; then
   xattr -cr "$APP" || true
 fi
 
-ditto -c -k --sequesterRsrc --keepParent "$APP" "$DIST/cybOS-${VERSION}-macOS.zip"
+ZIP="$DIST/cybOS-${VERSION}-macOS.zip"
+CODESIGN_IDENTITY="${CODESIGN_IDENTITY:-}"
+NOTARY_PROFILE="${NOTARY_PROFILE:-}"
+
+if [[ -n "$NOTARY_PROFILE" && -z "$CODESIGN_IDENTITY" ]]; then
+  echo "NOTARY_PROFILE requires CODESIGN_IDENTITY."
+  exit 1
+fi
+
+if [[ -n "$CODESIGN_IDENTITY" ]]; then
+  echo "Signing cybOS.app with Developer ID..."
+  codesign --deep --force --options runtime --timestamp \
+    --sign "$CODESIGN_IDENTITY" \
+    "$APP"
+
+  codesign --verify --deep --strict --verbose=2 "$APP"
+fi
+
+ditto -c -k --sequesterRsrc --keepParent "$APP" "$ZIP"
+
+if [[ -n "$NOTARY_PROFILE" ]]; then
+  echo "Submitting macOS package for notarization..."
+  xcrun notarytool submit "$ZIP" \
+    --keychain-profile "$NOTARY_PROFILE" \
+    --wait
+
+  echo "Stapling notarization ticket..."
+  xcrun stapler staple "$APP"
+  xcrun stapler validate "$APP"
+
+  rm -f "$ZIP"
+  ditto -c -k --sequesterRsrc --keepParent "$APP" "$ZIP"
+fi
+
+if command -v shasum >/dev/null 2>&1; then
+  echo "SHA-256:"
+  shasum -a 256 "$ZIP"
+fi
 
 rm -rf "$BUILD"
 
 echo "Created:"
 echo "  $APP"
-echo "  $DIST/cybOS-${VERSION}-macOS.zip"
+echo "  $ZIP"
