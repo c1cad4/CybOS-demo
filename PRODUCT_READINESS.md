@@ -26,6 +26,9 @@ Remaining blockers are mostly productization and real-device validation:
 - complete real-device interoperability validation;
 - verify CybLex two-node download/seed interoperability with authorized test content.
 
+## CybDEX
+The first market-data phase is implemented as a read-only native terminal. Swap routing, wallet signing and an own on-chain AMM remain separate future layers.
+
 ## Production 1.0
 Estimated readiness: **75–80%**.
 
