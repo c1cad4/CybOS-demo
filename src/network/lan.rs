@@ -711,7 +711,7 @@ fn spawn_listener_on_addr_with_stop(
                 if init.to_node_id != node_id
                     || init.session_id.trim().is_empty()
                     || init.session_id.len() > 64
-                    || !bounded_text(&init.cookie, 128)
+                    || init.cookie.len() > 128
                     || !fresh_timestamp(init.timestamp)
                 {
                     continue;
@@ -3404,6 +3404,32 @@ mod tests {
         match rx.recv_timeout(Duration::from_secs(2)).unwrap() {
             LanEvent::Chat { message, .. } => assert_eq!(message, expected),
         }
+    }
+
+    #[test]
+    fn onion_session_cookie_is_endpoint_and_ephemeral_bound() {
+        let secret = [42u8; 32];
+        let peer: SocketAddr = "127.0.0.1:41000".parse().unwrap();
+        let other: SocketAddr = "127.0.0.1:41001".parse().unwrap();
+        let session_id = "session-a";
+        let eph = STANDARD.encode([7u8; 32]);
+        let timestamp = 1_000_000_000;
+        let cookie = onion_cookie(&secret, peer, session_id, &eph, timestamp);
+
+        let init = OnionSessionInit {
+            session_id: session_id.into(),
+            to_node_id: "relay".into(),
+            ephemeral_public_key: eph.clone(),
+            timestamp,
+            cookie,
+        };
+
+        assert!(valid_onion_cookie(&secret, peer, &init));
+        assert!(!valid_onion_cookie(&secret, other, &init));
+
+        let mut changed = init.clone();
+        changed.ephemeral_public_key = STANDARD.encode([8u8; 32]);
+        assert!(!valid_onion_cookie(&secret, peer, &changed));
     }
 
     #[test]
