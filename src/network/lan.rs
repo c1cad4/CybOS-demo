@@ -1286,6 +1286,14 @@ pub(crate) fn run_headless_onion_test() -> Result<(), String> {
 }
 
 #[cfg(any(debug_assertions, feature = "qa"))]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ProcessTestFault {
+    None,
+    OnionPacket,
+    OnionBind,
+}
+
+#[cfg(any(debug_assertions, feature = "qa"))]
 struct ProcessTestNode {
     child: std::process::Child,
     stdin: Option<std::process::ChildStdin>,
@@ -1296,7 +1304,7 @@ struct ProcessTestNode {
 fn spawn_process_test_node(
     binary: &std::path::Path,
     port: u16,
-    exit_on_onion_packet: bool,
+    fault: ProcessTestFault,
 ) -> Result<ProcessTestNode, String> {
     use std::io::{BufRead, BufReader};
     use std::process::{Command, Stdio};
@@ -1315,8 +1323,14 @@ fn spawn_process_test_node(
         .stdout(Stdio::piped())
         .stderr(Stdio::null());
 
-    if exit_on_onion_packet {
-        command.env("CYBOS_HEADLESS_TEST_EXIT_ON_ONION_PACKET", "1");
+    match fault {
+        ProcessTestFault::OnionPacket => {
+            command.env("CYBOS_HEADLESS_TEST_EXIT_ON_ONION_PACKET", "1");
+        }
+        ProcessTestFault::OnionBind => {
+            command.env("CYBOS_HEADLESS_TEST_EXIT_ON_ONION_BIND", "1");
+        }
+        ProcessTestFault::None => {}
     }
 
     let mut child = command
@@ -1392,14 +1406,14 @@ pub(crate) fn run_process_isolated_onion_test() -> Result<(), String> {
     // Two relays are sufficient to prove crash recovery: the first attempt
     // crosses relay A -> dead relay B, then route fallback retries through A.
     let specs = [
-        (free_udp_port()?, false),
-        (free_udp_port()?, true),
-        (free_udp_port()?, false),
+        (free_udp_port()?, ProcessTestFault::None),
+        (free_udp_port()?, ProcessTestFault::OnionPacket),
+        (free_udp_port()?, ProcessTestFault::None),
     ];
 
     let mut nodes = Vec::with_capacity(specs.len());
-    for (port, exit_on_onion_packet) in specs {
-        match spawn_process_test_node(&binary, port, exit_on_onion_packet) {
+    for (port, fault) in specs {
+        match spawn_process_test_node(&binary, port, fault) {
             Ok(node) => nodes.push(node),
             Err(error) => {
                 for node in &mut nodes {
@@ -1445,6 +1459,77 @@ pub(crate) fn run_process_isolated_onion_test() -> Result<(), String> {
         } else {
             Err(format!(
                 "process-isolated onion test failed: delivered={delivered} relay_b_exited={relay_b_exited} status={status:?}"
+            ))
+        }
+    };
+
+    for node in &mut nodes {
+        stop_process_test_node(node);
+    }
+
+    result
+}
+
+#[cfg(any(debug_assertions, feature = "qa"))]
+pub(crate) fn run_process_isolated_onion_bind_crash_test() -> Result<(), String> {
+    let binary = std::env::current_exe()
+        .map_err(|error| format!("cannot resolve cybOS test binary: {error}"))?;
+    let source = NodeIdentity::generate_ephemeral();
+
+    let specs = [
+        (free_udp_port()?, ProcessTestFault::None),
+        (free_udp_port()?, ProcessTestFault::OnionBind),
+        (free_udp_port()?, ProcessTestFault::None),
+    ];
+
+    let mut nodes = Vec::with_capacity(specs.len());
+    for (port, fault) in specs {
+        match spawn_process_test_node(&binary, port, fault) {
+            Ok(node) => nodes.push(node),
+            Err(error) => {
+                for node in &mut nodes {
+                    stop_process_test_node(node);
+                }
+                return Err(error);
+            }
+        }
+    }
+
+    let result = {
+        let relays: Vec<_> = nodes[..2]
+            .iter()
+            .map(|node| node.peer.clone())
+            .collect();
+        let destination = nodes[2].peer.clone();
+
+        let status = send_onion_private_chat_with_route_fallback(
+            &source,
+            &destination,
+            &relays,
+            "cybOS process-isolated bind crash recovery test",
+        );
+
+        let delivered = matches!(
+            status,
+            LanSendStatus::Delivered { ref peer_id, .. } if peer_id == &destination.node_id
+        );
+
+        let relay_b_exited = nodes[1]
+            .child
+            .try_wait()
+            .map_err(|error| format!("cannot inspect bind-crashed relay process: {error}"))?
+            .is_some();
+
+        if delivered && relay_b_exited {
+            println!(
+                "ONION_BIND_PROCESS_TEST OK · bind crash recovered · {} → {}",
+                source.node_id(),
+                destination.node_id
+            );
+            Ok(())
+        } else {
+            Err(format!(
+                "process-isolated onion bind crash test failed: delivered={delivered} relay_b_exited={relay_b_exited} status={status:?}"
             ))
         }
     };
