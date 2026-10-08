@@ -139,6 +139,7 @@ impl Runtime {
                 RuntimeCell::new("RADAR", "LAN/BLE discovery", "nearby peers, proximity", 8),
                 RuntimeCell::new("MEMORY", "notes, events", "memories", 4),
                 RuntimeCell::new("ASSETS", "RPC, market API", "balances, market data", 8),
+                RuntimeCell::new("CYBDEX", "search, pair, OHLCV", "markets, candles, routes", 10),
                 RuntimeCell::new("CYBLEX", "magnet, local files, peer events", "torrents, progress, magnet, seed state", 8),
             ],
             ticks: 0,
