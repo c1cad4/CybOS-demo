@@ -31,6 +31,7 @@ jobs:
         run: CYBOS_HEADLESS_ONION_TEST=1 target/debug/cybos
       - name: Process-isolated onion crash recovery
         run: CYBOS_HEADLESS_ONION_PROCESS_TEST=1 target/debug/cybos
+        timeout-minutes: 2
 
       - name: Cargo test
         run: cargo test --locked -- --test-threads=1
