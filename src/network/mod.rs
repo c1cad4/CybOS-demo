@@ -5,6 +5,8 @@ pub mod web_parse;
 pub mod web_search;
 pub mod web_fetch;
 pub mod lan;
+pub mod secure_chat;
+pub mod proximity;
 #[cfg(target_os = "macos")]
 pub mod ble_advertiser;
 #[cfg(not(target_os = "macos"))]
