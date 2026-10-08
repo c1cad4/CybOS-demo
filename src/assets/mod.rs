@@ -5,3 +5,4 @@
 
 pub mod market;
 pub mod balances;
+pub mod pumpfun;
