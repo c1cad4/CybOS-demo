@@ -68,6 +68,9 @@ pub(crate) struct CybOs {
     pub(crate) lan_delivery_status: String,
     pub(crate) radar_visible: bool,
     pub(crate) radar_visibility: Arc<AtomicBool>,
+    pub(crate) ble_peers: Vec<crate::network::ble::BlePeer>,
+    pub(crate) ble_scan: Option<std::sync::mpsc::Receiver<Result<Vec<crate::network::ble::BlePeer>, String>>>,
+    pub(crate) ble_status: String,
 
     pub(crate) remember_note: String,
 }
@@ -144,6 +147,9 @@ impl Default for CybOs {
             lan_delivery_status: "NO DIRECT LAN MESSAGE YET".into(),
             radar_visible,
             radar_visibility,
+            ble_peers: Vec::new(),
+            ble_scan: None,
+            ble_status: "BLE · IDLE".into(),
 
             remember_note: String::new(),
         };
