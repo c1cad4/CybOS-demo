@@ -1,6 +1,6 @@
 //! cybOS application configuration constants.
 
-pub(crate) const APP_VERSION: &str = "0.7.0";
+pub(crate) const APP_VERSION: &str = "0.7.1";
 
 pub(crate) const CICADAFARM_MINT: &str =
     "9QLCEL7Xo9VTwgBeAYU1PWX7JJ8joKxQCYw3msjUpump";
