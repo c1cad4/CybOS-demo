@@ -122,16 +122,18 @@ ONION_TEST OK · 2 relays · ...
 
 ## F. Relay failure recovery
 
-The same QA launcher executes the process-isolated failure test.
+The same QA launcher executes two process-isolated failure tests.
 
-The test intentionally terminates one relay during the route attempt and verifies
-that cybOS retries through the available route variant and still delivers the
-message.
+The first intentionally terminates one relay after an onion packet enters it.
+The second terminates a relay immediately after route binding but before packet
+forwarding. In both cases cybOS must rebuild through an available route variant
+and still deliver the message.
 
 Expected:
 
 ```text
 ONION_PROCESS_TEST OK · relay crash recovered · ...
+ONION_BIND_PROCESS_TEST OK · bind crash recovered · ...
 ```
 
 ## G. Real 2-hop GUI route
