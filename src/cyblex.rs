@@ -134,12 +134,13 @@ fn run_worker(command_rx: Receiver<CybLexCommand>, event_tx: Sender<CybLexEvent>
         }
     };
 
+    let event_tx_inner = event_tx.clone();
     let result = runtime.block_on(async move {
         let download_dir = default_download_dir();
         fs::create_dir_all(&download_dir)
             .map_err(|e| format!("create CybLex directory: {e}"))?;
 
-        let _ = event_tx.send(CybLexEvent::Status(format!(
+        let _ = event_tx_inner.send(CybLexEvent::Status(format!(
             "CYBLEX · IDLE · P2P OFF · {}",
             download_dir.display()
         )));
@@ -158,7 +159,7 @@ fn run_worker(command_rx: Receiver<CybLexCommand>, event_tx: Sender<CybLexEvent>
                                     .await
                                     .map_err(|e| format!("CybLex session init: {e:#}"))?,
                             );
-                            let _ = event_tx.send(CybLexEvent::Status("CYBLEX · P2P SESSION ACTIVE".into()));
+                            let _ = event_tx_inner.send(CybLexEvent::Status("CYBLEX · P2P SESSION ACTIVE".into()));
                         }
 
                         let active = session.as_ref().expect("session initialized");
@@ -168,20 +169,20 @@ fn run_worker(command_rx: Receiver<CybLexCommand>, event_tx: Sender<CybLexEvent>
                         match active.add_torrent(AddTorrent::from_url(source.as_str()), Some(options)).await {
                             Ok(response) => match response.into_handle() {
                                 Some(handle) => {
-                                    let _ = event_tx.send(CybLexEvent::Status(format!(
+                                    let _ = event_tx_inner.send(CybLexEvent::Status(format!(
                                         "CYBLEX · ADDED · {} · {}",
                                         handle.name().unwrap_or_else(|| "TORRENT".into()),
                                         handle.info_hash().as_string()
                                     )));
                                 }
                                 None => {
-                                    let _ = event_tx.send(CybLexEvent::Error(
+                                    let _ = event_tx_inner.send(CybLexEvent::Error(
                                         "CybLex source returned no managed torrent".into()
                                     ));
                                 }
                             },
                             Err(error) => {
-                                let _ = event_tx.send(CybLexEvent::Error(format!(
+                                let _ = event_tx_inner.send(CybLexEvent::Error(format!(
                                     "CybLex add failed: {error:#}"
                                 )));
                             }
@@ -194,7 +195,7 @@ fn run_worker(command_rx: Receiver<CybLexCommand>, event_tx: Sender<CybLexEvent>
                                     .await
                                     .map_err(|e| format!("CybLex session init: {e:#}"))?,
                             );
-                            let _ = event_tx.send(CybLexEvent::Status("CYBLEX · P2P SESSION ACTIVE".into()));
+                            let _ = event_tx_inner.send(CybLexEvent::Status("CYBLEX · P2P SESSION ACTIVE".into()));
                         }
 
                         let active = session.as_ref().expect("session initialized");
@@ -225,13 +226,13 @@ fn run_worker(command_rx: Receiver<CybLexCommand>, event_tx: Sender<CybLexEvent>
                                     ),
                                 };
 
-                                let _ = event_tx.send(CybLexEvent::Status(format!(
+                                let _ = event_tx_inner.send(CybLexEvent::Status(format!(
                                     "{} · MAGNET READY · {}",
                                     detail, magnet
                                 )));
                             }
                             Err(error) => {
-                                let _ = event_tx.send(CybLexEvent::Error(format!(
+                                let _ = event_tx_inner.send(CybLexEvent::Error(format!(
                                     "CybLex seed failed: {error:#}"
                                 )));
                             }
@@ -242,14 +243,14 @@ fn run_worker(command_rx: Receiver<CybLexCommand>, event_tx: Sender<CybLexEvent>
                             Some(handle) => {
                                 if let Some(active) = session.as_ref() {
                                     if let Err(error) = active.pause(&handle).await {
-                                        let _ = event_tx.send(CybLexEvent::Error(format!(
+                                        let _ = event_tx_inner.send(CybLexEvent::Error(format!(
                                             "CybLex pause failed: {error:#}"
                                         )));
                                     }
                                 }
                             }
                             None => {
-                                let _ = event_tx.send(CybLexEvent::Error(format!(
+                                let _ = event_tx_inner.send(CybLexEvent::Error(format!(
                                     "CybLex torrent {id} not found"
                                 )));
                             }
@@ -260,14 +261,14 @@ fn run_worker(command_rx: Receiver<CybLexCommand>, event_tx: Sender<CybLexEvent>
                             Some(handle) => {
                                 if let Some(active) = session.as_ref() {
                                     if let Err(error) = active.unpause(&handle).await {
-                                        let _ = event_tx.send(CybLexEvent::Error(format!(
+                                        let _ = event_tx_inner.send(CybLexEvent::Error(format!(
                                             "CybLex resume failed: {error:#}"
                                         )));
                                     }
                                 }
                             }
                             None => {
-                                let _ = event_tx.send(CybLexEvent::Error(format!(
+                                let _ = event_tx_inner.send(CybLexEvent::Error(format!(
                                     "CybLex torrent {id} not found"
                                 )));
                             }
@@ -277,13 +278,13 @@ fn run_worker(command_rx: Receiver<CybLexCommand>, event_tx: Sender<CybLexEvent>
                         match session.as_ref() {
                             Some(active) => {
                                 if let Err(error) = active.delete(id.into(), delete_files).await {
-                                    let _ = event_tx.send(CybLexEvent::Error(format!(
+                                    let _ = event_tx_inner.send(CybLexEvent::Error(format!(
                                         "CybLex delete failed: {error:#}"
                                     )));
                                 }
                             }
                             None => {
-                                let _ = event_tx.send(CybLexEvent::Error(
+                                let _ = event_tx_inner.send(CybLexEvent::Error(
                                     "CybLex P2P session is not active".into()
                                 ));
                             }
@@ -333,7 +334,7 @@ fn run_worker(command_rx: Receiver<CybLexCommand>, event_tx: Sender<CybLexEvent>
                     None => Vec::new(),
                 };
 
-                let _ = event_tx.send(CybLexEvent::Snapshot(snapshot));
+                let _ = event_tx_inner.send(CybLexEvent::Snapshot(snapshot));
                 last_snapshot = tokio::time::Instant::now();
             }
 
