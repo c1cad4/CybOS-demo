@@ -6,6 +6,8 @@ impl CybOs {
     pub(crate) fn chat_page(&mut self, ui: &mut egui::Ui) {
         self.poll_lan_scan();
         self.poll_lan_send();
+        self.poll_secure_events();
+        self.poll_secure_send();
 
         let neon = Color32::from_rgb(0, 255, 150);
         let dim = Color32::from_rgb(55, 145, 105);
@@ -127,7 +129,7 @@ impl CybOs {
 
                         ui.label(
                             RichText::new(format!(
-                                "⌂ LOCAL · READY\n⟶ DIRECT LAN · {} PEER(S)\n◈ TARGET · {}\n✓ DELIVERY ACK · {}\n◌ BLE · ADAPTER ONLY\n↔ P2P · ADAPTER ONLY\n∴ NOSTR · ADAPTER ONLY",
+                                "⌂ LOCAL · READY\n⟶ DIRECT LAN · {} PEER(S)\n◈ TARGET · {}\n✓ DELIVERY ACK · {}\n◌ BLE · RSSI PROXIMITY\n🔒 SECURE CHAT · ${self.secure_status}\n↔ P2P · ADAPTER ONLY\n∴ NOSTR · ADAPTER ONLY",
                                 self.lan_peers.len(),
                                 target,
                                 self.lan_delivery_status
@@ -147,7 +149,7 @@ impl CybOs {
 
                         ui.label(
                             RichText::new(
-                                "Directed UDP only. Messages are not end-to-end encrypted yet.",
+                                "Discovery: UDP broadcast. Direct chat: TCP + Noise XX authenticated encryption.",
                             )
                             .size(8.0)
                             .color(dim),
@@ -238,19 +240,22 @@ impl CybOs {
                         let can_send_lan =
                             self.lan_target.is_some() && self.lan_send_task.is_none();
 
-                        let send_lan = ui
+                        let can_send_secure =
+                            self.lan_target.is_some() && self.secure_send_task.is_none();
+
+                        let send_secure = ui
                             .add_enabled(
-                                can_send_lan,
+                                can_send_secure,
                                 egui::Button::new(
-                                    RichText::new("↗  SEND DIRECT")
+                                    RichText::new("🔒  SEND ENCRYPTED")
                                         .size(11.0)
                                         .strong()
                                         .color(neon),
                                 )
-                                .min_size(Vec2::new(135.0, 34.0)),
+                                .min_size(Vec2::new(155.0, 34.0)),
                             )
                             .on_disabled_hover_text(
-                                "Select a LAN peer. Only one direct delivery can run at a time.",
+                                "Select a discovered LAN peer. Secure TCP/Noise delivery is bounded to one worker.",
                             )
                             .clicked();
 
@@ -271,7 +276,7 @@ impl CybOs {
                             }
                         }
 
-                        if send_lan {
+                        if send_secure {
                             let t = self.chat_input.trim().to_string();
 
                             if !t.is_empty() {
@@ -286,13 +291,13 @@ impl CybOs {
                                     t.clone(),
                                     true,
                                 );
-                                self.send_lan_chat(&t);
+                                self.send_secure_chat(&t);
                                 self.chat_input.clear();
                             }
                         }
 
                         ui.label(
-                            RichText::new("LOCAL-FIRST · DELIVERY IS ACKNOWLEDGED · PLAINTEXT")
+                            RichText::new("LOCAL-FIRST · DISCOVERY UDP · CHAT ENCRYPTED · ACKNOWLEDGED")
                                 .size(8.0)
                                 .color(dim),
                         );
