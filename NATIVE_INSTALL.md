@@ -99,3 +99,20 @@ export NOTARY_PROFILE="cybOS-notary"
 When those variables are present, packaging signs the app with the hardened runtime, verifies the signature, submits the ZIP with xcrun notarytool, staples the notarization ticket to the app, validates it, and rebuilds the final ZIP.
 
 The repository does not contain Apple signing certificates, credentials or a notary keychain profile, so the actual Apple trust step must be performed in the owner's macOS/keychain or configured CI secrets.
+
+
+## CybLex
+
+CybLex embeds **librqbit 9.0.1** directly into the native app. No separate rqbit installation is required.
+
+The native CybLex page supports:
+- magnet links and HTTP(S) .torrent URLs for downloads;
+- a configurable local output directory;
+- creating and seeding a torrent from a local file or folder;
+- generating a .torrent sidecar and magnet URI;
+- pause, resume and forget operations;
+- live progress and upload counters.
+
+The first version intentionally keeps the torrent engine inside a dedicated background Tokio runtime instead of blocking the egui/UI thread.
+
+Use CybLex only for content you own or are authorized to distribute, including public-domain, open-license and creator-authorized material.
