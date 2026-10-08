@@ -9,6 +9,7 @@ mod assets;
 mod brain;
 mod config;
 mod cyblex;
+mod cybdex;
 mod graph;
 mod navigation;
 mod network;
