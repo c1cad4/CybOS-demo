@@ -5,6 +5,7 @@ use egui::{Color32, RichText, Stroke, Vec2};
 impl CybOs {
     pub(crate) fn network(&mut self, ui: &mut egui::Ui) {
         self.poll_lan_scan();
+        self.refresh_proximity();
         self.poll_lan_send();
         self.sync_ble_advertiser();
 
