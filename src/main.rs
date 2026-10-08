@@ -90,8 +90,8 @@ fn main() -> eframe::Result {
                 println!("      Run the process-isolated relay fault-recovery self-test.");
                 return Ok(());
             }
+            #[cfg(any(debug_assertions, feature = "qa"))]
             "--self-test" => {
-                #[cfg(debug_assertions)]
                 match args.next().as_deref() {
                     Some("onion") | None => {
                         match network::lan::run_headless_onion_test() {
@@ -134,23 +134,23 @@ fn main() -> eframe::Result {
                         eprintln!("self-tests are available only in debug builds");
                         std::process::exit(2);
                     }
-                    #[cfg(debug_assertions)]
+                    #[cfg(any(debug_assertions, feature = "qa"))]
                     Some(name) => {
                         eprintln!("unknown self-test '{name}'. Use '--self-test help'.");
                         std::process::exit(2);
                     }
                 }
-                #[cfg(not(debug_assertions))]
-                {
-                    eprintln!("self-tests are available only in debug builds");
-                    std::process::exit(2);
-                }
+            }
+            #[cfg(not(any(debug_assertions, feature = "qa")))]
+            "--self-test" => {
+                eprintln!("self-tests are not included in this product build; use cybOS-QA.app");
+                std::process::exit(2);
             }
             _ => {}
         }
     }
 
-    #[cfg(debug_assertions)]
+    #[cfg(any(debug_assertions, feature = "qa"))]
     if std::env::var_os("CYBOS_HEADLESS_TEST_NODE").is_some() {
         if let Err(error) = network::lan::run_headless_test_node() {
             eprintln!("cybOS headless test node failed: {error}");
@@ -159,7 +159,7 @@ fn main() -> eframe::Result {
         return Ok(());
     }
 
-    #[cfg(debug_assertions)]
+    #[cfg(any(debug_assertions, feature = "qa"))]
     if std::env::var_os("CYBOS_HEADLESS_ONION_TEST").is_some() {
         if let Err(error) = network::lan::run_headless_onion_test() {
             eprintln!("cybOS headless onion test failed: {error}");
@@ -168,7 +168,7 @@ fn main() -> eframe::Result {
         return Ok(());
     }
 
-    #[cfg(debug_assertions)]
+    #[cfg(any(debug_assertions, feature = "qa"))]
     if std::env::var_os("CYBOS_HEADLESS_ONION_PROCESS_TEST").is_some() {
         if let Err(error) = network::lan::run_process_isolated_onion_test() {
             eprintln!("cybOS process-isolated onion test failed: {error}");
