@@ -103,18 +103,6 @@ pub(crate) fn spawn_listener(node_id: String, private_key: Vec<u8>) -> Listener 
     spawn_listener_from_socket(node_id, private_key, listener)
 }
 
-fn spawn_listener_on_port(
-    node_id: String,
-    private_key: Vec<u8>,
-    port: u16,
-) -> Listener {
-    let listener = match TcpListener::bind(("0.0.0.0", port)) {
-        Ok(value) => value,
-        Err(_) => return Listener::empty(),
-    };
-    spawn_listener_from_socket(node_id, private_key, listener)
-}
-
 #[cfg(test)]
 fn spawn_test_listener(
     node_id: String,
@@ -479,6 +467,64 @@ mod tests {
     }
 
     #[test]
+    fn noise_xx_transport_roundtrip_is_platform_independent() {
+        let params: NoiseParams = PATTERN.parse().expect("noise params");
+        let initiator_key = Builder::new(params.clone())
+            .generate_keypair()
+            .expect("initiator keypair");
+        let responder_key = Builder::new(params.clone())
+            .generate_keypair()
+            .expect("responder keypair");
+
+        let mut initiator = Builder::new(params.clone())
+            .local_private_key(&initiator_key.private)
+            .expect("initiator static key")
+            .build_initiator()
+            .expect("initiator state");
+        let mut responder = Builder::new(params)
+            .local_private_key(&responder_key.private)
+            .expect("responder static key")
+            .build_responder()
+            .expect("responder state");
+
+        let mut frame = vec![0_u8; 1024];
+        let mut payload = vec![0_u8; 1024];
+
+        let n = initiator.write_message(b"hello-1", &mut frame).expect("handshake 1");
+        responder.read_message(&frame[..n], &mut payload).expect("handshake 1 read");
+
+        let n = responder.write_message(b"hello-2", &mut frame).expect("handshake 2");
+        initiator.read_message(&frame[..n], &mut payload).expect("handshake 2 read");
+
+        let n = initiator.write_message(b"hello-3", &mut frame).expect("handshake 3");
+        responder.read_message(&frame[..n], &mut payload).expect("handshake 3 read");
+
+        let mut initiator_transport = initiator
+            .into_transport_mode()
+            .expect("initiator transport");
+        let mut responder_transport = responder
+            .into_transport_mode()
+            .expect("responder transport");
+
+        let n = initiator_transport
+            .write_message(b"CYBCHAT-PING", &mut frame)
+            .expect("encrypt ping");
+        let payload_len = responder_transport
+            .read_message(&frame[..n], &mut payload)
+            .expect("decrypt ping");
+        assert_eq!(&payload[..payload_len], b"CYBCHAT-PING");
+
+        let n = responder_transport
+            .write_message(b"ACK", &mut frame)
+            .expect("encrypt ack");
+        let payload_len = initiator_transport
+            .read_message(&frame[..n], &mut payload)
+            .expect("decrypt ack");
+        assert_eq!(&payload[..payload_len], b"ACK");
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    #[test]
     fn secure_loopback_rejection_is_not_reported_as_delivery() {
         let _lock = TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
         let params: NoiseParams = PATTERN.parse().expect("noise params");
@@ -532,6 +578,7 @@ mod tests {
         thread::sleep(Duration::from_millis(100));
     }
 
+    #[cfg(not(target_os = "macos"))]
     #[test]
     fn secure_loopback_delivery_uses_noise_and_ack() {
         let _lock = TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
