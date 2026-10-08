@@ -53,6 +53,7 @@ pub(crate) struct CybOs {
     pub(crate) qwen_child: Option<Child>,
     pub(crate) qwen_status: String,
     pub(crate) qwen_retry_after: Instant,
+    pub(crate) ble_advertiser: Option<Child>,
     pub(crate) toast: Option<(String, Instant)>,
     pub(crate) camera_zone: usize,
     pub(crate) search_focus: bool,
@@ -134,6 +135,7 @@ impl Default for CybOs {
             qwen_child: None,
             qwen_status: "QWEN · OFFLINE".into(),
             qwen_retry_after: Instant::now(),
+            ble_advertiser: None,
             toast: None,
             camera_zone: 0,
             search_focus: false,
@@ -156,5 +158,15 @@ impl Default for CybOs {
 
         app.initialize_graph();
         app
+    }
+}
+
+impl Drop for CybOs {
+    fn drop(&mut self) {
+        crate::network::ble_advertiser::stop(&mut self.ble_advertiser);
+        if let Some(child) = self.qwen_child.as_mut() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
     }
 }
