@@ -254,12 +254,14 @@ fn run_worker(command_rx: Receiver<CybLexCommand>, event_tx: Sender<CybLexEvent>
                         }
                     }
                     Ok(CybLexCommand::Resume { id }) => {
-                        match session.get(id.into()) {
+                        match session.as_ref().and_then(|s| s.get(id.into())) {
                             Some(handle) => {
-                                if let Err(error) = session.unpause(&handle).await {
-                                    let _ = event_tx.send(CybLexEvent::Error(format!(
-                                        "CybLex resume failed: {error:#}"
-                                    )));
+                                if let Some(active) = session.as_ref() {
+                                    if let Err(error) = active.unpause(&handle).await {
+                                        let _ = event_tx.send(CybLexEvent::Error(format!(
+                                            "CybLex resume failed: {error:#}"
+                                        )));
+                                    }
                                 }
                             }
                             None => {
@@ -270,10 +272,19 @@ fn run_worker(command_rx: Receiver<CybLexCommand>, event_tx: Sender<CybLexEvent>
                         }
                     }
                     Ok(CybLexCommand::Forget { id, delete_files }) => {
-                        let result = match session.as_ref() { Some(active) => active.delete(id.into(), delete_files).await, None => Err(anyhow::anyhow!("CybLex P2P session is not active")), }; if let Err(error) = result {
-                            let _ = event_tx.send(CybLexEvent::Error(format!(
-                                "CybLex delete failed: {error:#}"
-                            )));
+                        match session.as_ref() {
+                            Some(active) => {
+                                if let Err(error) = active.delete(id.into(), delete_files).await {
+                                    let _ = event_tx.send(CybLexEvent::Error(format!(
+                                        "CybLex delete failed: {error:#}"
+                                    )));
+                                }
+                            }
+                            None => {
+                                let _ = event_tx.send(CybLexEvent::Error(
+                                    "CybLex P2P session is not active".into()
+                                ));
+                            }
                         }
                     }
                     Ok(CybLexCommand::Shutdown) => {
@@ -298,25 +309,28 @@ fn run_worker(command_rx: Receiver<CybLexCommand>, event_tx: Sender<CybLexEvent>
             if last_snapshot.elapsed() >= SNAPSHOT_INTERVAL {
                 let snapshot = match session.as_ref() {
                     Some(active) => active.with_torrents(|iter| {
-                    iter.map(|(_, torrent)| {
-                        let stats = torrent.stats();
-                        let info_hash = torrent.info_hash().as_string();
-                        CybLexTorrent {
-                            id: torrent.id(),
-                            name: torrent.name().unwrap_or_else(|| format!("torrent-{}", torrent.id())),
-                            magnet_uri: format!("magnet:?xt=urn:btih:{info_hash}"),
-                            info_hash,
-                            output_folder: torrent.output_folder().display().to_string(),
-                            progress_bytes: stats.progress_bytes,
-                            total_bytes: stats.total_bytes,
-                            uploaded_bytes: stats.uploaded_bytes,
-                            finished: stats.finished,
-                            paused: torrent.is_paused(),
-                            state: format!("{:?}", stats.state),
-                            error: stats.error,
-                        }
-                    }).collect::<Vec<_>>()
-                });
+                        iter.map(|(_, torrent)| {
+                            let stats = torrent.stats();
+                            let info_hash = torrent.info_hash().as_string();
+                            CybLexTorrent {
+                                id: torrent.id(),
+                                name: torrent.name().unwrap_or_else(|| format!("torrent-{}", torrent.id())),
+                                magnet_uri: format!("magnet:?xt=urn:btih:{info_hash}"),
+                                info_hash,
+                                output_folder: torrent.output_folder().display().to_string(),
+                                progress_bytes: stats.progress_bytes,
+                                total_bytes: stats.total_bytes,
+                                uploaded_bytes: stats.uploaded_bytes,
+                                finished: stats.finished,
+                                paused: torrent.is_paused(),
+                                state: format!("{:?}", stats.state),
+                                error: stats.error,
+                            }
+                        }).collect::<Vec<_>>()
+                    }),
+                    None => Vec::new(),
+                };
+
                 let _ = event_tx.send(CybLexEvent::Snapshot(snapshot));
                 last_snapshot = tokio::time::Instant::now();
             }
