@@ -6,6 +6,11 @@ pub mod web_search;
 pub mod web_fetch;
 pub mod lan;
 #[cfg(target_os = "macos")]
+pub mod ble_advertiser;
+#[cfg(not(target_os = "macos"))]
+#[path = "ble_advertiser_stub.rs"]
+pub mod ble_advertiser;
+#[cfg(target_os = "macos")]
 pub mod ble;
 #[cfg(not(target_os = "macos"))]
 #[path = "ble_stub.rs"]
