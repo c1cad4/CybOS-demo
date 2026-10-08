@@ -96,12 +96,17 @@ pub(crate) fn spawn_listener(node_id: String, visibility: Arc<AtomicBool>) -> Re
                     continue;
                 }
 
+                // Hidden nodes do not answer discovery at all. This makes the
+                // opt-in visibility setting truthful at the packet level.
+                if !visibility.load(Ordering::Relaxed) {
+                    continue;
+                }
+
                 let response = format!(
-                    "{} {} {} {}",
+                    "{} {} {} VISIBLE",
                     RESPONSE_PREFIX,
                     node_id,
                     APP_VERSION,
-                    if visibility.load(Ordering::Relaxed) { "VISIBLE" } else { "HIDDEN" }
                 );
 
                 let _ = socket.send_to(response.as_bytes(), peer_addr);
