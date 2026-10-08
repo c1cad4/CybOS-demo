@@ -23,6 +23,8 @@ const ACK_PREFIX: &str = "CYBOS_ACK";
 const MAX_CHAT_BYTES: usize = 1800;
 const CHAT_ACK_TIMEOUT: Duration = Duration::from_millis(700);
 const PEER_TTL: Duration = Duration::from_secs(15);
+const SCAN_BUDGET: Duration = Duration::from_secs(2);
+const SEND_BUDGET: Duration = Duration::from_secs(1);
 
 #[derive(Clone, Debug)]
 pub(crate) struct LanPeer {
@@ -377,11 +379,20 @@ impl crate::state::CybOs {
         let (tx, rx) = mpsc::channel();
 
         self.lan_scan = Some(rx);
+        let contract = crate::runtime::WorkerContract::new("RADAR", SCAN_BUDGET);
+        let worker_contract = contract.clone();
+        self.lan_scan_contract = Some(contract);
         self.runtime.set_status("RADAR", "RUNNING");
 
         thread::spawn(move || {
-            let peers = scan(node_id);
-            let _ = tx.send(peers);
+            worker_contract.heartbeat();
+            if !worker_contract.expired() {
+                let peers = scan(node_id);
+                worker_contract.finish("READY");
+                let _ = tx.send(peers);
+            } else {
+                worker_contract.finish("TIMEOUT");
+            }
         });
     }
 
@@ -389,6 +400,16 @@ impl crate::state::CybOs {
         let Some(rx) = &self.lan_scan else {
             return;
         };
+
+        if let Some(contract) = self.lan_scan_contract.clone() {
+            if contract.expired() {
+                self.lan_scan = None;
+                self.lan_scan_contract = None;
+                contract.finish("TIMEOUT");
+                self.runtime.set_status("RADAR", "ERROR");
+                return;
+            }
+        }
 
         match rx.try_recv() {
             Ok(peers) => {
@@ -411,6 +432,7 @@ impl crate::state::CybOs {
                 }
 
                 self.lan_scan = None;
+                self.lan_scan_contract = None;
                 self.runtime.set_status("RADAR", "READY");
                 self.last_scan = Some(std::time::Instant::now());
                 self.add_event(
@@ -424,6 +446,9 @@ impl crate::state::CybOs {
             Err(TryRecvError::Empty) => {}
             Err(TryRecvError::Disconnected) => {
                 self.lan_scan = None;
+                if let Some(contract) = self.lan_scan_contract.take() {
+                    contract.finish("ERROR");
+                }
                 self.runtime.set_status("RADAR", "ERROR");
             }
         }
@@ -457,17 +482,27 @@ impl crate::state::CybOs {
 
         let (tx, rx) = mpsc::channel();
         self.lan_send_task = Some(rx);
+        let contract = crate::runtime::WorkerContract::new("CYBCHAT", SEND_BUDGET);
+        let worker_contract = contract.clone();
+        self.lan_send_contract = Some(contract);
         self.lan_delivery_status = format!("SENDING TO {}", peer.node_id);
+        self.runtime.set_status("CYBCHAT", "RUNNING");
 
         let sender_id = self.node_id.clone();
 
         thread::spawn(move || {
+            worker_contract.heartbeat();
+            if worker_contract.expired() {
+                worker_contract.finish("TIMEOUT");
+                return;
+            }
             let result = send_private_chat(
                 &sender_id,
                 &peer.node_id,
                 &peer.address,
                 &message,
             );
+            worker_contract.finish("READY");
             let _ = tx.send(result);
         });
     }
@@ -480,6 +515,7 @@ impl crate::state::CybOs {
         match rx.try_recv() {
             Ok(status) => {
                 self.lan_send_task = None;
+                self.lan_send_contract = None;
 
                 match status {
                     LanSendStatus::Delivered {
@@ -539,6 +575,10 @@ impl crate::state::CybOs {
             Err(TryRecvError::Empty) => {}
             Err(TryRecvError::Disconnected) => {
                 self.lan_send_task = None;
+                if let Some(contract) = self.lan_send_contract.take() {
+                    contract.finish("ERROR");
+                }
+                self.runtime.set_status("CYBCHAT", "ERROR");
             }
         }
     }
