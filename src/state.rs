@@ -258,6 +258,20 @@ impl CybOs {
                         }
                     };
 
+                    if !self.store.claim_secure_message_id(&message_id, &node_id) {
+                        self.secure_status =
+                            format!("SECURE CHAT · REPLAY REJECTED · {}", node_id);
+                        self.add_event(
+                            "SECURITY",
+                            format!(
+                                "Rejected replayed secure message {} from {}",
+                                message_id, node_id
+                            ),
+                        );
+                        self.notify("SECURE REPLAY REJECTED");
+                        continue;
+                    }
+
                     self.upsert_secure_peer(&node_id, &fingerprint, trusted);
                     self.push_chat_message(format!("CYB:{}", node_id), message.clone(), false);
                     self.add_event(
