@@ -51,6 +51,14 @@ impl Listener {
     pub(crate) fn try_recv(&self) -> Result<SecureEvent, mpsc::TryRecvError> {
         self.events.try_recv()
     }
+
+    pub(crate) fn empty() -> Self {
+        let (_tx, events) = mpsc::channel();
+        Self {
+            events,
+            stop: Arc::new(AtomicBool::new(true)),
+        }
+    }
 }
 
 impl Drop for Listener {
