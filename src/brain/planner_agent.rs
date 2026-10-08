@@ -117,4 +117,140 @@ TOOL RESULT:
         "RobotCYB достиг максимального числа шагов агента.".into()
     
     }
+
+    pub(crate) fn start_robot_job(&mut self, query: String) -> bool {
+        if self.robot_job.is_some() {
+            return false;
+        }
+
+        let snapshot = AgentSnapshot {
+            node_id: self.node_id.clone(),
+            status: self.status.clone(),
+            qwen_status: self.qwen_status.clone(),
+            temperature: self.temperature,
+            battery: self.battery,
+            chat: self.chat.clone(),
+            events: self.events.clone(),
+            nodes: self.nodes.clone(),
+            links: self.links.clone(),
+        };
+
+        let (tx, rx) = std::sync::mpsc::channel();
+
+        std::thread::spawn(move || {
+            let mut worker = match CybOs::from_agent_snapshot(snapshot) {
+                Ok(worker) => worker,
+                Err(error) => {
+                    let _ = tx.send(Err(error));
+                    return;
+                }
+            };
+
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                worker.agent_answer(&query)
+            }))
+            .map_err(|_| "RobotCYB worker terminated unexpectedly.".to_string());
+
+            let _ = tx.send(result);
+        });
+
+        self.robot_job = Some(rx);
+        self.robot_status = "RUNNING".into();
+        self.runtime.set_status("ROBOTCYB", "RUNNING");
+        true
+    }
+
+    pub(crate) fn poll_robot_job(&mut self) -> Option<String> {
+        let Some(receiver) = self.robot_job.as_ref() else {
+            return None;
+        };
+
+        match receiver.try_recv() {
+            Ok(Ok(answer)) => {
+                self.robot_job = None;
+                self.robot_status = "READY".into();
+                self.runtime.set_status("ROBOTCYB", "READY");
+                Some(answer)
+            }
+            Ok(Err(error)) => {
+                self.robot_job = None;
+                self.robot_status = "ERROR".into();
+                self.runtime.set_status("ROBOTCYB", "ERROR");
+                Some(format!("RobotCYB worker error: {}", error))
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) => {
+                self.robot_status = "RUNNING".into();
+                self.runtime.set_status("ROBOTCYB", "RUNNING");
+                None
+            }
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                self.robot_job = None;
+                self.robot_status = "ERROR".into();
+                self.runtime.set_status("ROBOTCYB", "ERROR");
+                Some("RobotCYB worker disconnected before returning a result.".into())
+            }
+        }
+    }
+
+    fn from_agent_snapshot(snapshot: AgentSnapshot) -> Result<Self, String> {
+        let store = crate::runtime::open_store();
+        let (_lan_tx, lan_events) = std::sync::mpsc::channel();
+
+        Ok(Self {
+            store,
+            page: crate::navigation::Page::Robot,
+            search: String::new(),
+            robot_input: String::new(),
+            robot_output: String::new(),
+            robot_job: None,
+            robot_status: "WORKER".into(),
+            chat_input: String::new(),
+            chat_output: String::new(),
+            chat: snapshot.chat,
+            cicada_wallet: crate::config::DEFAULT_CICADA_WALLET.into(),
+            cicada_balance: None,
+            sol_balance: None,
+            payment_uri: String::new(),
+            payment_status: String::new(),
+            balance_refresh: std::time::Instant::now(),
+            balance_task: None,
+            events: snapshot.events,
+            nodes: snapshot.nodes,
+            links: snapshot.links,
+            graph_zoom: 1.0,
+            graph_pan: eframe::egui::Vec2::ZERO,
+            selected_node: None,
+            temperature: snapshot.temperature,
+            battery: snapshot.battery,
+            node_id: snapshot.node_id,
+            runtime: crate::runtime::Runtime::new(),
+            status: snapshot.status,
+            qwen_child: None,
+            qwen_status: snapshot.qwen_status,
+            qwen_retry_after: std::time::Instant::now(),
+            toast: None,
+            camera_zone: 0,
+            search_focus: false,
+            last_scan: None,
+            lan_peers: Vec::new(),
+            lan_scan: None,
+            lan_events,
+            lan_send_task: None,
+            lan_target: None,
+            lan_delivery_status: String::new(),
+            remember_note: String::new(),
+        })
+    }
+}
+
+struct AgentSnapshot {
+    node_id: String,
+    status: String,
+    qwen_status: String,
+    temperature: f32,
+    battery: f32,
+    chat: Vec<(String, String, bool)>,
+    events: Vec<crate::models::Event>,
+    nodes: Vec<crate::models::GraphNode>,
+    links: Vec<crate::models::GraphLink>,
 }
