@@ -2,8 +2,34 @@
 
 use super::web_html;
 use super::web_parse;
+use std::sync::mpsc;
+use std::thread;
+use std::time::Duration;
+
+const WEB_SEARCH_BUDGET: Duration = Duration::from_secs(8);
+
+fn bounded_search<F>(work: F) -> String
+where
+    F: FnOnce() -> String + Send + 'static,
+{
+    let (tx, rx) = mpsc::channel();
+    thread::spawn(move || {
+        let _ = tx.send(work());
+    });
+    match rx.recv_timeout(WEB_SEARCH_BUDGET) {
+        Ok(result) => result,
+        Err(_) => "Web search timed out after 8 seconds.".into(),
+    }
+}
 
 pub(crate) fn web_search(query: &str) -> String {
+    let query = query.trim().to_string();
+
+    if query.is_empty() {
+        return "Web search query is empty.".into();
+    }
+
+    bounded_search(move || {
 
 
 
@@ -99,4 +125,5 @@ pub(crate) fn web_search(query: &str) -> String {
             query,
             results.join("\n\n")
         )
-    }
+    })
+}
