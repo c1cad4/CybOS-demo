@@ -1316,32 +1316,46 @@ pub(crate) fn run_process_isolated_onion_test() -> Result<(), String> {
         .map_err(|error| format!("cannot resolve cybOS test binary: {error}"))?;
     let source = NodeIdentity::generate_ephemeral();
 
-    let mut relay_a = spawn_process_test_node(&binary, free_udp_port()?, false)?;
-    let mut relay_b = spawn_process_test_node(&binary, free_udp_port()?, true)?;
-    let mut relay_c = spawn_process_test_node(&binary, free_udp_port()?, false)?;
-    let mut destination = spawn_process_test_node(&binary, free_udp_port()?, false)?;
+    let specs = [
+        (free_udp_port()?, false),
+        (free_udp_port()?, true),
+        (free_udp_port()?, false),
+        (free_udp_port()?, false),
+    ];
+
+    let mut nodes = Vec::with_capacity(specs.len());
+    for (port, exit_on_onion_packet) in specs {
+        match spawn_process_test_node(&binary, port, exit_on_onion_packet) {
+            Ok(node) => nodes.push(node),
+            Err(error) => {
+                for node in &mut nodes {
+                    stop_process_test_node(node);
+                }
+                return Err(error);
+            }
+        }
+    }
 
     let result = {
-        let relays = vec![
-            relay_a.peer.clone(),
-            relay_b.peer.clone(),
-            relay_c.peer.clone(),
-        ];
+        let relays: Vec<_> = nodes[..3]
+            .iter()
+            .map(|node| node.peer.clone())
+            .collect();
+        let destination = nodes[3].peer.clone();
 
         let status = send_onion_private_chat_with_route_fallback(
             &source,
-            &destination.peer,
+            &destination,
             &relays,
             "cybOS process-isolated onion recovery test",
         );
 
         let delivered = matches!(
             status,
-            LanSendStatus::Delivered { ref peer_id, .. }
-                if peer_id == &destination.peer.node_id
+            LanSendStatus::Delivered { ref peer_id, .. } if peer_id == &destination.node_id
         );
 
-        let relay_b_exited = relay_b
+        let relay_b_exited = nodes[1]
             .child
             .try_wait()
             .map_err(|error| format!("cannot inspect crashed relay process: {error}"))?
@@ -1351,7 +1365,7 @@ pub(crate) fn run_process_isolated_onion_test() -> Result<(), String> {
             println!(
                 "ONION_PROCESS_TEST OK · relay crash recovered · {} → {}",
                 source.node_id(),
-                destination.peer.node_id
+                destination.node_id
             );
             Ok(())
         } else {
@@ -1361,10 +1375,9 @@ pub(crate) fn run_process_isolated_onion_test() -> Result<(), String> {
         }
     };
 
-    stop_process_test_node(&mut relay_a);
-    stop_process_test_node(&mut relay_b);
-    stop_process_test_node(&mut relay_c);
-    stop_process_test_node(&mut destination);
+    for node in &mut nodes {
+        stop_process_test_node(node);
+    }
 
     result
 }
