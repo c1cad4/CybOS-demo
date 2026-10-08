@@ -86,11 +86,11 @@ impl Page {
             Page::Brain => "brain memory knowledge qwen мозг память знания",
             Page::Network => "network lan p2p ble nostr сеть",
             Page::Radar => "radar proximity nearby peers bluetooth ble nearby узлы друзья",
-            Page::Assets => "assets tokens cicadafarm robotcyb mint solana токены токен",
+            Page::Assets => "assets tokens cicadafarm robotcyb mint solana pumpfun program токены токен pump",
             Page::Cameras => "cameras camera rtsp farm live",
             Page::CybLex => "cyblex archive torrent bittorrent magnet seed share download p2p files",
             Page::CybDex => "cybdex dex market tokens pairs pools ohlcv candlestick price liquidity volume swap solana",
-            Page::System => "system energy battery node database",
+            Page::System => "system energy battery node database cyblaunch launcher bridge",
         };
 
         if q.is_empty() {
