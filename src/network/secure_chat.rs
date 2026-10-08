@@ -21,6 +21,7 @@ pub(crate) enum SecureEvent {
         node_id: String,
         message: String,
         fingerprint: String,
+        public_key: Vec<u8>,
     },
 }
 
@@ -221,10 +222,11 @@ fn receive_one(
         return Ok(None);
     }
 
-    let fingerprint = hs
+    let public_key = hs
         .get_remote_static()
-        .map(short_hash)
-        .unwrap_or_else(|| "UNKNOWN".into());
+        .ok_or_else(|| "remote static key missing after XX handshake".to_string())?
+        .to_vec();
+    let fingerprint = short_hash(&public_key);
 
     let mut transport = hs.into_transport_mode()
         .map_err(|e| format!("transport: {e}"))?;
@@ -248,6 +250,7 @@ fn receive_one(
         node_id: envelope.from,
         message: envelope.message,
         fingerprint,
+        public_key,
     }))
 }
 
