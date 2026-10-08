@@ -64,7 +64,7 @@ pub(crate) struct CybOs {
     pub(crate) last_scan: Option<Instant>,
     pub(crate) lan_peers: Vec<crate::network::lan::LanPeer>,
     pub(crate) lan_scan: Option<std::sync::mpsc::Receiver<Vec<crate::network::lan::LanPeer>>>,
-    pub(crate) lan_events: std::sync::mpsc::Receiver<crate::network::lan::LanEvent>,
+    pub(crate) lan_events: crate::network::lan::Listener,
     pub(crate) lan_send_task:
         Option<std::sync::mpsc::Receiver<crate::network::lan::LanSendStatus>>,
     pub(crate) lan_target: Option<String>,
