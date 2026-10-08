@@ -56,4 +56,4 @@ ditto -c -k --sequesterRsrc --keepParent "$APP" "$DIST/cybOS-${VERSION}-macOS.zi
 
 echo "Created:"
 echo "  $APP"
-echo "  $DIST/cybOS-\${VERSION}-macOS.zip"
+echo "  $DIST/cybOS-${VERSION}-macOS.zip"
