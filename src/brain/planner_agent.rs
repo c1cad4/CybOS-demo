@@ -203,6 +203,7 @@ TOOL RESULT:
             robot_input: String::new(),
             robot_output: String::new(),
             robot_job: None,
+            robot_contract: None,
             robot_status: "WORKER".into(),
             chat_input: String::new(),
             chat_output: String::new(),
