@@ -18,13 +18,13 @@ where
     });
     match rx.recv_timeout(budget) {
         Ok(result) => result,
-        Err(_) => "Web search timed out after 8 seconds.".into(),
+        Err(_) => format!("Web search timed out after {} ms.", budget.as_millis()),
     }
 }
 
-fn web_agent() -> ureq::Agent {
+fn web_agent(budget: Duration) -> ureq::Agent {
     ureq::Agent::config_builder()
-        .timeout_global(Some(WEB_SEARCH_BUDGET))
+        .timeout_global(Some(budget))
         .build()
         .into()
 }
@@ -53,7 +53,7 @@ fn bounded_web_search(query: &str, budget: Duration) -> String {
         let encoded = web_parse::percent_encode(query);
         let url = format!("https://html.duckduckgo.com/html/?q={}", encoded);
 
-        let response = match web_agent()
+        let response = match web_agent(budget)
             .get(&url)
             .header(
                 "User-Agent",
