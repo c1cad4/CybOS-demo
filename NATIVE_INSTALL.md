@@ -13,6 +13,18 @@ cybOS is a working native macOS technical beta. Repository CI verifies:
 
 The current native runtime includes local SQLite state, RobotCYB/Qwen integration, CYB RADAR, unified LAN+BLE proximity, Noise XX secure CYBChat, TOFU peer identity and Cybergraph persistence.
 
+## Download the macOS beta
+
+The published v0.7.1 package is available from the companion release repository:
+
+https://github.com/c1cad4/cybOS/releases/tag/v0.7.1
+
+Download the ZIP, unpack it, and open `cybOS.app`.
+
+On a first launch, macOS may show a Gatekeeper warning because the current public binary is not Developer ID signed/notarized. Use Finder's **Open** action on the app, or in **System Settings → Privacy & Security** use the **Open Anyway** action for cybOS.
+
+The current `main` branch already contains universal ARM64 + Intel packaging for the next public release.
+
 ## Build locally
 
 From the repository root:
