@@ -43,5 +43,15 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <key>NSHighResolutionCapable</key><true/>
 </dict></plist>
 PLIST
+
+if command -v codesign >/dev/null 2>&1; then
+  echo "Signing cybOS.app locally..."
+  codesign --force --deep --sign - "$APP" >/dev/null 2>&1 || true
+fi
+
+if command -v xattr >/dev/null 2>&1; then
+  xattr -dr com.apple.quarantine "$APP" >/dev/null 2>&1 || true
+fi
+
 open "$APP"
 echo "cybOS launched. You can close this Terminal window."
