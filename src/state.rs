@@ -73,6 +73,7 @@ pub(crate) struct CybOs {
     pub(crate) ble_peers: Vec<crate::network::ble::BlePeer>,
     pub(crate) ble_scan: Option<std::sync::mpsc::Receiver<Result<Vec<crate::network::ble::BlePeer>, String>>>,
     pub(crate) ble_status: String,
+    pub(crate) nearby_peers: Vec<crate::network::proximity::NearbyPeer>,
     pub(crate) noise_private_key: Vec<u8>,
     pub(crate) secure_events: std::sync::mpsc::Receiver<crate::network::secure_chat::SecureEvent>,
     pub(crate) secure_send_task: Option<std::sync::mpsc::Receiver<crate::network::secure_chat::SecureSendStatus>>,
@@ -164,6 +165,7 @@ impl Default for CybOs {
             ble_peers: Vec::new(),
             ble_scan: None,
             ble_status: "BLE · IDLE".into(),
+            nearby_peers: Vec::new(),
             noise_private_key,
             secure_events,
             secure_send_task: None,
@@ -177,6 +179,14 @@ impl Default for CybOs {
     }
 }
 
+
+
+impl CybOs {
+    pub(crate) fn refresh_proximity(&mut self) {
+        self.nearby_peers =
+            crate::network::proximity::merge(&self.lan_peers, &self.ble_peers);
+    }
+}
 
 impl CybOs {
     pub(crate) fn poll_secure_events(&mut self) {
