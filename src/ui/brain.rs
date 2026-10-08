@@ -30,7 +30,7 @@ impl CybOs {
                 .fill(Color32::from_rgb(8, 22, 14))
                 .stroke(Stroke::new(1.0, Color32::from_rgb(70, 150, 95)))
                 .corner_radius(12.0)
-                .inner_margin(egui::Margin::same(12.0))
+                .inner_margin(egui::Margin::same(12))
                 .show(ui, |ui| {
                     ui.label(RichText::new("QWEN FIRST-RUN SETUP").size(12.0).strong().color(neon));
                     ui.add_space(5.0);
