@@ -79,7 +79,7 @@ pub(crate) fn load_or_create_static_key(store: &crate::store::Store) -> Result<V
     Ok(keypair.private)
 }
 
-pub(crate) fn spawn_listener(node_id: String, private_key: Vec<u8>) -> Receiver<SecureEvent> {
+pub(crate) fn spawn_listener(node_id: String, private_key: Vec<u8>) -> Listener {
     let (tx, rx) = mpsc::channel();
     let stop = Arc::new(AtomicBool::new(false));
     let stop_thread = Arc::clone(&stop);
@@ -123,9 +123,7 @@ pub(crate) fn spawn_listener(node_id: String, private_key: Vec<u8>) -> Receiver<
             }
         }
     });
-    // Keep the stop flag alive in the listener thread; the current CybOs
-    // contract exposes only the event receiver.
-    rx
+    Listener { events: rx, stop }
 }
 
 pub(crate) fn send(
