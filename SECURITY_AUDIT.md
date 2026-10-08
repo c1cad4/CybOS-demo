@@ -71,10 +71,12 @@ A process with access to the running application can still request decrypted rec
 
 ### MEDIUM — Adversarial integration coverage is still bounded
 The harness now covers live routed delivery, replay injection and ciphertext tampering
-in the real UDP listener path, in addition to the existing direct-LAN and routed tests.
-Some broader process-level fault cases are still not covered.
+in the real UDP listener path, plus process-isolated relay failure after packet entry
+and immediately after route binding. Broader route-expiry and packet-drop fault cases
+remain outside the process harness.
 
-Recommended next step: extend the process harness with controlled relay crash, route-expiry, malformed-binding and mid-route packet-drop scenarios.
+Recommended next step: extend the process harness with controlled route-expiry,
+mid-route packet-drop and malformed route-binding scenarios.
 
 ### LOW — Discovery address is not cryptographically bound
 The signed discovery response now includes a fresh per-scan challenge nonce, so an old authenticated `CYBOS_PEER` response cannot be replayed into a new scan. The observed response source address is still treated as a locator rather than a cryptographic identity binding. The subsequent signed handshake remains the authoritative identity check.
@@ -100,6 +102,8 @@ Current automated integration coverage also includes:
 - forged ACK signature rejection
 - persistent TOFU key replacement rejection
 - routed fallback after an unavailable relay
+- process-isolated recovery after relay crash during packet forwarding
+- process-isolated recovery after relay crash during route binding
 - idempotent duplicate-delivery ACK recovery
 
 
@@ -133,7 +137,6 @@ Completed:
 - explicit route selection and ordered relay hops in CybChat UI.
 
 Still to harden:
-- relay crash/failure recovery after a packet has already entered an active route;
 - route-expiry refresh under long-lived sessions;
 - broader malformed route-binding and packet-drop fault injection across process boundaries;
 - broader traffic-analysis and endpoint privacy protections.
