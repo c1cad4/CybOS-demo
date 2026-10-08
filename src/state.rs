@@ -64,6 +64,7 @@ pub(crate) struct CybOs {
         Option<std::sync::mpsc::Receiver<crate::network::lan::LanSendStatus>>,
     pub(crate) lan_target: Option<String>,
     pub(crate) lan_delivery_status: String,
+    pub(crate) radar_visible: bool,
 
     pub(crate) remember_note: String,
 }
@@ -88,7 +89,8 @@ impl Default for CybOs {
             );
         }
 
-        let lan_events = crate::network::lan::spawn_listener(node_id.clone());
+        let radar_visible = store.get("radar_visible").map(|v| v == "true").unwrap_or(false);
+        let lan_events = crate::network::lan::spawn_listener(node_id.clone(), radar_visible);
 
         let mut app = Self {
             store,
@@ -136,6 +138,7 @@ impl Default for CybOs {
             lan_send_task: None,
             lan_target: None,
             lan_delivery_status: "NO DIRECT LAN MESSAGE YET".into(),
+            radar_visible,
 
             remember_note: String::new(),
         };
