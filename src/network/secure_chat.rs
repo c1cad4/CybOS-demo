@@ -59,6 +59,26 @@ impl Drop for Listener {
     }
 }
 
+pub(crate) fn load_or_create_static_key(store: &crate::store::Store) -> Result<Vec<u8>, String> {
+    if let Some(encoded) = store.get("noise_static_private_hex") {
+        if encoded.len() == 64 && encoded.chars().all(|c| c.is_ascii_hexdigit()) {
+            let mut key = Vec::with_capacity(32);
+            for i in (0..encoded.len()).step_by(2) {
+                key.push(u8::from_str_radix(&encoded[i..i + 2], 16).map_err(|e| e.to_string())?);
+            }
+            return Ok(key);
+        }
+    }
+
+    let params = PATTERN.parse().map_err(|e| format!("noise params: {e}"))?;
+    let keypair = Builder::new(params)
+        .generate_keypair()
+        .map_err(|e| format!("noise key generation: {e}"))?;
+    let encoded = keypair.private.iter().map(|b| format!("{b:02x}")).collect::<String>();
+    store.set("noise_static_private_hex", &encoded);
+    Ok(keypair.private)
+}
+
 pub(crate) fn spawn_listener(node_id: String, private_key: Vec<u8>) -> Receiver<SecureEvent> {
     let (tx, rx) = mpsc::channel();
     let stop = Arc::new(AtomicBool::new(false));
