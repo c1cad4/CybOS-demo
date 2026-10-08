@@ -32,11 +32,11 @@ Core release for the native local-first cybOS runtime.
 
 ## Current release status
 
-The repository is suitable for a technical/private beta today.
+The repository is suitable for a technical/private beta and has a published v0.7.1 macOS ZIP through `c1cad4/cybOS`.
 
-A normal public macOS download still needs:
-- an actual published GitHub Release asset;
+A normal public macOS installation still needs:
 - Developer ID signing and Apple notarization for a smooth Gatekeeper install path;
-- first-run Qwen onboarding or a bundled model distribution strategy for turnkey RobotCYB.
+- two-Mac interoperability and upgrade/recovery validation;
+- first-run Qwen onboarding remains local-model dependent.
 
 Hardware/camera integrations and P2P/Nostr adapters remain outside the current desktop beta.
