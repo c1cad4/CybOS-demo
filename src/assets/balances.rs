@@ -4,10 +4,16 @@ use crate::config::CICADAFARM_MINT;
 use crate::state::CybOs;
 use std::sync::mpsc::{self, TryRecvError};
 use std::thread;
+use std::time::Duration;
 
 impl CybOs {
     fn fetch_cicada_balances(wallet: &str) -> (Option<f64>, Option<f64>) {
         const RPC: &str = "https://api.mainnet-beta.solana.com";
+        const RPC_BUDGET: Duration = Duration::from_secs(8);
+        let agent: ureq::Agent = ureq::Agent::config_builder()
+            .timeout_global(Some(RPC_BUDGET))
+            .build()
+            .into();
 
         let sol_balance = {
             let sol_body = serde_json::json!({
@@ -17,7 +23,7 @@ impl CybOs {
                 "params": [wallet]
             });
 
-            ureq::post(RPC)
+            agent.post(RPC)
                 .header("content-type", "application/json")
                 .send(sol_body.to_string())
                 .ok()
@@ -42,7 +48,7 @@ impl CybOs {
                 ]
             });
 
-            ureq::post(RPC)
+            agent.post(RPC)
                 .header("content-type", "application/json")
                 .send(token_body.to_string())
                 .ok()
