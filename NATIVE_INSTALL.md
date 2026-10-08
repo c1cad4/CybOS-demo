@@ -85,4 +85,15 @@ The current public beta is **v0.7.1**:
 
 Tagging the repository with a `v*` tag triggers `.github/workflows/release-macos.yml`, which builds and publishes the macOS ZIP as a GitHub Release asset.
 
-For a smooth end-user macOS installation experience, the remaining distribution step is Developer ID signing + Apple notarization. The repository does not contain Apple signing credentials, so that step cannot be honestly marked complete from CI alone.
+For a smooth end-user macOS installation experience, Developer ID signing + Apple notarization can be enabled without changing the application code.
+
+Set:
+~~~bash
+export CODESIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)"
+export NOTARY_PROFILE="cybOS-notary"
+./scripts/package_macos.sh
+~~~
+
+When those variables are present, packaging signs the app with the hardened runtime, verifies the signature, submits the ZIP with xcrun notarytool, staples the notarization ticket to the app, validates it, and rebuilds the final ZIP.
+
+The repository does not contain Apple signing certificates, credentials or a notary keychain profile, so the actual Apple trust step must be performed in the owner's macOS/keychain or configured CI secrets.
