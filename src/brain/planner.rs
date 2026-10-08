@@ -29,7 +29,7 @@ impl CybOs {
             || lower.starts_with("store this");
 
         if learning_request {
-            self.learn_from_user_message(q);
+            self.learn_from_user_message_with_deadline(q, deadline);
 
             return "Запомнил. Данные обработаны и сохранены в Knowledge Graph и локальной памяти cybOS.".into();
         }
@@ -51,7 +51,7 @@ impl CybOs {
         };
 
         if let Some(web_query) = forced_web_query {
-            return self.direct_web_answer(&conversation, &web_query);
+            return self.direct_web_answer_with_deadline(&conversation, &web_query, deadline);
         }
 
         // ----------------------------------------------------
