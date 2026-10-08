@@ -32,7 +32,7 @@ For the native desktop installation path, see [NATIVE_INSTALL.md](NATIVE_INSTALL
 - Cybergraph secure-peer relationships
 - Native CybLex P2P archive powered by embedded librqbit 9.0.1
 
-See [NATIVE_INSTALL.md](NATIVE_INSTALL.md) for build and packaging instructions.
+See [NATIVE_INSTALL.md](NATIVE_INSTALL.md) for build and packaging instructions. Third-party integration provenance is documented in [THIRD_PARTY.md](THIRD_PARTY.md).
 
 **Latest hardened release:** [cybOS v0.7.2 for macOS](https://github.com/c1cad4/cybOS/releases/tag/v0.7.2)  
 
@@ -64,6 +64,18 @@ Current native capabilities:
 - show progress, upload bytes, state, info hash and output path.
 
 CybLex is for content the user owns or is authorized to distribute, including public-domain, open-license and creator-authorized archives. It is not a catalog of unauthorized material.
+
+### Ecosystem bridges
+
+**CybLaunch** is registered as an external launcher boundary at [c1cad4/cybLaunch](https://github.com/c1cad4/cybLaunch). The upstream repository currently contains no implementation files, so cybOS does not pretend to bundle an executable that does not exist yet.
+
+**PumpFun-style Solana program** is registered in Assets as a read-only devnet reference:
+- program: `pump`;
+- program ID: `7wUQXRQtBzTmyp9kcrmok9FKcc4RSYXxPYN9FGDLnqxb`;
+- source: `0xAllan123/pumpfun-smart-contract`;
+- license: MIT.
+
+This adapter is deliberately non-signing: it exposes program provenance and capabilities without creating or submitting financial transactions.
 
 ## Browser runtime architecture
 

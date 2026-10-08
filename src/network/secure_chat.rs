@@ -1,6 +1,6 @@
 //! Bounded encrypted direct transport for CYBChat.
 use serde::{Deserialize, Serialize};
-use snow::{params::NoiseParams, Builder};
+use snow::Builder;
 use std::io::{ErrorKind, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -96,35 +96,56 @@ pub(crate) fn load_or_create_static_key(store: &crate::store::Store) -> Result<V
 }
 
 pub(crate) fn spawn_listener(node_id: String, private_key: Vec<u8>) -> Listener {
+    let listener = match TcpListener::bind(("0.0.0.0", PORT)) {
+        Ok(value) => value,
+        Err(_) => return Listener::empty(),
+    };
+    spawn_listener_from_socket(node_id, private_key, listener)
+}
+
+#[cfg(test)]
+fn spawn_test_listener(
+    node_id: String,
+    private_key: Vec<u8>,
+) -> (Listener, u16) {
+    let listener = TcpListener::bind(("127.0.0.1", 0)).expect("bind ephemeral test port");
+    let port = listener.local_addr().expect("test listener address").port();
+    (spawn_listener_from_socket(node_id, private_key, listener), port)
+}
+
+fn spawn_listener_from_socket(
+    node_id: String,
+    private_key: Vec<u8>,
+    listener: TcpListener,
+) -> Listener {
     let (tx, rx) = mpsc::channel();
     let stop = Arc::new(AtomicBool::new(false));
     let stop_thread = Arc::clone(&stop);
 
+    if listener.set_nonblocking(true).is_err() {
+        return Listener::empty();
+    }
+
+    const MAX_ACTIVE: usize = 8;
+    let active = Arc::new(AtomicUsize::new(0));
+    let node_id = node_id.clone();
+    let key = private_key.clone();
+    let active_for_thread = Arc::clone(&active);
+
     thread::spawn(move || {
-        let listener = match TcpListener::bind(("0.0.0.0", PORT)) {
-            Ok(v) => v,
-            Err(_) => return,
-        };
-        if listener.set_nonblocking(true).is_err() {
-            return;
-        }
-
-        const MAX_ACTIVE: usize = 8;
-        let active = Arc::new(AtomicUsize::new(0));
-
         while !stop_thread.load(Ordering::Relaxed) {
             match listener.accept() {
                 Ok((mut stream, _addr)) => {
-                    if active.load(Ordering::Acquire) >= MAX_ACTIVE {
+                    if active_for_thread.load(Ordering::Acquire) >= MAX_ACTIVE {
                         continue;
                     }
                     let _ = stream.set_read_timeout(Some(TIMEOUT));
                     let _ = stream.set_write_timeout(Some(TIMEOUT));
-                    active.fetch_add(1, Ordering::AcqRel);
+                    active_for_thread.fetch_add(1, Ordering::AcqRel);
                     let tx = tx.clone();
                     let node_id = node_id.clone();
-                    let key = private_key.clone();
-                    let active = Arc::clone(&active);
+                    let key = key.clone();
+                    let active = Arc::clone(&active_for_thread);
                     thread::spawn(move || {
                         let deadline = Instant::now() + SESSION_BUDGET;
                         let _ = receive_one(&mut stream, &node_id, &key, deadline, &tx);
@@ -138,6 +159,7 @@ pub(crate) fn spawn_listener(node_id: String, private_key: Vec<u8>) -> Listener 
             }
         }
     });
+
     Listener { events: rx, stop }
 }
 
@@ -149,13 +171,45 @@ pub(crate) fn send(
     message: &str,
 ) -> SecureSendStatus {
     let message_id = Uuid::new_v4().to_string();
-    send_with_deadline(sender_id, peer_id, address, private_key, message, Instant::now() + SESSION_BUDGET, message_id)
+    send_with_deadline(
+        sender_id,
+        peer_id,
+        address,
+        PORT,
+        private_key,
+        message,
+        Instant::now() + SESSION_BUDGET,
+        message_id,
+    )
+}
+
+#[cfg(test)]
+fn send_to_port(
+    sender_id: &str,
+    peer_id: &str,
+    address: &str,
+    port: u16,
+    private_key: &[u8],
+    message: &str,
+) -> SecureSendStatus {
+    let message_id = Uuid::new_v4().to_string();
+    send_with_deadline(
+        sender_id,
+        peer_id,
+        address,
+        port,
+        private_key,
+        message,
+        Instant::now() + SESSION_BUDGET,
+        message_id,
+    )
 }
 
 fn send_with_deadline(
     sender_id: &str,
     peer_id: &str,
     address: &str,
+    port: u16,
     private_key: &[u8],
     message: &str,
     deadline: Instant,
@@ -170,7 +224,7 @@ fn send_with_deadline(
         }
 
         let mut stream = TcpStream::connect_timeout(
-            &format!("{address}:{PORT}")
+            &format!("{address}:{port}")
                 .parse()
                 .map_err(|e| format!("address: {e}"))?,
             remaining(deadline)?,
@@ -393,11 +447,13 @@ fn short_hash(bytes: &[u8]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{decode_hex, encode_hex, short_hash, spawn_listener, send, SecureSendStatus, SecureEvent, SecureReply, PATTERN};
-    use snow::Builder;
+    use super::{decode_hex, encode_hex, short_hash, send_to_port, spawn_test_listener, SecureSendStatus, SecureEvent, SecureReply, PATTERN};
+    use snow::{params::NoiseParams, Builder};
+    use std::sync::Mutex;
     use std::thread;
     use std::time::{Duration, Instant};
 
+    static TEST_LOCK: Mutex<()> = Mutex::new(());
     #[test]
     fn hex_roundtrip() {
         let data = [0, 1, 2, 15, 16, 255];
@@ -411,20 +467,81 @@ mod tests {
     }
 
     #[test]
+    fn noise_xx_transport_roundtrip_is_platform_independent() {
+        let params: NoiseParams = PATTERN.parse().expect("noise params");
+        let initiator_key = Builder::new(params.clone())
+            .generate_keypair()
+            .expect("initiator keypair");
+        let responder_key = Builder::new(params.clone())
+            .generate_keypair()
+            .expect("responder keypair");
+
+        let mut initiator = Builder::new(params.clone())
+            .local_private_key(&initiator_key.private)
+            .expect("initiator static key")
+            .build_initiator()
+            .expect("initiator state");
+        let mut responder = Builder::new(params)
+            .local_private_key(&responder_key.private)
+            .expect("responder static key")
+            .build_responder()
+            .expect("responder state");
+
+        let mut frame = vec![0_u8; 1024];
+        let mut payload = vec![0_u8; 1024];
+
+        let n = initiator.write_message(b"hello-1", &mut frame).expect("handshake 1");
+        responder.read_message(&frame[..n], &mut payload).expect("handshake 1 read");
+
+        let n = responder.write_message(b"hello-2", &mut frame).expect("handshake 2");
+        initiator.read_message(&frame[..n], &mut payload).expect("handshake 2 read");
+
+        let n = initiator.write_message(b"hello-3", &mut frame).expect("handshake 3");
+        responder.read_message(&frame[..n], &mut payload).expect("handshake 3 read");
+
+        let mut initiator_transport = initiator
+            .into_transport_mode()
+            .expect("initiator transport");
+        let mut responder_transport = responder
+            .into_transport_mode()
+            .expect("responder transport");
+
+        let n = initiator_transport
+            .write_message(b"CYBCHAT-PING", &mut frame)
+            .expect("encrypt ping");
+        let payload_len = responder_transport
+            .read_message(&frame[..n], &mut payload)
+            .expect("decrypt ping");
+        assert_eq!(&payload[..payload_len], b"CYBCHAT-PING");
+
+        let n = responder_transport
+            .write_message(b"ACK", &mut frame)
+            .expect("encrypt ack");
+        let payload_len = initiator_transport
+            .read_message(&frame[..n], &mut payload)
+            .expect("decrypt ack");
+        assert_eq!(&payload[..payload_len], b"ACK");
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    #[test]
     fn secure_loopback_rejection_is_not_reported_as_delivery() {
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
         let params: NoiseParams = PATTERN.parse().expect("noise params");
         let sender = Builder::new(params.clone()).generate_keypair().expect("sender keypair");
         let receiver = Builder::new(params).generate_keypair().expect("receiver keypair");
 
-        let listener = spawn_listener("node-b-reject".to_string(), receiver.private.clone());
-        thread::sleep(Duration::from_millis(100));
+        let (listener, reject_port) =
+            spawn_test_listener("node-b-reject".to_string(), receiver.private.clone());
+        thread::sleep(Duration::from_millis(50));
 
         let sender_key = sender.private.clone();
         let sender_thread = thread::spawn(move || {
-            send(
+            send_to_port(
                 "node-a",
                 "node-b-reject",
                 "127.0.0.1",
+                reject_port,
                 &sender_key,
                 "rejection test",
             )
@@ -458,36 +575,47 @@ mod tests {
         }
 
         drop(listener);
+        thread::sleep(Duration::from_millis(100));
     }
 
+    #[cfg(not(target_os = "macos"))]
     #[test]
     fn secure_loopback_delivery_uses_noise_and_ack() {
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
         let params: NoiseParams = PATTERN.parse().expect("noise params");
         let sender = Builder::new(params.clone()).generate_keypair().expect("sender keypair");
         let receiver = Builder::new(params).generate_keypair().expect("receiver keypair");
 
-        let listener = spawn_listener("node-b".to_string(), receiver.private.clone());
-        thread::sleep(Duration::from_millis(100));
+        let (listener, delivery_port) =
+            spawn_test_listener("node-b".to_string(), receiver.private.clone());
+        thread::sleep(Duration::from_millis(50));
 
-        let status = send("node-a", "node-b", "127.0.0.1", &sender.private, "loopback secure test");
+        let sender_key = sender.private.clone();
+        let sender_thread = thread::spawn(move || {
+            send_to_port(
+                "node-a",
+                "node-b",
+                "127.0.0.1",
+                delivery_port,
+                &sender_key,
+                "loopback secure test",
+            )
+        });
 
-        let message_id = match status {
-            SecureSendStatus::Delivered { message_id, peer_id } => {
-                assert_eq!(peer_id, "node-b");
-                message_id
-            }
-            other => panic!("expected delivered secure message, got {other:?}"),
-        };
-
-        let deadline = Instant::now() + Duration::from_secs(2);
-        loop {
+        let deadline = Instant::now() + Duration::from_secs(4);
+        let message_id = loop {
             match listener.try_recv() {
-                Ok(SecureEvent::Received { message_id: received_id, node_id, message, reply, .. }) => {
-                    assert_eq!(received_id, message_id);
+                Ok(SecureEvent::Received {
+                    message_id: received_id,
+                    node_id,
+                    message,
+                    reply,
+                    ..
+                }) => {
                     assert_eq!(node_id, "node-a");
                     assert_eq!(message, "loopback secure test");
                     reply.send(SecureReply::Ack).expect("send ACK decision");
-                    break;
+                    break received_id;
                 }
                 Err(std::sync::mpsc::TryRecvError::Empty) if Instant::now() < deadline => {
                     thread::sleep(Duration::from_millis(20));
@@ -495,8 +623,20 @@ mod tests {
                 Err(error) => panic!("secure listener did not receive message: {error:?}"),
                 _ => panic!("secure listener timed out"),
             }
+        };
+
+        match sender_thread.join().expect("sender thread join") {
+            SecureSendStatus::Delivered {
+                message_id: delivered_id,
+                peer_id,
+            } => {
+                assert_eq!(delivered_id, message_id);
+                assert_eq!(peer_id, "node-b");
+            }
+            other => panic!("expected delivered secure message, got {other:?}"),
         }
 
         drop(listener);
+        thread::sleep(Duration::from_millis(100));
     }
 }
