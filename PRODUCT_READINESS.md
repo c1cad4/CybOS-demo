@@ -13,7 +13,8 @@ Core desktop scope currently implemented:
 - Cybergraph secure-peer persistence;
 - stoppable LAN and secure listeners;
 - bounded HTTP workers for Qwen, web, Solana balances and market data;
-- macOS app packaging and release workflow.
+- macOS app packaging and release workflow;
+- native CybLex P2P archive powered by embedded librqbit 9.0.1.
 
 ## Public macOS beta
 Estimated readiness: **90–95%**.
@@ -22,7 +23,8 @@ Remaining blockers are mostly productization and real-device validation:
 - signed/notarized distribution;
 - two-Mac interoperability test of RADAR + Secure CYBChat + TOFU;
 - upgrade/reinstall and recovery testing;
-- publish the hardened v0.7.2 macOS build and complete real-device interoperability validation.
+- complete real-device interoperability validation;
+- verify CybLex two-node download/seed interoperability with authorized test content.
 
 ## Production 1.0
 Estimated readiness: **75–80%**.
@@ -32,8 +34,7 @@ configuration migration, diagnostics/recovery, signed updates and operational
 release/support workflows.
 
 The v0.7.1 macOS ZIP is published through the companion `c1cad4/cybOS` release repository. Main contains replay protection, recovery diagnostics, truthful listener errors, cached database diagnostics, WAL persistence hardening, and universal ARM64 + Intel packaging for v0.7.2.
-Physical RobotCYB hardware, farm sensor/camera integrations and Cyblex are
-future product layers and do not block the first desktop beta.
+Physical RobotCYB hardware and farm sensor/camera integrations remain future product layers. CybLex is now part of the desktop beta; two-node interoperability still needs real-device validation.
 
 
 Verification note: current main contains the runtime hardening, replay cache, recovery diagnostics and universal packaging used for the v0.7.2 release line.
