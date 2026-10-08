@@ -9,8 +9,8 @@ use std::time::Duration;
 impl CybOs {
     fn fetch_cicada_balances(wallet: &str) -> (Option<f64>, Option<f64>) {
         const RPC: &str = "https://api.mainnet-beta.solana.com";
-        const WORKER_BUDGET: Duration = Duration::from_secs(10);
         const RPC_BUDGET: Duration = Duration::from_secs(4);
+const WORKER_BUDGET: Duration = Duration::from_secs(10);
         let agent: ureq::Agent = ureq::Agent::config_builder()
             .timeout_global(Some(RPC_BUDGET))
             .build()
