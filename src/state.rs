@@ -9,7 +9,9 @@ use crate::store::Store;
 
 use eframe::egui::Vec2;
 use std::process::Child;
+use std::sync::atomic::AtomicBool;
 use std::sync::mpsc::Receiver;
+use std::sync::Arc;
 use std::time::Instant;
 
 pub(crate) type RobotJobResult = Result<String, String>;
@@ -65,6 +67,7 @@ pub(crate) struct CybOs {
     pub(crate) lan_target: Option<String>,
     pub(crate) lan_delivery_status: String,
     pub(crate) radar_visible: bool,
+    pub(crate) radar_visibility: Arc<AtomicBool>,
 
     pub(crate) remember_note: String,
 }
@@ -90,7 +93,8 @@ impl Default for CybOs {
         }
 
         let radar_visible = store.get("radar_visible").map(|v| v == "true").unwrap_or(false);
-        let lan_events = crate::network::lan::spawn_listener(node_id.clone(), radar_visible);
+        let radar_visibility = Arc::new(AtomicBool::new(radar_visible));
+        let lan_events = crate::network::lan::spawn_listener(node_id.clone(), radar_visibility.clone());
 
         let mut app = Self {
             store,
