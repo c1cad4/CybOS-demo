@@ -218,10 +218,10 @@ mod tests {
 
     #[test]
     fn worker_contract_has_bounded_deadline() {
-        let worker = super::WorkerContract::new("ROBOTCYB", Duration::from_secs(1));
+        let worker = super::WorkerContract::new("ROBOTCYB", std::time::Duration::from_secs(1));
         assert_eq!(worker.status(), "RUNNING");
         assert!(!worker.expired());
-        assert!(worker.remaining() <= Duration::from_secs(1));
+        assert!(worker.remaining() <= std::time::Duration::from_secs(1));
         assert!(worker.heartbeat_age_ms() < 1000);
     }
 
