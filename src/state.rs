@@ -73,6 +73,10 @@ pub(crate) struct CybOs {
     pub(crate) ble_peers: Vec<crate::network::ble::BlePeer>,
     pub(crate) ble_scan: Option<std::sync::mpsc::Receiver<Result<Vec<crate::network::ble::BlePeer>, String>>>,
     pub(crate) ble_status: String,
+    pub(crate) noise_private_key: Vec<u8>,
+    pub(crate) secure_events: std::sync::mpsc::Receiver<crate::network::secure_chat::SecureEvent>,
+    pub(crate) secure_send_task: Option<std::sync::mpsc::Receiver<crate::network::secure_chat::SecureSendStatus>>,
+    pub(crate) secure_status: String,
 
     pub(crate) remember_note: String,
 }
@@ -100,6 +104,12 @@ impl Default for CybOs {
         let radar_visible = store.get("radar_visible").map(|v| v == "true").unwrap_or(false);
         let radar_visibility = Arc::new(AtomicBool::new(radar_visible));
         let lan_events = crate::network::lan::spawn_listener(node_id.clone(), radar_visibility.clone());
+        let noise_private_key = crate::network::secure_chat::load_or_create_static_key(&store)
+            .unwrap_or_default();
+        let secure_events = crate::network::secure_chat::spawn_listener(
+            node_id.clone(),
+            noise_private_key.clone(),
+        );
 
         let mut app = Self {
             store,
@@ -154,12 +164,123 @@ impl Default for CybOs {
             ble_peers: Vec::new(),
             ble_scan: None,
             ble_status: "BLE · IDLE".into(),
+            noise_private_key,
+            secure_events,
+            secure_send_task: None,
+            secure_status: "SECURE CHAT · READY".into(),
 
             remember_note: String::new(),
         };
 
         app.initialize_graph();
         app
+    }
+}
+
+
+impl CybOs {
+    pub(crate) fn poll_secure_events(&mut self) {
+        loop {
+            let event = match self.secure_events.try_recv() {
+                Ok(event) => event,
+                Err(std::sync::mpsc::TryRecvError::Empty) => break,
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    self.secure_status = "SECURE CHAT · LISTENER STOPPED".into();
+                    self.runtime.set_status("CYBCHAT", "ERROR");
+                    break;
+                }
+            };
+
+            match event {
+                crate::network::secure_chat::SecureEvent::Received {
+                    message_id,
+                    node_id,
+                    message,
+                    fingerprint,
+                } => {
+                    self.push_chat_message(format!("CYB:{}", node_id), message.clone(), false);
+                    self.add_event(
+                        "CHAT",
+                        format!("Secure message from {} · {} · fp {}", node_id, message_id, fingerprint),
+                    );
+                    self.secure_status = format!("SECURE CHAT · RECEIVED · {}", node_id);
+                    self.runtime.set_status("CYBCHAT", "READY");
+                }
+            }
+        }
+    }
+
+    pub(crate) fn send_secure_chat(&mut self, message: &str) {
+        if self.secure_send_task.is_some() {
+            self.notify("SECURE DELIVERY ALREADY IN PROGRESS");
+            return;
+        }
+
+        let message = message.trim().to_string();
+        if message.is_empty() {
+            return;
+        }
+
+        let Some(target_id) = self.lan_target.clone() else {
+            self.notify("SELECT A DISCOVERED LAN PEER FIRST");
+            return;
+        };
+
+        let Some(peer) = self.lan_peers.iter().find(|p| p.node_id == target_id).cloned() else {
+            self.notify("SELECTED PEER IS NOT AVAILABLE");
+            return;
+        };
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.secure_send_task = Some(rx);
+        self.secure_status = format!("SECURE CHAT · CONNECTING · {}", peer.node_id);
+        self.runtime.set_status("CYBCHAT", "RUNNING");
+
+        let sender_id = self.node_id.clone();
+        let private_key = self.noise_private_key.clone();
+
+        std::thread::spawn(move || {
+            let status = crate::network::secure_chat::send(
+                &sender_id,
+                &peer.node_id,
+                &peer.address,
+                &private_key,
+                &message,
+            );
+            let _ = tx.send(status);
+        });
+    }
+
+    pub(crate) fn poll_secure_send(&mut self) {
+        let Some(rx) = &self.secure_send_task else {
+            return;
+        };
+
+        match rx.try_recv() {
+            Ok(status) => {
+                self.secure_send_task = None;
+                match status {
+                    crate::network::secure_chat::SecureSendStatus::Delivered { message_id, peer_id } => {
+                        self.secure_status = format!("SECURE CHAT · DELIVERED · {}", peer_id);
+                        self.add_event("CHAT", format!("Encrypted message delivered to {} · {}", peer_id, message_id));
+                        self.runtime.set_status("CYBCHAT", "READY");
+                        self.notify("ENCRYPTED MESSAGE DELIVERED");
+                    }
+                    crate::network::secure_chat::SecureSendStatus::Failed { message_id, peer_id, reason } => {
+                        self.secure_status = format!("SECURE CHAT · FAILED · {}", reason);
+                        self.add_event("CHAT", format!("Encrypted message failed to {} · {} · {}", peer_id, message_id, reason));
+                        self.runtime.set_status("CYBCHAT", "ERROR");
+                        self.notify("ENCRYPTED MESSAGE FAILED");
+                    }
+                }
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) => {}
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                self.secure_send_task = None;
+                self.secure_status = "SECURE CHAT · WORKER DISCONNECTED".into();
+                self.runtime.set_status("CYBCHAT", "ERROR");
+            }
+        }
     }
 }
 
