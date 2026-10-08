@@ -52,6 +52,7 @@ pub(crate) struct CybOs {
     pub(crate) node_id: String,
     pub(crate) runtime: crate::runtime::Runtime,
     pub(crate) status: String,
+    pub(crate) database_integrity: String,
     pub(crate) qwen_child: Option<Child>,
     pub(crate) qwen_status: String,
     pub(crate) qwen_retry_after: Instant,
@@ -109,6 +110,7 @@ impl Default for CybOs {
         }
 
         let radar_visible = store.get("radar_visible").map(|v| v == "true").unwrap_or(false);
+        let database_integrity = store.database_integrity();
         let radar_visibility = Arc::new(AtomicBool::new(radar_visible));
         let lan_events = crate::network::lan::spawn_listener(node_id.clone(), radar_visibility.clone());
         let noise_private_key = crate::network::secure_chat::load_or_create_static_key(&store)
@@ -152,6 +154,7 @@ impl Default for CybOs {
             node_id,
             runtime: crate::runtime::Runtime::new(),
             status: "LOCAL-FIRST · READY".into(),
+            database_integrity,
             qwen_child: None,
             qwen_status: "QWEN · OFFLINE".into(),
             qwen_retry_after: Instant::now(),
