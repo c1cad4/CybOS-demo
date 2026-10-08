@@ -26,6 +26,8 @@ pub(crate) struct LanPeer {
     pub(crate) node_id: String,
     pub(crate) address: String,
     pub(crate) version: String,
+    /// LAN discovery does not expose physical distance. BLE can populate this later.
+    pub(crate) distance_m: Option<f32>,
 }
 
 #[derive(Clone, Debug)]
@@ -200,6 +202,7 @@ pub(crate) fn scan(node_id: String) -> Vec<LanPeer> {
                     node_id: peer_id.to_string(),
                     address: addr.ip().to_string(),
                     version,
+                    distance_m: None,
                 });
             }
             Err(_) => break,
