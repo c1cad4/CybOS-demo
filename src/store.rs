@@ -294,6 +294,24 @@ impl Store {
         inserted
     }
 
+    pub(crate) fn database_integrity(&self) -> String {
+        self.conn
+            .query_row("PRAGMA integrity_check(1)", [], |row| row.get::<_, String>(0))
+            .unwrap_or_else(|error| format!("ERROR: {error}"))
+    }
+
+    pub(crate) fn exportable_chat(&self) -> Vec<(String, String, bool)> {
+        self.chat_messages()
+    }
+
+    pub(crate) fn exportable_memories(&self) -> Vec<Memory> {
+        self.memories()
+    }
+
+    pub(crate) fn exportable_events(&self) -> Vec<Event> {
+        self.events()
+    }
+
     pub(crate) fn events(&self) -> Vec<Event> {
         let mut st = self
             .conn
