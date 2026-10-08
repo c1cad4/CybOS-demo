@@ -128,6 +128,30 @@ CybOS-demo/
 
 See the repository license configuration.
 
+## User readiness
+
+### Technical beta — READY
+
+The native macOS application is usable now for a technically capable user who can build/package it locally. The core desktop runtime, local persistence, RobotCYB/Qwen path, CYB RADAR, unified LAN+BLE proximity, encrypted CYBChat, TOFU identity, Cybergraph and Assets services are implemented and covered by Linux/macOS CI.
+
+### Public download — NOT YET
+
+| Area | Status |
+|---|---|
+| Native macOS app | READY |
+| Persistence / graph / chat | READY |
+| RobotCYB + local Qwen | READY WITH LOCAL QWEN SETUP |
+| LAN + BLE Radar | READY / OPT-IN |
+| Noise XX secure chat | READY |
+| Worker budgets / lifecycle | READY |
+| macOS packaging | READY |
+| GitHub release publication | NOT PUBLISHED |
+| Developer ID signing / notarization | NOT CONFIGURED |
+| Hardware / camera integrations | FUTURE LAYER |
+| P2P / Nostr fallback | FUTURE LAYER |
+
+For the current state, the honest estimate is **~85–90% for a technical/private beta** and **~70–80% for a polished public macOS download**. The remaining gap is mainly onboarding, signing/notarization and distribution, not the core desktop architecture.
+
 ## Runtime stack status
 
 The current native stack is organized as bounded local-first cells:
