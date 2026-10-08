@@ -36,6 +36,44 @@ jobs:
       - name: Cargo test
         run: cargo test --locked -- --test-threads=1
 
+      - name: Build macOS QA release binary
+        run: CARGO_TARGET_DIR=target/cybos-qa cargo build --release --locked --features qa --bin cybos
+
+      - name: Run release-mode QA self-tests
+        run: target/cybos-qa/release/cybos --self-test all
+        timeout-minutes: 3
+
+      - name: Package macOS QA app
+        run: |
+          rm -rf cybOS-QA.app cybOS-QA-macos-test.zip
+          mkdir -p cybOS-QA.app/Contents/MacOS cybOS-QA.app/Contents/Resources
+          cp target/cybos-qa/release/cybos cybOS-QA.app/Contents/MacOS/cybOS
+          cat > cybOS-QA.app/Contents/Info.plist <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple Computer//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+          <key>CFBundleName</key><string>cybOS QA</string>
+          <key>CFBundleDisplayName</key><string>cybOS QA — CicadaFarm + RobotCYB</string>
+          <key>CFBundleIdentifier</key><string>to.cicada.cybos.qa</string>
+          <key>CFBundleVersion</key><string>0.7.0</string>
+          <key>CFBundleShortVersionString</key><string>0.7.0</string>
+          <key>CFBundleExecutable</key><string>cybOS</string>
+          <key>CFBundlePackageType</key><string>APPL</string>
+          <key>LSMinimumSystemVersion</key><string>11.0</string>
+          <key>NSHighResolutionCapable</key><true/>
+          </dict></plist>
+          PLIST
+          chmod +x cybOS-QA.app/Contents/MacOS/cybOS
+          codesign --force --deep --sign - cybOS-QA.app
+          ditto -c -k --sequesterRsrc --keepParent cybOS-QA.app cybOS-QA-macos-test.zip
+
+      - name: Upload macOS QA test app
+        uses: actions/upload-artifact@v4
+        with:
+          name: cybOS-macos-qa
+          path: cybOS-QA-macos-test.zip
+          if-no-files-found: error
+
       - name: Diff whitespace check
         run: git diff --check
 
