@@ -4,6 +4,12 @@ use egui::{Color32, RichText, Stroke, Vec2};
 
 impl CybOs {
     pub(crate) fn robot(&mut self, ui: &mut egui::Ui) {
+        if let Some(answer) = self.poll_robot_job() {
+            self.robot_output = answer.clone();
+            self.push_chat_message("ROBOTCYB", answer, false);
+            self.add_event("ROBOT", "RobotCYB worker completed the request");
+        }
+
         let neon = Color32::from_rgb(0, 255, 150);
         let dim = Color32::from_rgb(55, 145, 105);
         let panel = Color32::from_rgb(5, 18, 13);
@@ -74,7 +80,7 @@ impl CybOs {
 
                             ui.add_space(8.0);
 
-                            ui.label(RichText::new("• READY").size(11.0).color(neon));
+                            ui.label(RichText::new(format!("• {}", self.robot_status)).size(11.0).color(neon));
 
                             ui.label(
                                 RichText::new(format!("QWEN · {}", self.qwen_status))
@@ -87,7 +93,7 @@ impl CybOs {
                             ui.label(RichText::new("REQUEST").size(10.0).strong().color(dim));
 
                             ui.label(
-                                RichText::new("Ask the local RobotCYB agent anything.")
+                                RichText::new(if self.robot_job.is_some() { "RobotCYB is processing the request..." } else { "Ask the local RobotCYB agent anything." })
                                     .size(11.0)
                                     .color(Color32::from_rgb(125, 180, 150)),
                             );
@@ -121,8 +127,10 @@ impl CybOs {
                     ui.add_space(7.0);
 
                     ui.horizontal(|ui| {
+                        let busy = self.robot_job.is_some();
                         let send = ui
-                            .add(
+                            .add_enabled(
+                                !busy,
                                 egui::Button::new(
                                     RichText::new("◉  SEND REQUEST")
                                         .size(12.0)
@@ -138,22 +146,16 @@ impl CybOs {
                         {
                             let q = self.robot_input.trim().to_string();
 
-                            if !q.is_empty() {
-                                let answer = self.agent_answer(&q);
-
-                                self.robot_output = answer.clone();
-
+                            if !q.is_empty() && !busy {
                                 self.push_chat_message("YOU", q.clone(), true);
-
-                                self.push_chat_message("ROBOTCYB", answer, false);
-
                                 self.robot_input.clear();
-
-                                self.add_event("ROBOT", &format!("RobotCYB processed: {}", q));
+                                self.robot_output = "ROBOTCYB · PROCESSING\n\nRequest accepted by bounded worker.".into();
+                                self.add_event("ROBOT", &format!("RobotCYB accepted request: {}", q));
+                                let _ = self.start_robot_job(q);
                             }
                         }
 
-                        ui.label(RichText::new("ENTER · SEND").size(9.0).color(dim));
+                        ui.label(RichText::new(if busy { "PROCESSING" } else { "ENTER · SEND" }).size(9.0).color(dim));
                     });
                 });
 
