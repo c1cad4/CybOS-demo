@@ -39,7 +39,7 @@ impl CybOs {
             };
 
             let Some((tool, arguments)) = selection else {
-                return self.robot_answer(q);
+                return self.robot_answer_with_deadline(q, deadline);
             };
 
             let result = match tool.as_str() {
@@ -55,10 +55,11 @@ impl CybOs {
                 "farm_status" => self.tool_farm_status(),
 
                 "web_search" | "web_fetch" => {
-                    match self.handle_web_tool(
+                    match self.handle_web_tool_with_deadline(
                         &tool,
                         &arguments,
                         &conversation,
+                        deadline,
                     ) {
                         web_planner::WebToolOutcome::Answer(answer) => {
                             return answer;
@@ -115,7 +116,7 @@ TOOL RESULT:
                         }
                     }
 
-                    return self.robot_answer(q);
+                    return self.robot_answer_with_deadline(q, deadline);
                 }
 
                 Some("tool") => {
@@ -124,7 +125,7 @@ TOOL RESULT:
                     let next_arguments = decision["arguments"].as_str().unwrap_or("");
 
                     if next_tool.is_empty() {
-                        return self.robot_answer(q);
+                        return self.robot_answer_with_deadline(q, deadline);
                     }
 
                     forced_tool = Some((next_tool.to_string(), next_arguments.to_string()));
@@ -136,7 +137,7 @@ TOOL RESULT:
                 }
 
                 _ => {
-                    return self.robot_answer(q);
+                    return self.robot_answer_with_deadline(q, deadline);
                 }
             }
         }
