@@ -43,7 +43,7 @@ but the MVP does not claim them as connected. LAN discovery is implemented as a
 real local peer-discovery channel. Discovery is broadcast-only; CybChat messages
 are directed to a selected peer and acknowledged within a bounded timeout. The
 CybChat direct-LAN payloads are encrypted with the authenticated wire envelope
-and are only reported as delivered after a verified signed ACK. CybChat history plus memories, events and graph node/link payloads are encrypted before SQLite persistence on every platform after the local storage key is configured. Structural identifiers needed to maintain graph relationships remain visible.
+and are only reported as delivered after a verified signed ACK. CybChat history plus memories, events and graph node/link payloads are encrypted before SQLite persistence after the local storage key is configured. On macOS, the key is derived from the Keychain-backed identity; non-macOS builds still retain the legacy SQLite-backed identity storage and therefore need a platform-specific secure keystore before at-rest encryption can be considered theft-resistant. Structural identifiers needed to maintain graph relationships remain visible.
 
 
 ## One-click macOS launch
