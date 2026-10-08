@@ -58,6 +58,8 @@ The current macOS launcher looks for:
 
 and starts the configured local Qwen model automatically when available.
 
+Third-party integration and license provenance is documented in `THIRD_PARTY.md`.
+
 The model weights are intentionally not bundled into the repository. This keeps the application package small, but it means the current beta is not yet a zero-setup AI distribution.
 
 ## Network permissions
