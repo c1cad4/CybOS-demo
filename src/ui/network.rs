@@ -6,6 +6,7 @@ impl CybOs {
     pub(crate) fn network(&mut self, ui: &mut egui::Ui) {
         self.poll_lan_scan();
         self.poll_lan_send();
+        self.sync_ble_advertiser();
 
         if let Some(result) = self.ble_scan.as_ref().and_then(crate::network::ble::poll_scan) {
             self.ble_scan = None;
@@ -50,10 +51,11 @@ impl CybOs {
                         self.radar_visibility.store(self.radar_visible, std::sync::atomic::Ordering::Relaxed);
                         self.store.set("radar_visible", if self.radar_visible { "true" } else { "false" });
                         self.notify(if self.radar_visible { "CYB RADAR: VISIBLE" } else { "CYB RADAR: HIDDEN" });
+                        self.sync_ble_advertiser();
                     }
                 });
                 ui.label(RichText::new(
-                    "OFF by default. When visible, nearby cybOS nodes can discover this node on the local network. No GPS coordinates are broadcast."
+                    "OFF by default. VISIBLE enables LAN discovery and native BLE advertising. BLE exposes only a short node identifier; no GPS coordinates are broadcast."
                 ).size(9.0).color(dim));
             });
 
@@ -293,7 +295,7 @@ impl CybOs {
             ("LOCAL LOOPBACK", "READY", true),
             ("LAN DISCOVERY", "ACTIVE · UDP BROADCAST · DISCOVERY ONLY", true),
             ("LAN CHAT", "DIRECT UDP · DELIVERY ACK · PLAINTEXT", true),
-            ("BLUETOOTH MESH", "ADAPTER ONLY · NOT CONNECTED", false),
+            ("BLUETOOTH RADAR", if self.ble_advertiser.is_some() { "ADVERTISING · OPT-IN · RSSI DISCOVERY" } else { "READY · ENABLE WITH RADAR VISIBLE" }, self.ble_advertiser.is_some()),
             ("P2P", "ADAPTER ONLY · NOT CONNECTED", false),
             ("NOSTR FALLBACK", "AVAILABLE · NOT CONNECTED", false),
         ] {
