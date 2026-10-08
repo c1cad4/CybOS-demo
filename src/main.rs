@@ -26,6 +26,7 @@ mod tests;
 pub(crate) use navigation::{Icon, Page};
 pub(crate) use state::CybOs;
 
+use base64::Engine as _;
 use eframe::egui;
 
 fn print_identity() -> eframe::Result {
