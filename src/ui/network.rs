@@ -13,6 +13,7 @@ impl CybOs {
             match result {
                 Ok(peers) => {
                     self.ble_peers = peers;
+                    self.refresh_proximity();
                     self.ble_status = format!("BLE · {} CYBOS PEER(S)", self.ble_peers.len());
                     self.runtime.set_status("RADAR", "READY");
                     self.notify("BLE RADAR SCAN COMPLETE");
@@ -258,33 +259,24 @@ impl CybOs {
                 painter.text(center + Vec2::new(10.0, -7.0), egui::Align2::LEFT_CENTER,
                     "YOU", egui::FontId::monospace(9.0), neon);
 
-                for (index, peer) in self.lan_peers.iter().enumerate() {
-                    let (angle, distance_label) = if let Some(distance) = peer.distance_m {
-                        let normalized = (distance / 1000.0).clamp(0.08, 1.0);
-                        ((index as f32 * 2.399).sin(), format!("{:.0} m", distance))
-                    } else {
-                        ((index as f32 * 2.399).sin(), "LAN".to_string())
-                    };
-                    let angle = angle * std::f32::consts::PI;
-                    let radial = peer.distance_m.map(|d| radius * (d / 1000.0).clamp(0.10, 1.0)).unwrap_or(radius * 0.82);
-                    let point = center + Vec2::new(angle.cos() * radial, angle.sin() * radial);
-                    painter.circle_filled(point, 6.0, neon);
-                    painter.text(point + Vec2::new(10.0, -8.0), egui::Align2::LEFT_CENTER,
-                        format!("{} · {}", peer.node_id, distance_label), egui::FontId::monospace(8.0), neon);
-                }
-
-                for (index, peer) in self.ble_peers.iter().enumerate() {
-                    let strength = ((peer.rssi as f32 + 100.0) / 70.0).clamp(0.12, 1.0);
+                for (index, peer) in self.nearby_peers.iter().enumerate() {
+                    let strength = peer.rssi.map(|r| ((r as f32 + 100.0) / 70.0).clamp(0.12, 1.0)).unwrap_or(0.45);
                     let angle = index as f32 * 2.399;
-                    let radial = radius * (1.0 - strength * 0.72);
+                    let radial = peer.lan_address.as_ref().and(peer.rssi).map(|_| radius * (1.0 - strength * 0.72)).unwrap_or(radius * 0.82);
                     let point = center + Vec2::new(angle.cos() * radial, angle.sin() * radial);
                     painter.circle_filled(point, 6.0, neon);
+                    let source = match peer.source {
+                        crate::network::proximity::ProximitySource::Lan => "LAN",
+                        crate::network::proximity::ProximitySource::Ble => "BLE",
+                        crate::network::proximity::ProximitySource::LanAndBle => "LAN+BLE",
+                    };
+                    let signal = peer.rssi.map(|r| format!(" · {} dBm", r)).unwrap_or_default();
                     painter.text(point + Vec2::new(10.0, -8.0), egui::Align2::LEFT_CENTER,
-                        format!("{} · {} dBm", peer.name, peer.rssi), egui::FontId::monospace(8.0), neon);
+                        format!("{} · {}{}", peer.node_id, source, signal), egui::FontId::monospace(8.0), neon);
                 }
 
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new(format!("{} LAN · {} BLE", self.lan_peers.len(), self.ble_peers.len())).size(9.0).color(neon));
+                    ui.label(RichText::new(format!("{} UNIFIED PEER(S) · {} LAN · {} BLE", self.nearby_peers.len(), self.lan_peers.len(), self.ble_peers.len())).size(9.0).color(neon));
                     ui.label(RichText::new("· RADAR POSITION IS NOT GEOLOCATION").size(9.0).color(dim));
                 });
             });
@@ -294,7 +286,7 @@ impl CybOs {
         for (name, status, live) in [
             ("LOCAL LOOPBACK", "READY", true),
             ("LAN DISCOVERY", "ACTIVE · UDP BROADCAST · DISCOVERY ONLY", true),
-            ("LAN CHAT", "DIRECT UDP · DELIVERY ACK · PLAINTEXT", true),
+            ("SECURE CHAT", "DIRECT TCP · NOISE XX · ENCRYPTED + ACK", true),
             ("BLUETOOTH RADAR", if self.ble_advertiser.is_some() { "ADVERTISING · OPT-IN · RSSI DISCOVERY" } else { "READY · ENABLE WITH RADAR VISIBLE" }, self.ble_advertiser.is_some()),
             ("P2P", "ADAPTER ONLY · NOT CONNECTED", false),
             ("NOSTR FALLBACK", "AVAILABLE · NOT CONNECTED", false),
