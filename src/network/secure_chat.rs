@@ -149,7 +149,6 @@ pub(crate) fn send(
     sender_id: &str,
     peer_id: &str,
     address: &str,
-    port: u16,
     private_key: &[u8],
     message: &str,
 ) -> SecureSendStatus {
@@ -192,6 +191,7 @@ fn send_with_deadline(
     sender_id: &str,
     peer_id: &str,
     address: &str,
+    port: u16,
     private_key: &[u8],
     message: &str,
     deadline: Instant,
