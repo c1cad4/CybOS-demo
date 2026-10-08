@@ -2435,7 +2435,56 @@ impl crate::state::CybOs {
                             self.add_event("SECURITY", format!("Pinned-key conflict for {}", peer.node_id));
                             None
                         }
-                        None => Some(peer),
+                        None => {
+                            let expected = self.store.provisioned_peer_fingerprint(&peer.node_id);
+                            match (expected, peer.fingerprint.as_deref()) {
+                                (Some(expected), Some(actual))
+                                    if expected.eq_ignore_ascii_case(actual) =>
+                                {
+                                    if self.store.trust_peer_key(&peer.node_id, key) {
+                                        peer.trusted = true;
+                                        self.add_event(
+                                            "SECURITY",
+                                            format!(
+                                                "OOB-provisioned LAN peer {} trusted · fingerprint {}",
+                                                peer.node_id, actual
+                                            ),
+                                        );
+                                        Some(peer)
+                                    } else {
+                                        self.add_event(
+                                            "SECURITY",
+                                            format!(
+                                                "OOB provisioning could not pin key for {}",
+                                                peer.node_id
+                                            ),
+                                        );
+                                        None
+                                    }
+                                }
+                                (Some(expected), Some(actual)) => {
+                                    self.add_event(
+                                        "SECURITY",
+                                        format!(
+                                            "OOB fingerprint mismatch for {} · expected {} · observed {}",
+                                            peer.node_id, expected, actual
+                                        ),
+                                    );
+                                    None
+                                }
+                                (Some(_), None) => {
+                                    self.add_event(
+                                        "SECURITY",
+                                        format!(
+                                            "OOB provisioning requires an authenticated fingerprint for {}",
+                                            peer.node_id
+                                        ),
+                                    );
+                                    None
+                                }
+                                (None, _) => Some(peer),
+                            }
+                        }
                     }
                 }).collect();
                 let target_still_exists = self
