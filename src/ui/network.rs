@@ -9,8 +9,19 @@ impl CybOs {
         self.poll_lan_send();
         self.sync_ble_advertiser();
 
+        if let Some(contract) = self.ble_scan_contract.clone() {
+            if contract.expired() {
+                self.ble_scan = None;
+                self.ble_scan_contract = None;
+                contract.finish("TIMEOUT");
+                self.ble_status = "BLE · SCAN TIMEOUT".into();
+                self.runtime.set_status("RADAR", "ERROR");
+            }
+        }
+
         if let Some(result) = self.ble_scan.as_ref().and_then(crate::network::ble::poll_scan) {
             self.ble_scan = None;
+            self.ble_scan_contract = None;
             match result {
                 Ok(peers) => {
                     self.ble_peers = peers;
@@ -103,6 +114,7 @@ impl CybOs {
                         .clicked()
                     {
                         self.ble_scan = Some(crate::network::ble::start_scan());
+                        self.ble_scan_contract = Some(crate::runtime::WorkerContract::new("RADAR", std::time::Duration::from_secs(7)));
                         self.ble_status = "BLE · SCANNING · 5s WINDOW".into();
                         self.runtime.set_status("RADAR", "RUNNING");
                         self.notify("BLE RADAR SCAN STARTED");
