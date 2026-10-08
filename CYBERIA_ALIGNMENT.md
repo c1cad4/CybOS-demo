@@ -8,12 +8,13 @@ research.
 
 ### 1. Identity is a first-class concept
 
-cybOS keeps a persistent node identity in local storage and uses it in every
-network operation. The current identity is a stable local node ID, not yet a
-cryptographic public-key identity.
+cybOS keeps a persistent human-readable node ID in local storage and uses it in
+network operations. Separately, Secure CYBChat already has a persistent
+Noise XX static key pair used as the cryptographic transport identity.
 
-The next identity step is a real key-backed identity layer. Until that exists,
-the UI must not describe the node ID as cryptographically authenticated.
+The node ID is therefore a routing/display identifier, while the Noise public
+key is the cryptographic peer identity. The UI must not imply that the short
+node ID itself is a cryptographic credential.
 
 ### 2. Address the message, not just the socket
 
