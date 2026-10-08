@@ -19,9 +19,10 @@ concept without pretending the macOS app is a new kernel.
 - Network — src/network/ owns web discovery, fetch, parsing and source
   handling.
 - Assets — src/assets/ owns Solana balances and market data; network refreshes run in background workers.
+- CybLex — src/cyblex.rs owns the embedded librqbit BitTorrent session; the UI communicates through explicit command/event channels.
 - LAN — src/network/lan.rs provides broadcast discovery plus directed peer-to-peer chat with a stoppable listener lifecycle.
 - UI pages — src/ui/ contains dashboard, graph, brain, farm, robot,
-  chat, network, cameras, assets and system views.
+  chat, network, cameras, CybLex, assets and system views.
 - CybChat history is persisted in SQLite and restored at startup.
 - LAN discovery/chat workers use bounded socket windows and a stoppable listener lifecycle.
 - Secure CYBChat in src/network/secure_chat.rs uses Noise XX encrypted frames with bounded I/O and a delivery ACK.
@@ -75,3 +76,14 @@ Background work follows the same local-first rule:
 - UI state reports RUNNING, READY, ERROR or TIMEOUT rather than treating a stale receiver as a live subsystem.
 
 RobotCYB has a single 90-second end-to-end deadline across planner steps and model calls.
+
+## CybLex runtime contract
+
+CybLex is a long-lived P2P service rather than a per-request AI job:
+
+- librqbit 9.0.1 runs inside a dedicated Tokio runtime thread;
+- the egui thread never performs torrent network I/O directly;
+- commands are explicit: add source, create+seed, pause, resume, forget, shutdown;
+- snapshots expose progress, upload bytes, state, info hash and output folder;
+- the runtime cell reports READY, RUNNING or ERROR without pretending P2P availability is global;
+- local seeding produces a .torrent sidecar and a magnet URI for authorized distribution.
