@@ -614,15 +614,43 @@ fn spawn_listener_on_addr_with_stop(
                 continue;
             }
 
-            if let Some(sender_id) = message.strip_prefix(DISCOVERY_PREFIX).and_then(|r| r.strip_prefix(' ')) {
-                if sender_id == node_id { continue; }
+            if let Some(discovery_payload) = message
+                .strip_prefix(DISCOVERY_PREFIX)
+                .and_then(|r| r.strip_prefix(' '))
+            {
+                let mut parts = discovery_payload.split_whitespace();
+                let Some(sender_id) = parts.next() else { continue };
+                let Some(challenge) = parts.next() else { continue };
+                if sender_id == node_id
+                    || challenge.is_empty()
+                    || challenge.len() > 64
+                    || !challenge
+                        .bytes()
+                        .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
+                {
+                    continue;
+                }
+
                 let public_key_b64 = STANDARD.encode(identity.public_key());
-                let sig = crypto::sign(&identity, &crypto::peer_binding(&node_id, APP_VERSION, &public_key_b64));
-                let response = format!("{} {} {} {} {}", RESPONSE_PREFIX, node_id, APP_VERSION, public_key_b64, STANDARD.encode(sig));
+                let binding = crypto::peer_discovery_binding(
+                    &node_id,
+                    APP_VERSION,
+                    &public_key_b64,
+                    challenge,
+                );
+                let sig = crypto::sign(&identity, &binding);
+                let response = format!(
+                    "{} {} {} {} {} {}",
+                    RESPONSE_PREFIX,
+                    node_id,
+                    APP_VERSION,
+                    public_key_b64,
+                    challenge,
+                    STANDARD.encode(sig),
+                );
                 let _ = socket.send_to(response.as_bytes(), peer_addr);
                 continue;
             }
-
 
             if let Some(payload) = message
                 .strip_prefix(ONION_BIND_PREFIX)
@@ -1430,10 +1458,23 @@ pub(crate) fn run_headless_test_node() -> Result<(), String> {
 }
 
 pub(crate) fn scan(node_id: String) -> Vec<LanPeer> {
-    let socket = match UdpSocket::bind(("0.0.0.0", 0)) { Ok(s) => s, Err(_) => return Vec::new() };
-    if socket.set_broadcast(true).is_err() { return Vec::new(); }
+    let socket = match UdpSocket::bind(("0.0.0.0", 0)) {
+        Ok(s) => s,
+        Err(_) => return Vec::new(),
+    };
+    if socket.set_broadcast(true).is_err() {
+        return Vec::new();
+    }
     let _ = socket.set_read_timeout(Some(Duration::from_millis(700)));
-    if socket.send_to(format!("{} {}", DISCOVERY_PREFIX, node_id).as_bytes(), ("255.255.255.255", LAN_DISCOVERY_PORT)).is_err() { return Vec::new(); }
+
+    let challenge = Uuid::new_v4().to_string();
+    let discovery = format!("{} {} {}", DISCOVERY_PREFIX, node_id, challenge);
+    if socket
+        .send_to(discovery.as_bytes(), ("255.255.255.255", LAN_DISCOVERY_PORT))
+        .is_err()
+    {
+        return Vec::new();
+    }
 
     let mut peers = Vec::new();
     let mut buffer = [0u8; 4096];
@@ -1446,13 +1487,29 @@ pub(crate) fn scan(node_id: String) -> Vec<LanPeer> {
                 let Some(peer_id) = parts.next() else { continue };
                 let version = parts.next().unwrap_or("unknown").to_string();
                 let Some(public_key_b64) = parts.next() else { continue };
+                let Some(response_challenge) = parts.next() else { continue };
                 let Some(signature_b64) = parts.next() else { continue };
+
+                if response_challenge != challenge {
+                    continue;
+                }
+
                 let Ok(public_key) = STANDARD.decode(public_key_b64) else { continue };
                 let Ok(sig) = STANDARD.decode(signature_b64) else { continue };
+                let binding = crypto::peer_discovery_binding(
+                    peer_id,
+                    &version,
+                    public_key_b64,
+                    &challenge,
+                );
                 if crypto::node_id_from_public_key(&public_key) != peer_id
-                    || !crypto::verify_signature(&public_key, &crypto::peer_binding(peer_id, &version, public_key_b64), &sig)
-                { continue; }
-                if peer_id == node_id || peers.iter().any(|p: &LanPeer| p.node_id == peer_id) { continue; }
+                    || !crypto::verify_signature(&public_key, &binding, &sig)
+                {
+                    continue;
+                }
+                if peer_id == node_id || peers.iter().any(|p: &LanPeer| p.node_id == peer_id) {
+                    continue;
+                }
                 peers.push(LanPeer {
                     node_id: peer_id.to_string(),
                     address: addr.ip().to_string(),
@@ -1467,7 +1524,6 @@ pub(crate) fn scan(node_id: String) -> Vec<LanPeer> {
     }
     peers
 }
-
 fn ensure_onion_session(
     socket: &UdpSocket,
     identity: &NodeIdentity,
