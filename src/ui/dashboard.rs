@@ -7,7 +7,7 @@ impl CybOs {
         ui.heading(RichText::new("◎ CYBOS CORE").strong().color(Self::green()));
 
         ui.label(
-            RichText::new("LOCAL-FIRST · CONNECTED SYSTEM")
+            RichText::new("LOCAL-FIRST · RUNTIME READY")
                 .small()
                 .color(Color32::GRAY),
         );
@@ -151,7 +151,7 @@ impl CybOs {
                 painter.text(
                     egui::pos2(rect.left() + 16.0, rect.bottom() - 18.0),
                     egui::Align2::LEFT_CENTER,
-                    "• LOCAL NODE ONLINE",
+                    "• LOCAL NODE READY",
                     egui::FontId::proportional(10.0),
                     Color32::from_rgb(70, 180, 110),
                 );
@@ -174,7 +174,7 @@ impl CybOs {
                 self.card(ui, "TEMPERATURE", "24°C");
                 self.card(ui, "HIVES", "4");
                 self.card(ui, "ANIMALS", "60+");
-                self.card(ui, "NODE", "ONLINE");
+                self.card(ui, "NODE", "READY");
                 ui.end_row();
             });
 
