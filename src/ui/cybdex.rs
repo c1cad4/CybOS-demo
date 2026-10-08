@@ -203,22 +203,6 @@ impl CybOs {
         }
     }
 
-    fn refresh_cybdex_pair(&mut self) {
-        let Some(pair) = self.cybdex_selected_pair.clone() else {
-            self.notify("SELECT A PAIR FIRST");
-            return;
-        };
-        if self.cybdex.is_busy() {
-            return;
-        }
-        if let Err(error) = self.cybdex.load_pair(pair.pair_address, self.cybdex_timeframe) {
-            self.notify(format!("CYBDEX: {error}"));
-            return;
-        }
-        self.cybdex_status = format!("CYBDEX · LOADING · {}", self.cybdex_timeframe.label());
-        self.runtime.set_status("CYBDEX", "RUNNING");
-    }
-
     fn draw_cybdex_market(&mut self, ui: &mut egui::Ui, pair: &CybDexPair) {
         let neon = Self::neon();
         let dim = Color32::from_rgb(70, 155, 112);
