@@ -21,7 +21,7 @@ fi
 need_build=0
 if [ ! -x "$BIN" ]; then
   need_build=1
-elif find src -type f -name '*.rs' -newer "$BIN" -print -quit | grep -q .; then
+elif find src macos -type f -newer "$BIN" -print -quit | grep -q .; then
   need_build=1
 elif [ "Cargo.toml" -nt "$BIN" ] || [ "Cargo.lock" -nt "$BIN" ]; then
   need_build=1
@@ -42,6 +42,15 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/cybOS"
 chmod +x "$APP/Contents/MacOS/cybOS"
+
+BLE_HELPER="$APP/Contents/MacOS/cybOS-ble-advertiser"
+if command -v swiftc >/dev/null 2>&1; then
+  echo "Building native CoreBluetooth advertiser..."
+  swiftc macos/CybOSBLEAdvertiser.swift -o "$BLE_HELPER" -framework CoreBluetooth
+  chmod +x "$BLE_HELPER"
+else
+  echo "Swift compiler not found; BLE advertising helper will be unavailable."
+fi
 
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
