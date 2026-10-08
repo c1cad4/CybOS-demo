@@ -43,6 +43,42 @@ const DELIVERED_ACK_CACHE_LIMIT: usize = 512;
 const ONION_ROUTE_ATTEMPT_LIMIT: usize = 5;
 const ONION_SESSION_TTL_SECS: u64 = 120;
 
+#[cfg(any(debug_assertions, feature = "qa"))]
+static ONION_TEST_TRACE: OnceLock<Mutex<Vec<String>>> = OnceLock::new();
+
+#[cfg(any(debug_assertions, feature = "qa"))]
+fn onion_test_trace(node_id: &str, stage: impl Into<String>) {
+    if let Ok(mut trace) = ONION_TEST_TRACE
+        .get_or_init(|| Mutex::new(Vec::new()))
+        .lock()
+    {
+        trace.push(format!("{node_id}:{}", stage.into()));
+        if trace.len() > 128 {
+            let drain = trace.len() - 128;
+            trace.drain(..drain);
+        }
+    }
+}
+
+#[cfg(any(debug_assertions, feature = "qa"))]
+fn clear_onion_test_trace() {
+    if let Ok(mut trace) = ONION_TEST_TRACE
+        .get_or_init(|| Mutex::new(Vec::new()))
+        .lock()
+    {
+        trace.clear();
+    }
+}
+
+#[cfg(any(debug_assertions, feature = "qa"))]
+fn take_onion_test_trace() -> Vec<String> {
+    ONION_TEST_TRACE
+        .get_or_init(|| Mutex::new(Vec::new()))
+        .lock()
+        .map(|mut trace| std::mem::take(&mut *trace))
+        .unwrap_or_default()
+}
+
 #[derive(Clone, Debug)]
 pub(crate) struct LanPeer {
     pub(crate) node_id: String,
@@ -858,6 +894,8 @@ fn spawn_listener_on_addr_with_stop(
 
 
             if let Some(payload) = message.strip_prefix(ONION_PREFIX).and_then(|r| r.strip_prefix(' ')) {
+                #[cfg(any(debug_assertions, feature = "qa"))]
+                onion_test_trace(&node_id, "onion-rx");
                 if exit_on_onion_packet {
                     std::process::exit(86);
                 }
@@ -866,8 +904,16 @@ fn spawn_listener_on_addr_with_stop(
                     continue;
                 }
 
-                let Ok(packet) = serde_json::from_str::<onion::OnionPacket>(payload) else { continue };
-                let Some(binding) = onion_bindings.get(&packet.route_id).cloned() else { continue };
+                let Ok(packet) = serde_json::from_str::<onion::OnionPacket>(payload) else {
+                    #[cfg(any(debug_assertions, feature = "qa"))]
+                    onion_test_trace(&node_id, "onion-parse-failed");
+                    continue;
+                };
+                let Some(binding) = onion_bindings.get(&packet.route_id).cloned() else {
+                    #[cfg(any(debug_assertions, feature = "qa"))]
+                    onion_test_trace(&node_id, "onion-binding-missing");
+                    continue;
+                };
                 let now = now_secs();
                 if packet.hop_index != binding.hop_index
                     || packet.session_id != binding.session_id
@@ -893,9 +939,16 @@ fn spawn_listener_on_addr_with_stop(
                     now,
                 ) {
                     Ok(onion::PeelResult::Forward(forward)) => {
+                        #[cfg(any(debug_assertions, feature = "qa"))]
+                        onion_test_trace(
+                            &node_id,
+                            format!("onion-forward-h{}->{}", binding.hop_index, forward.next_node_id),
+                        );
                         if forward.next_node_id != binding.next_node_id
                             || forward.next_address != binding.next_address
                         {
+                            #[cfg(any(debug_assertions, feature = "qa"))]
+                            onion_test_trace(&node_id, "onion-forward-binding-mismatch");
                             continue;
                         }
                         let Ok(next_addr) = forward.next_address.parse::<SocketAddr>() else { continue };
@@ -909,9 +962,13 @@ fn spawn_listener_on_addr_with_stop(
                         );
                     }
                     Ok(onion::PeelResult::Deliver(deliver)) => {
+                        #[cfg(any(debug_assertions, feature = "qa"))]
+                        onion_test_trace(&node_id, format!("onion-deliver-h{}->{}", binding.hop_index, deliver.destination_id));
                         if deliver.destination_id != binding.next_node_id
                             || deliver.destination_address != binding.next_address
                         {
+                            #[cfg(any(debug_assertions, feature = "qa"))]
+                            onion_test_trace(&node_id, "onion-deliver-binding-mismatch");
                             continue;
                         }
                         let delivery = onion::OnionDelivery {
@@ -929,13 +986,22 @@ fn spawn_listener_on_addr_with_stop(
                             next_addr,
                         );
                     }
-                    Err(_) => {}
+                    Err(reason) => {
+                        #[cfg(any(debug_assertions, feature = "qa"))]
+                        onion_test_trace(&node_id, format!("onion-peel-failed:h{}:{reason}", binding.hop_index));
+                    }
                 }
                 continue;
             }
 
             if let Some(payload) = message.strip_prefix(ONION_DELIVERY_PREFIX).and_then(|r| r.strip_prefix(' ')) {
-                let Ok(delivery) = serde_json::from_str::<onion::OnionDelivery>(payload) else { continue };
+                #[cfg(any(debug_assertions, feature = "qa"))]
+                onion_test_trace(&node_id, "onion-delivery-rx");
+                let Ok(delivery) = serde_json::from_str::<onion::OnionDelivery>(payload) else {
+                    #[cfg(any(debug_assertions, feature = "qa"))]
+                    onion_test_trace(&node_id, "onion-delivery-parse-failed");
+                    continue;
+                };
                 if delivery.payload.len() > MAX_WIRE_BYTES {
                     continue;
                 }
@@ -1372,6 +1438,7 @@ pub(crate) fn run_headless_onion_three_relay_test() -> Result<(), String> {
         public_key_b64: STANDARD.encode(bob.public_key()),
     };
 
+    clear_onion_test_trace();
     let status = send_onion_private_chat(
         &alice,
         &destination,
@@ -1409,8 +1476,9 @@ pub(crate) fn run_headless_onion_three_relay_test() -> Result<(), String> {
         );
         Ok(())
     } else {
+        let trace = take_onion_test_trace();
         Err(format!(
-            "three-relay onion test failed: status={status:?} delivered={delivered} received={received} relay_a_quiet={relay_a_quiet} relay_b_quiet={relay_b_quiet} relay_c_quiet={relay_c_quiet}"
+            "three-relay onion test failed: status={status:?} delivered={delivered} received={received} relay_a_quiet={relay_a_quiet} relay_b_quiet={relay_b_quiet} relay_c_quiet={relay_c_quiet} trace={trace:?}"
         ))
     }
 }
