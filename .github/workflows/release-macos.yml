@@ -20,7 +20,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Package macOS app
-        run: ./scripts/package_macos.sh
+        run: bash ./scripts/package_macos.sh
 
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
