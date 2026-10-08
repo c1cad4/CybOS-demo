@@ -110,9 +110,8 @@ impl RuntimeCell {
         if self.last_run > self.budget {
             self.status = "OVER_BUDGET";
             self.overruns = self.overruns.saturating_add(1);
-        } else if !matches!(self.status, "RUNNING" | "ERROR") {
-            self.status = "READY";
         }
+
     }
 
     pub(crate) fn heartbeat_age_ms(&self) -> u128 {
@@ -227,10 +226,16 @@ mod tests {
     }
 
     #[test]
-    fn cell_status_can_track_running_worker() {
+    fn cell_status_can_track_worker_lifecycle() {
         let mut runtime = Runtime::new();
+
         runtime.set_status("ROBOTCYB", "RUNNING");
         assert_eq!(runtime.cell("ROBOTCYB").unwrap().status, "RUNNING");
+
+        runtime.set_status("ROBOTCYB", "TIMEOUT");
+        runtime.tick();
+        assert_eq!(runtime.cell("ROBOTCYB").unwrap().status, "TIMEOUT");
+
         runtime.set_status("ROBOTCYB", "READY");
         assert_eq!(runtime.cell("ROBOTCYB").unwrap().status, "READY");
     }
