@@ -9,6 +9,52 @@ use std::time::{Duration, Instant};
 use uuid::Uuid;
 
 #[derive(Clone, Debug)]
+pub(crate) struct WorkerContract {
+    pub(crate) cell: &'static str,
+    pub(crate) started: Instant,
+    pub(crate) heartbeat: Instant,
+    pub(crate) deadline: Instant,
+    pub(crate) status: &'static str,
+    pub(crate) runs: u64,
+}
+
+impl WorkerContract {
+    pub(crate) fn new(cell: &'static str, budget: Duration) -> Self {
+        let now = Instant::now();
+        Self {
+            cell,
+            started: now,
+            heartbeat: now,
+            deadline: now + budget,
+            status: "RUNNING",
+            runs: 1,
+        }
+    }
+
+    pub(crate) fn heartbeat(&mut self) {
+        self.heartbeat = Instant::now();
+        self.runs = self.runs.saturating_add(1);
+    }
+
+    pub(crate) fn expired(&self) -> bool {
+        Instant::now() >= self.deadline
+    }
+
+    pub(crate) fn remaining(&self) -> Duration {
+        self.deadline.saturating_duration_since(Instant::now())
+    }
+
+    pub(crate) fn finish(&mut self, status: &'static str) {
+        self.status = status;
+        self.heartbeat = Instant::now();
+    }
+
+    pub(crate) fn heartbeat_age_ms(&self) -> u128 {
+        self.heartbeat.elapsed().as_millis()
+    }
+}
+
+#[derive(Clone, Debug)]
 pub(crate) struct RuntimeCell {
     pub(crate) id: &'static str,
     pub(crate) inputs: &'static str,
@@ -157,6 +203,14 @@ mod tests {
         assert!(runtime.cells.iter().all(|cell| cell.runs == 1));
         assert!(runtime.cells.iter().all(|cell| cell.heartbeat_age_ms() < 1000));
         assert_eq!(runtime.healthy_count(), runtime.cells.len());
+    }
+
+    #[test]
+    fn worker_contract_has_bounded_deadline() {
+        let worker = super::WorkerContract::new("ROBOTCYB", Duration::from_secs(1));
+        assert!(!worker.expired());
+        assert!(worker.remaining() <= Duration::from_secs(1));
+        assert!(worker.heartbeat_age_ms() < 1000);
     }
 
     #[test]
