@@ -33,6 +33,14 @@ jobs:
         run: CYBOS_HEADLESS_ONION_PROCESS_TEST=1 target/debug/cybos
         timeout-minutes: 2
 
+      - name: Process-isolated onion mid-route packet-drop recovery
+        run: CYBOS_HEADLESS_ONION_DROP_PROCESS_TEST=1 target/debug/cybos
+        timeout-minutes: 2
+
+      - name: Process-isolated onion route-bind validation
+        run: CYBOS_HEADLESS_ONION_BIND_VALIDATION_TEST=1 target/debug/cybos
+        timeout-minutes: 2
+
       - name: Process-isolated onion bind-crash recovery
         run: CYBOS_HEADLESS_ONION_BIND_PROCESS_TEST=1 target/debug/cybos
         timeout-minutes: 2
