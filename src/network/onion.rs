@@ -261,6 +261,11 @@ impl OnionRelayCache {
         if self.seen.contains_key(&cache_key) {
             return Err("onion packet replayed");
         }
+        self.mark(cache_key, expires_at);
+        Ok(())
+    }
+
+    fn mark(&mut self, cache_key: String, expires_at: u64) {
         if self.seen.len() >= REPLAY_CACHE_LIMIT {
             if let Some(oldest) = self.order.pop_front() {
                 self.seen.remove(&oldest);
@@ -268,7 +273,6 @@ impl OnionRelayCache {
         }
         self.seen.insert(cache_key.clone(), expires_at);
         self.order.push_back(cache_key);
-        Ok(())
     }
 }
 
@@ -529,7 +533,9 @@ pub(crate) fn peel(
         "{}:{}:{}:{}",
         packet.route_id, packet.packet_id, packet.session_id, packet.hop_index
     );
-    relay.check_and_mark(cache_key, packet.expires_at, now)?;
+    if relay.seen.contains_key(&cache_key) {
+        return Err("onion packet replayed");
+    }
 
     let key = crypto::onion_layer_key(
         hop_session_key,
@@ -550,6 +556,8 @@ pub(crate) fn peel(
     let frame = serde_json::from_slice::<LayerFrame>(&frame_bytes)
         .map_err(|_| "invalid onion frame")?;
     validate_frame(&frame)?;
+    relay.mark(cache_key, packet.expires_at);
+
     match frame {
         LayerFrame::Forward {
             next_node_id,
@@ -1051,6 +1059,69 @@ mod tests {
     }
 
     #[test]
+    #[test]
+    fn tampered_packet_does_not_poison_replay_cache() {
+        let route = new_route_id();
+        let packet_id = new_packet_id();
+        let hops = vec![hop("relay-a", "127.0.0.1:40401")];
+        let keys = [[17u8; 32]];
+        let mut packet = wrap(
+            &route,
+            &packet_id,
+            1_000_000_100,
+            b"payload",
+            &hops,
+            &vec!["session-a".into()],
+            &keys,
+            "destination",
+            "127.0.0.1:40402",
+        )
+        .unwrap();
+
+        let mut cache = OnionRelayCache::new();
+        let mut ciphertext = base64::engine::general_purpose::STANDARD
+            .decode(&packet.ciphertext)
+            .unwrap();
+        ciphertext[0] ^= 1;
+        packet.ciphertext =
+            base64::engine::general_purpose::STANDARD.encode(ciphertext);
+
+        assert_eq!(
+            peel(
+                &mut cache,
+                &packet,
+                &route,
+                0,
+                &keys[0],
+                1_000_000_000,
+            ),
+            Err("authentication failed")
+        );
+
+        let original = wrap(
+            &route,
+            &packet_id,
+            1_000_000_100,
+            b"payload",
+            &hops,
+            &vec!["session-a".into()],
+            &keys,
+            "destination",
+            "127.0.0.1:40402",
+        )
+        .unwrap();
+
+        assert!(peel(
+            &mut cache,
+            &original,
+            &route,
+            0,
+            &keys[0],
+            1_000_000_000,
+        )
+        .is_ok());
+    }
+
     fn malformed_onion_shapes_are_rejected_before_replay_state_changes() {
         let route = new_route_id();
         let packet = OnionPacket {
