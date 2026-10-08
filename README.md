@@ -101,6 +101,39 @@ cargo test --locked -- --test-threads=1
 The CI pipeline runs the same checks on Linux and macOS and also builds a
 testable macOS `cybOS.app` artifact.
 
+## macOS product QA
+
+For the normal product app:
+
+```bash
+chmod +x START_cybOS.command
+./START_cybOS.command
+```
+
+For an isolated release-mode QA app that executes the real two-hop onion and
+relay-failure tests before launching:
+
+```bash
+chmod +x QA_cybOS.command
+./QA_cybOS.command
+```
+
+The QA launcher builds with the opt-in `qa` feature and creates
+`cybOS-QA.app` separately from the normal `cybOS.app`.
+
+The complete manual acceptance protocol is in
+[MAC_PRODUCT_QA.md](MAC_PRODUCT_QA.md). It covers:
+
+- real LAN discovery between Macs;
+- OOB fingerprint provisioning and TOFU verification;
+- direct encrypted CybChat;
+- two-hop onion transport;
+- relay-failure recovery;
+- optional four-node GUI-driven 2-hop routing.
+
+GitHub Actions also packages both the normal macOS test app and the
+release-mode QA app as downloadable artifacts.
+
 ## Out-of-band peer provisioning
 
 For deployments that need stronger first-contact trust than TOFU:
