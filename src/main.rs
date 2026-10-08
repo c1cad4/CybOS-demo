@@ -111,10 +111,22 @@ fn main() -> eframe::Result {
                             }
                         }
                     }
+                    Some("all") => {
+                        if let Err(error) = network::lan::run_headless_onion_test() {
+                            eprintln!("cybOS onion self-test failed: {error}");
+                            std::process::exit(2);
+                        }
+                        if let Err(error) = network::lan::run_process_isolated_onion_test() {
+                            eprintln!("cybOS process-isolated onion self-test failed: {error}");
+                            std::process::exit(2);
+                        }
+                        return Ok(());
+                    }
                     Some("help") | Some("--help") | Some("-h") => {
                         println!("cybOS self-tests:");
                         println!("  cybOS --self-test onion");
                         println!("  cybOS --self-test onion-process");
+                        println!("  cybOS --self-test all");
                         return Ok(());
                     }
                     #[cfg(not(debug_assertions))]
