@@ -411,6 +411,53 @@ mod tests {
     }
 
     #[test]
+    fn secure_loopback_rejection_is_not_reported_as_delivery() {
+        let params = PATTERN.parse().expect("noise params");
+        let sender = Builder::new(params.clone()).generate_keypair().expect("sender keypair");
+        let receiver = Builder::new(params).generate_keypair().expect("receiver keypair");
+
+        let listener = spawn_listener("node-b-reject".to_string(), receiver.private.clone());
+        thread::sleep(Duration::from_millis(100));
+
+        let status = send(
+            "node-a",
+            "node-b-reject",
+            "127.0.0.1",
+            &sender.private,
+            "rejection test",
+        );
+
+        let deadline = Instant::now() + Duration::from_secs(2);
+        let message_id = match status {
+            SecureSendStatus::Failed { message_id, peer_id, reason } => {
+                assert_eq!(peer_id, "node-b-reject");
+                assert!(reason.contains("receiver rejected"));
+                message_id
+            }
+            other => panic!("expected rejected delivery, got {other:?}"),
+        };
+
+        loop {
+            match listener.try_recv() {
+                Ok(SecureEvent::Received { message_id: received_id, reply, .. }) => {
+                    assert_eq!(received_id, message_id);
+                    reply
+                        .send(SecureReply::Reject("receiver rejected test".into()))
+                        .expect("send rejection decision");
+                    break;
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) if Instant::now() < deadline => {
+                    thread::sleep(Duration::from_millis(20));
+                }
+                Err(error) => panic!("secure listener did not receive message: {error:?}"),
+                _ => panic!("secure listener timed out"),
+            }
+        }
+
+        drop(listener);
+    }
+
+    #[test]
     fn secure_loopback_delivery_uses_noise_and_ack() {
         let params = PATTERN.parse().expect("noise params");
         let sender = Builder::new(params.clone()).generate_keypair().expect("sender keypair");
