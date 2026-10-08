@@ -5,7 +5,7 @@ use crate::CybOs;
 use serde_json::{json, Value};
 use std::sync::mpsc;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 pub(crate) const QWEN_ADDRESS: &str = "127.0.0.1:8080";
 
@@ -17,7 +17,7 @@ pub(crate) const QWEN_MODEL: &str =
 
 const QWEN_REQUEST_BUDGET: Duration = Duration::from_secs(30);
 
-fn bounded_qwen_request(payload: Value) -> Result<Value, String> {
+fn bounded_qwen_request(payload: Value, budget: Duration) -> Result<Value, String> {
     let (tx, rx) = mpsc::channel();
 
     thread::spawn(move || {
@@ -39,8 +39,9 @@ fn bounded_qwen_request(payload: Value) -> Result<Value, String> {
         let _ = tx.send(result);
     });
 
-    rx.recv_timeout(QWEN_REQUEST_BUDGET)
-        .map_err(|_| "Qwen request exceeded the 30 second runtime budget.".to_string())?
+    let budget = budget.min(QWEN_REQUEST_BUDGET);
+    rx.recv_timeout(budget)
+        .map_err(|_| format!("Qwen request exceeded its {} second runtime budget.", budget.as_secs()))?
 }
 
 impl CybOs {
@@ -85,6 +86,41 @@ impl CybOs {
             }
         });
 
-        bounded_qwen_request(payload)
+        bounded_qwen_request(payload, QWEN_REQUEST_BUDGET)
+    }
+
+    pub(crate) fn qwen_chat_json_with_deadline(
+        &self,
+        system_prompt: &str,
+        user_prompt: &str,
+        max_tokens: u64,
+        temperature: f64,
+        deadline: Instant,
+    ) -> Result<Value, String> {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return Err("Qwen worker deadline expired before request start.".into());
+        }
+
+        let payload = json!({
+            "model": QWEN_MODEL,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": system_prompt
+                },
+                {
+                    "role": "user",
+                    "content": user_prompt
+                }
+            ],
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "chat_template_kwargs": {
+                "enable_thinking": false
+            }
+        });
+
+        bounded_qwen_request(payload, remaining)
     }
 }
