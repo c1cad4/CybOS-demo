@@ -3,6 +3,10 @@ name = "cybos"
 version = "0.7.0"
 edition = "2024"
 
+[features]
+default = []
+qa = []
+
 [dependencies]
 base64 = "0.23"
 eframe = "0.36.2"
