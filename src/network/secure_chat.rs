@@ -412,7 +412,7 @@ mod tests {
 
     #[test]
     fn secure_loopback_rejection_is_not_reported_as_delivery() {
-        let params = PATTERN.parse().expect("noise params");
+        let params: snow::NoiseParams = PATTERN.parse().expect("noise params");
         let sender = Builder::new(params.clone()).generate_keypair().expect("sender keypair");
         let receiver = Builder::new(params).generate_keypair().expect("receiver keypair");
 
