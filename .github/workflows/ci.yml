@@ -8,7 +8,7 @@ on:
 
 concurrency:
   group: cybOS-ci-${{ github.workflow }}-${{ github.ref }}-${{ github.sha }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   linux:
