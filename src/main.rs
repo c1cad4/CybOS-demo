@@ -129,12 +129,6 @@ fn main() -> eframe::Result {
                         println!("  cybOS --self-test all");
                         return Ok(());
                     }
-                    #[cfg(not(debug_assertions))]
-                    _ => {
-                        eprintln!("self-tests are available only in debug builds");
-                        std::process::exit(2);
-                    }
-                    #[cfg(any(debug_assertions, feature = "qa"))]
                     Some(name) => {
                         eprintln!("unknown self-test '{name}'. Use '--self-test help'.");
                         std::process::exit(2);
