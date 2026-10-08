@@ -38,6 +38,19 @@ See [NATIVE_INSTALL.md](NATIVE_INSTALL.md) for build and packaging instructions.
 
 SHA-256 checksum is published as `cybOS-0.7.2-macOS.zip.sha256` alongside the release ZIP.
 
+## CybDEX market terminal
+
+The native desktop build now includes a read-only Solana market terminal.
+
+Architecture:
+- DexScreener: pair/token discovery and current pair metrics.
+- GeckoTerminal: pool OHLCV candles and on-chain market history.
+- Solana RPC: future chain-truth validation for mints, supply and account state.
+- Future Jupiter adapter: route quotes before any wallet-signing layer.
+- Future own AMM/DEX program: separate on-chain project, not mixed into the read-only terminal.
+
+The current UI provides pair search, pool selection, live price/liquidity/volume, 5m/15m/1h/4h/1d candlesticks, volume and automatic refresh. No swap transaction is created or signed in this phase.
+
 ## CybLex P2P archive
 
 The native desktop build now embeds **librqbit 9.0.1** as its BitTorrent engine. CybLex keeps the long-lived torrent session on a dedicated Tokio worker and exposes a native egui control plane.
