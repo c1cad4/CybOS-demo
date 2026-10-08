@@ -1218,6 +1218,158 @@ pub(crate) fn run_headless_onion_test() -> Result<(), String> {
 }
 
 #[cfg(debug_assertions)]
+struct ProcessTestNode {
+    child: std::process::Child,
+    stdin: Option<std::process::ChildStdin>,
+    peer: OnionRoutePeer,
+}
+
+#[cfg(debug_assertions)]
+fn spawn_process_test_node(
+    binary: &std::path::Path,
+    port: u16,
+    exit_on_onion_packet: bool,
+) -> Result<ProcessTestNode, String> {
+    use std::io::{BufRead, BufReader};
+    use std::process::{Command, Stdio};
+
+    let mut command = Command::new(binary);
+    command
+        .env("CYBOS_HEADLESS_TEST_NODE", "1")
+        .env("CYBOS_HEADLESS_TEST_PORT", port.to_string())
+        .env("CYBOS_HEADLESS_TEST_ACK", "1")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
+
+    if exit_on_onion_packet {
+        command.env("CYBOS_HEADLESS_TEST_EXIT_ON_ONION_PACKET", "1");
+    }
+
+    let mut child = command
+        .spawn()
+        .map_err(|error| format!("cannot spawn process-isolated cybOS node: {error}"))?;
+
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| "test node stdout pipe unavailable".to_string())?;
+    let mut reader = BufReader::new(stdout);
+    let mut line = String::new();
+    reader
+        .read_line(&mut line)
+        .map_err(|error| format!("cannot read test node readiness: {error}"))?;
+
+    let mut parts = line.split_whitespace();
+    if parts.next() != Some("READY") {
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err(format!("invalid test node readiness line: {}", line.trim()));
+    }
+
+    let node_id = parts
+        .next()
+        .ok_or_else(|| "test node readiness missing node id".to_string())?
+        .to_string();
+    let public_key_b64 = parts
+        .next()
+        .ok_or_else(|| "test node readiness missing public key".to_string())?
+        .to_string();
+    let ready_port = parts
+        .next()
+        .ok_or_else(|| "test node readiness missing port".to_string())?
+        .parse::<u16>()
+        .map_err(|_| "test node readiness contains invalid port".to_string())?;
+
+    if ready_port != port {
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err("test node reported an unexpected UDP port".into());
+    }
+
+    Ok(ProcessTestNode {
+        stdin: child.stdin.take(),
+        child,
+        peer: OnionRoutePeer {
+            node_id,
+            address: format!("127.0.0.1:{port}"),
+            public_key_b64,
+        },
+    })
+}
+
+#[cfg(debug_assertions)]
+fn stop_process_test_node(node: &mut ProcessTestNode) {
+    node.stdin.take();
+    match node.child.try_wait() {
+        Ok(Some(_)) => {}
+        _ => {
+            let _ = node.child.kill();
+            let _ = node.child.wait();
+        }
+    }
+}
+
+#[cfg(debug_assertions)]
+pub(crate) fn run_process_isolated_onion_test() -> Result<(), String> {
+    let binary = std::env::current_exe()
+        .map_err(|error| format!("cannot resolve cybOS test binary: {error}"))?;
+    let source = NodeIdentity::generate_ephemeral();
+
+    let mut relay_a = spawn_process_test_node(&binary, free_udp_port()?, false)?;
+    let mut relay_b = spawn_process_test_node(&binary, free_udp_port()?, true)?;
+    let mut relay_c = spawn_process_test_node(&binary, free_udp_port()?, false)?;
+    let mut destination = spawn_process_test_node(&binary, free_udp_port()?, false)?;
+
+    let result = {
+        let relays = vec![
+            relay_a.peer.clone(),
+            relay_b.peer.clone(),
+            relay_c.peer.clone(),
+        ];
+
+        let status = send_onion_private_chat_with_route_fallback(
+            &source,
+            &destination.peer,
+            &relays,
+            "cybOS process-isolated onion recovery test",
+        );
+
+        let delivered = matches!(
+            status,
+            LanSendStatus::Delivered { ref peer_id, .. }
+                if peer_id == &destination.peer.node_id
+        );
+
+        let relay_b_exited = relay_b
+            .child
+            .try_wait()
+            .map_err(|error| format!("cannot inspect crashed relay process: {error}"))?
+            .is_some();
+
+        if delivered && relay_b_exited {
+            println!(
+                "ONION_PROCESS_TEST OK · relay crash recovered · {} → {}",
+                source.node_id(),
+                destination.peer.node_id
+            );
+            Ok(())
+        } else {
+            Err(format!(
+                "process-isolated onion test failed: delivered={delivered} relay_b_exited={relay_b_exited} status={status:?}"
+            ))
+        }
+    };
+
+    stop_process_test_node(&mut relay_a);
+    stop_process_test_node(&mut relay_b);
+    stop_process_test_node(&mut relay_c);
+    stop_process_test_node(&mut destination);
+
+    result
+}
+
+#[cfg(debug_assertions)]
 pub(crate) fn run_headless_test_node() -> Result<(), String> {
     use std::io::{Read, Write};
 
