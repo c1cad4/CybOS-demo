@@ -41,6 +41,7 @@ pub(crate) struct CybOs {
 
     // Local identity and runtime
     pub(crate) node_id: String,
+    pub(crate) runtime: crate::runtime::Runtime,
     pub(crate) status: String,
     pub(crate) qwen_child: Option<Child>,
     pub(crate) qwen_status: String,
@@ -112,6 +113,7 @@ impl Default for CybOs {
             battery: 100.0,
 
             node_id,
+            runtime: crate::runtime::Runtime::new(),
             status: "LOCAL-FIRST · READY".into(),
             qwen_child: None,
             qwen_status: "QWEN · OFFLINE".into(),
