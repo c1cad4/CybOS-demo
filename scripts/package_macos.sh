@@ -5,13 +5,13 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 VERSION="$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -n 1)"
-VERSION="\${VERSION:-0.7.0}"
-export MACOSX_DEPLOYMENT_TARGET="\${MACOSX_DEPLOYMENT_TARGET:-11.0}"
+VERSION="${VERSION:-0.7.0}"
+export MACOSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET:-11.0}"
 
 DIST="$ROOT/dist"
 APP="$DIST/cybOS.app"
 
-rm -rf "$APP" "$DIST/cybOS-\${VERSION}-macOS.zip"
+rm -rf "$APP" "$DIST/cybOS-${VERSION}-macOS.zip"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
 cargo build --release
@@ -52,7 +52,7 @@ if command -v xattr >/dev/null 2>&1; then
   xattr -cr "$APP" || true
 fi
 
-ditto -c -k --sequesterRsrc --keepParent "$APP" "$DIST/cybOS-\${VERSION}-macOS.zip"
+ditto -c -k --sequesterRsrc --keepParent "$APP" "$DIST/cybOS-${VERSION}-macOS.zip"
 
 echo "Created:"
 echo "  $APP"
