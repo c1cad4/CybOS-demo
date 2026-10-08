@@ -95,6 +95,22 @@ cargo test --locked -- --test-threads=1
 The CI pipeline runs the same checks on Linux and macOS and also builds a
 testable macOS `cybOS.app` artifact.
 
+## Out-of-band peer provisioning
+
+For deployments that need stronger first-contact trust than TOFU:
+
+```bash
+cargo run -- --identity
+```
+
+Share the printed `NODE_ID` and `FINGERPRINT` through an independent channel. On the other machine, provision that expected fingerprint:
+
+```bash
+cargo run -- --provision-peer NODE_ID FINGERPRINT
+```
+
+Future LAN scans automatically trust a peer only when its authenticated public-key fingerprint matches the provisioned value. A mismatch is rejected and logged as a security event.
+
 ## Headless onion smoke test
 
 For a local debug verification of the full routed path:
