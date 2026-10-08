@@ -9,6 +9,7 @@ fn navigation_supports_russian_page_names() {
     assert!(Page::Brain.matches_query("мозг"));
     assert!(Page::Network.matches_query("сеть"));
     assert!(Page::Assets.matches_query("токен"));
+    assert!(Page::Browser.matches_query("browser"));
 }
 
 #[test]

@@ -67,6 +67,16 @@ pub(crate) struct CybOs {
     pub(crate) cybdex_timeframe: crate::cybdex::CybDexTimeframe,
     pub(crate) cybdex_status: String,
     pub(crate) cybdex_last_refresh: Instant,
+    pub(crate) browser: crate::network::browser::BrowserRuntime,
+    pub(crate) browser_url: String,
+    pub(crate) browser_title: String,
+    pub(crate) browser_resolved_url: String,
+    pub(crate) browser_route: String,
+    pub(crate) browser_status: String,
+    pub(crate) browser_text: String,
+    pub(crate) browser_links: Vec<crate::network::browser::BrowserLink>,
+    pub(crate) browser_document_bytes: Option<usize>,
+    pub(crate) browser_contract: Option<crate::runtime::WorkerContract>,
     pub(crate) qwen_child: Option<Child>,
     pub(crate) qwen_status: String,
     pub(crate) qwen_retry_after: Instant,
@@ -183,6 +193,16 @@ impl Default for CybOs {
             cybdex_timeframe: crate::cybdex::CybDexTimeframe::Hour1,
             cybdex_status: "CYBDEX · READY · READ-ONLY MARKET DATA".into(),
             cybdex_last_refresh: Instant::now(),
+            browser: crate::network::browser::BrowserRuntime::new(),
+            browser_url: "https://cyberia.blog".into(),
+            browser_title: String::new(),
+            browser_resolved_url: String::new(),
+            browser_route: "IDLE".into(),
+            browser_status: "READY".into(),
+            browser_text: String::new(),
+            browser_links: Vec::new(),
+            browser_document_bytes: None,
+            browser_contract: None,
             qwen_child: None,
             qwen_status: "QWEN · OFFLINE".into(),
             qwen_retry_after: Instant::now(),
@@ -223,6 +243,85 @@ impl Default for CybOs {
 }
 
 
+
+
+impl CybOs {
+    pub(crate) fn navigate_browser(&mut self) {
+        let url = self.browser_url.trim().to_string();
+        if self.browser_contract.is_some() {
+            self.notify("CYBBROWSER REQUEST ALREADY RUNNING");
+            return;
+        }
+
+        let contract = crate::runtime::WorkerContract::new(
+            "BROWSER",
+            std::time::Duration::from_secs(12),
+        );
+
+        match self.browser.navigate(url.clone()) {
+            Ok(()) => {
+                self.browser_contract = Some(contract);
+                self.browser_status = format!("RESOLVING · {url}");
+                self.browser_route = "RESOLVING".into();
+                self.runtime.set_status("BROWSER", "RUNNING");
+            }
+            Err(error) => {
+                self.browser_status = format!("ERROR · {error}");
+                self.runtime.set_status("BROWSER", "ERROR");
+                self.notify("CYBBROWSER REQUEST REJECTED");
+            }
+        }
+    }
+
+    pub(crate) fn poll_browser(&mut self) {
+        if let Some(contract) = self.browser_contract.clone() {
+            if contract.expired() {
+                self.browser_contract = None;
+                contract.finish("TIMEOUT");
+                self.browser_status = "TIMEOUT".into();
+                self.runtime.set_status("BROWSER", "ERROR");
+                self.notify("CYBBROWSER TIMEOUT");
+                return;
+            }
+        }
+
+        for event in self.browser.poll() {
+            match event {
+                crate::network::browser::BrowserEvent::Status(status) => {
+                    self.browser_status = status;
+                }
+                crate::network::browser::BrowserEvent::Document(document) => {
+                    self.browser_url = document.requested_url.clone();
+                    self.browser_title = document.title;
+                    self.browser_resolved_url = document.resolved_url;
+                    self.browser_route = document.route.label().into();
+                    self.browser_text = document.text;
+                    self.browser_links = document.links;
+                    self.browser_document_bytes = Some(document.bytes);
+                    self.browser_status = "READY".into();
+
+                    if let Some(contract) = self.browser_contract.take() {
+                        contract.finish("READY");
+                    }
+                    self.runtime.set_status("BROWSER", "READY");
+                }
+                crate::network::browser::BrowserEvent::Error(error) => {
+                    self.browser_status = format!("ERROR · {error}");
+                    self.browser_route = "ERROR".into();
+                    if let Some(contract) = self.browser_contract.take() {
+                        contract.finish("ERROR");
+                    }
+                    self.runtime.set_status("BROWSER", "ERROR");
+                    self.add_event("BROWSER", self.browser_status.clone());
+                }
+            }
+        }
+
+        if self.browser_contract.is_some() {
+            self.runtime.set_status("BROWSER", "RUNNING");
+        }
+    }
+}
 
 impl CybOs {
     pub(crate) fn poll_cybdex(&mut self) {

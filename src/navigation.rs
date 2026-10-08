@@ -16,6 +16,7 @@ pub(crate) enum Page {
     Cameras,
     CybLex,
     CybDex,
+    Browser,
     System,
 }
 
@@ -55,6 +56,7 @@ impl Page {
             Page::Cameras => "FARM CAMERAS",
             Page::CybLex => "CYBLEX",
             Page::CybDex => "CYBDEX · MARKET",
+            Page::Browser => "CYBBROWSER",
         }
     }
 
@@ -73,6 +75,7 @@ impl Page {
             Page::Cameras => Icon::Camera,
             Page::CybLex => Icon::Network,
             Page::CybDex => Icon::Assets,
+            Page::Browser => Icon::Network,
         }
     }
 
@@ -90,6 +93,7 @@ impl Page {
             Page::Cameras => "cameras camera rtsp farm live",
             Page::CybLex => "cyblex archive torrent bittorrent magnet seed share download p2p files",
             Page::CybDex => "cybdex dex market tokens pairs pools ohlcv candlestick price liquidity volume swap solana",
+            Page::Browser => "browser cybbrowser web web2 http https ipfs ipns arweave ar decentralized browser",
             Page::System => "system energy battery node database",
         };
 
