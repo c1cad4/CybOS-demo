@@ -86,6 +86,8 @@ fn main() -> eframe::Result {
                 println!("      Pre-provision a peer fingerprint for automatic LAN trust.");
                 println!("  cybOS --self-test onion");
                 println!("      Run the live two-relay routed transport self-test.");
+                println!("  cybOS --self-test onion-3hop");
+                println!("      Run the full three-relay routed CybChat self-test.");
                 println!("  cybOS --self-test onion-process");
                 println!("      Run the process-isolated relay fault-recovery self-test.");
                 println!("  cybOS --self-test onion-drop-process");
@@ -102,6 +104,15 @@ fn main() -> eframe::Result {
                             Ok(()) => return Ok(()),
                             Err(error) => {
                                 eprintln!("cybOS onion self-test failed: {error}");
+                                std::process::exit(2);
+                            }
+                        }
+                    }
+                    Some("onion-3hop") => {
+                        match network::lan::run_headless_onion_three_relay_test() {
+                            Ok(()) => return Ok(()),
+                            Err(error) => {
+                                eprintln!("cybOS three-relay onion self-test failed: {error}");
                                 std::process::exit(2);
                             }
                         }
@@ -147,6 +158,10 @@ fn main() -> eframe::Result {
                             eprintln!("cybOS onion self-test failed: {error}");
                             std::process::exit(2);
                         }
+                        if let Err(error) = network::lan::run_headless_onion_three_relay_test() {
+                            eprintln!("cybOS three-relay onion self-test failed: {error}");
+                            std::process::exit(2);
+                        }
                         if let Err(error) = network::lan::run_process_isolated_onion_test() {
                             eprintln!("cybOS process-isolated onion self-test failed: {error}");
                             std::process::exit(2);
@@ -168,6 +183,7 @@ fn main() -> eframe::Result {
                     Some("help") | Some("--help") | Some("-h") => {
                         println!("cybOS self-tests:");
                         println!("  cybOS --self-test onion");
+                        println!("  cybOS --self-test onion-3hop");
                         println!("  cybOS --self-test onion-process");
                         println!("  cybOS --self-test onion-drop-process");
                         println!("  cybOS --self-test onion-bind-validation");
