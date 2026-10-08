@@ -100,6 +100,13 @@ impl Runtime {
         self.cells.iter().find(|cell| cell.id == id)
     }
 
+    pub(crate) fn set_status(&mut self, id: &str, status: &'static str) {
+        if let Some(cell) = self.cells.iter_mut().find(|cell| cell.id == id) {
+            cell.status = status;
+            cell.heartbeat = Instant::now();
+        }
+    }
+
     pub(crate) fn healthy_count(&self) -> usize {
         self.cells.iter().filter(|cell| cell.status == "READY").count()
     }
