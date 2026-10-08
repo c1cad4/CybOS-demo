@@ -207,13 +207,62 @@ impl CybOs {
                     node_id,
                     message,
                     fingerprint,
+                    public_key,
                 } => {
+                    let trust_key = format!("noise_peer_key:{}", node_id);
+                    let stored = self.store.get(&trust_key).and_then(|value| {
+                        if value.len() % 2 != 0 {
+                            return None;
+                        }
+                        (0..value.len())
+                            .step_by(2)
+                            .map(|i| u8::from_str_radix(&value[i..i + 2], 16).ok())
+                            .collect::<Option<Vec<u8>>>()
+                    });
+
+                    let trusted = match stored {
+                        Some(known) if known == public_key => true,
+                        Some(_) => {
+                            self.secure_status =
+                                format!("SECURE CHAT · IDENTITY CHANGED · {}", node_id);
+                            self.runtime.set_status("CYBCHAT", "ERROR");
+                            self.add_event(
+                                "SECURITY",
+                                format!(
+                                    "Rejected secure message from {}: Noise identity key changed",
+                                    node_id
+                                ),
+                            );
+                            self.notify("SECURE IDENTITY CHANGE REJECTED");
+                            continue;
+                        }
+                        None => {
+                            let encoded = public_key
+                                .iter()
+                                .map(|b| format!("{b:02x}"))
+                                .collect::<String>();
+                            self.store.set(&trust_key, &encoded);
+                            false
+                        }
+                    };
+
+                    self.upsert_secure_peer(&node_id, &fingerprint, trusted);
                     self.push_chat_message(format!("CYB:{}", node_id), message.clone(), false);
                     self.add_event(
                         "CHAT",
-                        format!("Secure message from {} · {} · fp {}", node_id, message_id, fingerprint),
+                        format!(
+                            "Secure message from {} · {} · fp {} · {}",
+                            node_id,
+                            message_id,
+                            fingerprint,
+                            if trusted { "TRUSTED" } else { "TOFU" }
+                        ),
                     );
-                    self.secure_status = format!("SECURE CHAT · RECEIVED · {}", node_id);
+                    self.secure_status = format!(
+                        "SECURE CHAT · RECEIVED · {} · {}",
+                        node_id,
+                        if trusted { "TRUSTED" } else { "TOFU FIRST SEEN" }
+                    );
                     self.runtime.set_status("CYBCHAT", "READY");
                 }
             }
