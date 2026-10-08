@@ -325,7 +325,7 @@ fn short_hash(bytes: &[u8]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{decode_hex, encode_hex, public_fingerprint};
+    use super::{decode_hex, encode_hex, short_hash};
 
     #[test]
     fn hex_roundtrip() {
@@ -336,6 +336,6 @@ mod tests {
     #[test]
     fn fingerprint_is_stable_for_public_key() {
         let key = [7_u8; 32];
-        assert_eq!(public_fingerprint(&key), public_fingerprint(&key));
+        assert_eq!(short_hash(&key), short_hash(&key));
     }
 }
