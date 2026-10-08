@@ -20,6 +20,24 @@ pub(crate) fn peer_binding(node_id: &str, version: &str, public_key_b64: &str) -
     [PROTOCOL, "peer", node_id, version, public_key_b64].join("|").into_bytes()
 }
 
+pub(crate) fn peer_discovery_binding(
+    node_id: &str,
+    version: &str,
+    public_key_b64: &str,
+    challenge: &str,
+) -> Vec<u8> {
+    [
+        PROTOCOL,
+        "peer-discovery-v2",
+        node_id,
+        version,
+        public_key_b64,
+        challenge,
+    ]
+    .join("|")
+    .into_bytes()
+}
+
 pub(crate) fn ephemeral() -> Result<(agreement::EphemeralPrivateKey, Vec<u8>), &'static str> {
     let rng = rand::SystemRandom::new();
     let private = agreement::EphemeralPrivateKey::generate(&agreement::X25519, &rng)
