@@ -1,4 +1,4 @@
-# cybOS 0.7 — CicadaFarm · RobotCYB · CybChat
+# cybOS 0.7.1 — CicadaFarm · RobotCYB · CybChat
 
 This repository contains both the browser prototype and the native macOS-first Rust/egui application. The browser layer is the visual prototype; the native layer is the real desktop runtime.
 
