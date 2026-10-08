@@ -84,8 +84,8 @@ impl CybOs {
             0.0,
             deadline,
         ) {
-            Some(value) => value,
-            None => return,
+            Ok(value) => value,
+            Err(_) => return,
         };
 
 
