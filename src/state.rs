@@ -9,7 +9,10 @@ use crate::store::Store;
 
 use eframe::egui::Vec2;
 use std::process::Child;
+use std::sync::mpsc::Receiver;
 use std::time::Instant;
+
+pub(crate) type RobotJobResult = Result<String, String>;
 
 pub(crate) struct CybOs {
     pub(crate) store: Store,
@@ -91,6 +94,8 @@ impl Default for CybOs {
             search: String::new(),
             robot_input: String::new(),
             robot_output: String::from("ROBOTCYB READY\n\nLOCAL AGENT · AWAITING QWEN\nAwaiting request..."),
+            robot_job: None,
+            robot_status: "IDLE".into(),
             chat_input: String::new(),
             chat_output: String::from("CYBCHAT READY\n\nLOCAL-FIRST CHANNEL\nAwaiting message..."),
             chat,
