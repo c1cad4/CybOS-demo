@@ -223,6 +223,7 @@ impl CybOs {
                     message,
                     fingerprint,
                     public_key,
+                    reply,
                 } => {
                     let trust_key = format!("noise_peer_key:{}", node_id);
                     let stored = self.store.get(&trust_key).and_then(|value| {
@@ -241,6 +242,9 @@ impl CybOs {
                             self.secure_status =
                                 format!("SECURE CHAT · IDENTITY CHANGED · {}", node_id);
                             self.runtime.set_status("CYBCHAT", "ERROR");
+                            let _ = reply.send(crate::network::secure_chat::SecureReply::Reject(
+                                "Noise identity key changed".into(),
+                            ));
                             self.add_event(
                                 "SECURITY",
                                 format!(
@@ -264,6 +268,9 @@ impl CybOs {
                     if !self.store.claim_secure_message_id(&message_id, &node_id) {
                         self.secure_status =
                             format!("SECURE CHAT · REPLAY REJECTED · {}", node_id);
+                        let _ = reply.send(crate::network::secure_chat::SecureReply::Reject(
+                            "replayed message id".into(),
+                        ));
                         self.add_event(
                             "SECURITY",
                             format!(
@@ -292,6 +299,7 @@ impl CybOs {
                         node_id,
                         if trusted { "TRUSTED" } else { "TOFU FIRST SEEN" }
                     );
+                    let _ = reply.send(crate::network::secure_chat::SecureReply::Ack);
                     self.runtime.set_status("CYBCHAT", "READY");
                 }
             }

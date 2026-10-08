@@ -4,7 +4,7 @@ use snow::Builder;
 use std::io::{ErrorKind, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::{mpsc::{self, Receiver}, Arc};
+use std::sync::{mpsc::{self, Receiver, Sender}, Arc};
 use std::thread;
 use std::time::{Duration, Instant};
 use uuid::Uuid;
@@ -16,6 +16,12 @@ const MAX_FRAME: usize = 16 * 1024;
 const PATTERN: &str = "Noise_XX_25519_ChaChaPoly_BLAKE2s";
 
 #[derive(Clone, Debug)]
+pub(crate) enum SecureReply {
+    Ack,
+    Reject(String),
+}
+
+#[derive(Clone, Debug)]
 pub(crate) enum SecureEvent {
     Received {
         message_id: String,
@@ -23,6 +29,7 @@ pub(crate) enum SecureEvent {
         message: String,
         fingerprint: String,
         public_key: Vec<u8>,
+        reply: Sender<SecureReply>,
     },
 }
 
@@ -120,9 +127,7 @@ pub(crate) fn spawn_listener(node_id: String, private_key: Vec<u8>) -> Listener 
                     let active = Arc::clone(&active);
                     thread::spawn(move || {
                         let deadline = Instant::now() + SESSION_BUDGET;
-                        if let Ok(Some(event)) = receive_one(&mut stream, &node_id, &key, deadline) {
-                            let _ = tx.send(event);
-                        }
+                        let _ = receive_one(&mut stream, &node_id, &key, deadline, &tx);
                         active.fetch_sub(1, Ordering::AcqRel);
                     });
                 }
@@ -217,13 +222,18 @@ fn send_with_deadline(
 
         apply_io_timeout(&mut stream, deadline)?;
         let n = read_frame(&mut stream, &mut buf)?;
-        transport.read_message(&buf[..n], &mut payload)
+        let payload_len = transport.read_message(&buf[..n], &mut payload)
             .map_err(|e| format!("ack decrypt: {e}"))?;
 
-        if payload != b"ACK" {
-            return Err("invalid secure ACK".into());
+        if payload[..payload_len] == *b"ACK" {
+            return Ok(());
         }
-        Ok(())
+
+        let reason = std::str::from_utf8(&payload[..payload_len])
+            .ok()
+            .and_then(|text| text.strip_prefix("REJECT:"))
+            .unwrap_or("secure receiver rejected message");
+        Err(reason.to_string())
     })();
 
     match result {
@@ -237,7 +247,8 @@ fn receive_one(
     node_id: &str,
     private_key: &[u8],
     deadline: Instant,
-) -> Result<Option<SecureEvent>, String> {
+    events: &Sender<SecureEvent>,
+) -> Result<(), String> {
     let params = PATTERN.parse().map_err(|e| format!("noise params: {e}"))?;
     let mut hs = Builder::new(params)
         .local_private_key(private_key)
@@ -266,7 +277,7 @@ fn receive_one(
         .map_err(|e| format!("hello: {e}"))?;
 
     if hello.node_id == node_id {
-        return Ok(None);
+        return Ok(());
     }
 
     let public_key = hs
@@ -289,18 +300,36 @@ fn receive_one(
         return Err("secure identity mismatch".into());
     }
 
+    let (reply_tx, reply_rx) = mpsc::channel::<SecureReply>();
+    events
+        .send(SecureEvent::Received {
+            message_id: envelope.message_id,
+            node_id: envelope.from,
+            message: envelope.message,
+            fingerprint,
+            public_key,
+            reply: reply_tx,
+        })
+        .map_err(|_| "secure event receiver stopped".to_string())?;
+
+    let reply = reply_rx
+        .recv_timeout(remaining(deadline)?)
+        .map_err(|_| "secure receiver decision timed out".to_string())?;
+
+    let response = match reply {
+        SecureReply::Ack => b"ACK".to_vec(),
+        SecureReply::Reject(reason) => {
+            let safe: String = reason.replace(['\r', '\n'], " ").chars().take(512).collect();
+            format!("REJECT:{}", safe).into_bytes()
+        }
+    };
+
     apply_io_timeout(stream, deadline)?;
-    let n = transport.write_message(b"ACK", &mut buf)
+    let n = transport.write_message(&response, &mut buf)
         .map_err(|e| format!("ack encrypt: {e}"))?;
     write_frame(stream, &buf[..n])?;
 
-    Ok(Some(SecureEvent::Received {
-        message_id: envelope.message_id,
-        node_id: envelope.from,
-        message: envelope.message,
-        fingerprint,
-        public_key,
-    }))
+    Ok(())
 }
 
 fn remaining(deadline: Instant) -> Result<Duration, String> {
@@ -364,7 +393,7 @@ fn short_hash(bytes: &[u8]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{decode_hex, encode_hex, short_hash, spawn_listener, send, SecureSendStatus, SecureEvent, PATTERN};
+    use super::{decode_hex, encode_hex, short_hash, spawn_listener, send, SecureSendStatus, SecureEvent, SecureReply, PATTERN};
     use snow::Builder;
     use std::thread;
     use std::time::{Duration, Instant};
@@ -403,10 +432,11 @@ mod tests {
         let deadline = Instant::now() + Duration::from_secs(2);
         loop {
             match listener.try_recv() {
-                Ok(SecureEvent::Received { message_id: received_id, node_id, message, .. }) => {
+                Ok(SecureEvent::Received { message_id: received_id, node_id, message, reply, .. }) => {
                     assert_eq!(received_id, message_id);
                     assert_eq!(node_id, "node-a");
                     assert_eq!(message, "loopback secure test");
+                    reply.send(SecureReply::Ack).expect("send ACK decision");
                     break;
                 }
                 Err(std::sync::mpsc::TryRecvError::Empty) if Instant::now() < deadline => {
