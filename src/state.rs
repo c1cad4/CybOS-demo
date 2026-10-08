@@ -361,7 +361,7 @@ impl CybOs {
                     self.runtime.set_status("RADAR", "READY");
                 }
                 Some(false) => {
-                    self.ble_status = "BLE · ADVERTISER EXITED · RETRYING";
+                    self.ble_status = "BLE · ADVERTISER EXITED · RETRYING".into();
                     self.runtime.set_status("RADAR", "ERROR");
                     self.ble_advertiser_retry_after =
                         Instant::now() + std::time::Duration::from_secs(5);
