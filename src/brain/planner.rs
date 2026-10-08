@@ -3,6 +3,21 @@ use super::web_intent;
 
 impl CybOs {
     pub(crate) fn agent_answer(&mut self, q: &str) -> String {
+        self.agent_answer_with_deadline(
+            q,
+            std::time::Instant::now() + super::planner_agent::ROBOT_JOB_BUDGET,
+        )
+    }
+
+    pub(crate) fn agent_answer_with_deadline(
+        &mut self,
+        q: &str,
+        deadline: std::time::Instant,
+    ) -> String {
+        if std::time::Instant::now() >= deadline {
+            return "RobotCYB превысил общий runtime budget 90 секунд.".into();
+        }
+
         let lower = q.trim().to_lowercase();
 
         let learning_request = lower.starts_with("запомни")
@@ -40,7 +55,7 @@ impl CybOs {
         }
 
         // ----------------------------------------------------
-        return self.run_agent_loop(q, conversation);
+        self.run_agent_loop_bounded(q, conversation, deadline)
 }
 
 
