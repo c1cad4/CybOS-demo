@@ -1,5 +1,14 @@
 # cybOS 0.7.2
 
+## CybLex P2P archive
+
+- Embedded `librqbit 9.0.1` as the native BitTorrent engine.
+- Added a dedicated Tokio-backed CybLex runtime cell with explicit commands, snapshots and session shutdown.
+- Added native magnet/.torrent downloads, local file/folder seeding, pause/resume/remove and live progress state.
+- Local seeding writes a `.torrent` sidecar and reports a magnet URI for sharing authorized content.
+- Added a clear authorized-content policy in the native UI and product documentation.
+
+
 Hardening release for the native local-first cybOS runtime.
 
 ## Reliability and persistence
