@@ -1996,22 +1996,6 @@ fn send_onion_private_chat_with_route_fallback(
         };
     }
 
-    let mut candidates = Vec::new();
-    candidates.push(relays.to_vec());
-    for remove_index in 0..relays.len() {
-        if candidates.len() >= ONION_ROUTE_ATTEMPT_LIMIT {
-            break;
-        }
-        let candidate: Vec<_> = relays
-            .iter()
-            .enumerate()
-            .filter_map(|(index, peer)| (index != remove_index).then(|| peer.clone()))
-            .collect();
-        if !candidate.is_empty() && !candidates.iter().any(|existing| existing == &candidate) {
-            candidates.push(candidate);
-        }
-    }
-
     let mut last_status = LanSendStatus::Failed {
         message_id: message_id.clone(),
         peer_id: destination.node_id.clone(),
