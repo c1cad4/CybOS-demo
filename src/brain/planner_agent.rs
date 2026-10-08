@@ -2,9 +2,25 @@
 
 use crate::CybOs;
 use super::web_planner;
+use std::time::{Duration, Instant};
+
+pub(crate) const ROBOT_JOB_BUDGET: Duration = Duration::from_secs(90);
 
 impl CybOs {
     pub(crate) fn run_agent_loop(&mut self, q: &str, conversation: String) -> String {
+        self.run_agent_loop_bounded(
+            q,
+            conversation,
+            Instant::now() + ROBOT_JOB_BUDGET,
+        )
+    }
+
+    pub(crate) fn run_agent_loop_bounded(
+        &mut self,
+        q: &str,
+        conversation: String,
+        deadline: Instant,
+    ) -> String {
         // Normal local agent path
         // ----------------------------------------------------
 
@@ -12,10 +28,14 @@ impl CybOs {
         let mut forced_tool: Option<(String, String)> = None;
 
         for step in 0..5 {
+            if Instant::now() >= deadline {
+                return "RobotCYB превысил общий runtime budget 90 секунд.".into();
+            }
+
             let selection = if let Some(tool) = forced_tool.take() {
                 Some(tool)
             } else {
-                self.select_tool_with_qwen(&current_query)
+                self.select_tool_with_qwen_deadline(&current_query, deadline)
             };
 
             let Some((tool, arguments)) = selection else {
@@ -76,7 +96,14 @@ TOOL RESULT:
                 result
             );
 
-            let Some(decision) = self.planner_decision_from_observation(&observation) else {
+            if Instant::now() >= deadline {
+                return "RobotCYB превысил общий runtime budget 90 секунд.".into();
+            }
+
+            let Some(decision) = self.planner_decision_from_observation_deadline(
+                &observation,
+                deadline,
+            ) else {
                 return "RobotCYB не смог завершить запрос в проверяемом режиме.".into();
             };
 
@@ -136,25 +163,33 @@ TOOL RESULT:
         };
 
         let (tx, rx) = std::sync::mpsc::channel();
+        let deadline = Instant::now() + ROBOT_JOB_BUDGET;
+        let contract = crate::runtime::WorkerContract::new("ROBOTCYB", ROBOT_JOB_BUDGET);
+        let worker_contract = contract.clone();
 
         std::thread::spawn(move || {
+            worker_contract.heartbeat();
+
             let mut worker = match CybOs::from_agent_snapshot(snapshot) {
                 Ok(worker) => worker,
                 Err(error) => {
+                    worker_contract.finish("ERROR");
                     let _ = tx.send(Err(error));
                     return;
                 }
             };
 
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                worker.agent_answer(&query)
+                worker.agent_answer_with_deadline(&query, deadline)
             }))
             .map_err(|_| "RobotCYB worker terminated unexpectedly.".to_string());
 
+            worker_contract.finish(if result.is_ok() { "READY" } else { "ERROR" });
             let _ = tx.send(result);
         });
 
         self.robot_job = Some(rx);
+        self.robot_contract = Some(contract);
         self.robot_status = "RUNNING".into();
         self.runtime.set_status("ROBOTCYB", "RUNNING");
         true
@@ -165,15 +200,33 @@ TOOL RESULT:
             return None;
         };
 
+        if let Some(contract) = self.robot_contract.clone() {
+            if contract.expired() {
+                self.robot_job = None;
+                contract.finish("TIMEOUT");
+                self.robot_contract = None;
+                self.robot_status = "TIMEOUT".into();
+                self.runtime.set_status("ROBOTCYB", "ERROR");
+                return Some("RobotCYB превысил общий runtime budget 90 секунд.".into());
+            }
+            self.robot_status = contract.status().into();
+        }
+
         match receiver.try_recv() {
             Ok(Ok(answer)) => {
                 self.robot_job = None;
+                if let Some(contract) = self.robot_contract.take() {
+                    contract.finish("READY");
+                }
                 self.robot_status = "READY".into();
                 self.runtime.set_status("ROBOTCYB", "READY");
                 Some(answer)
             }
             Ok(Err(error)) => {
                 self.robot_job = None;
+                if let Some(contract) = self.robot_contract.take() {
+                    contract.finish("ERROR");
+                }
                 self.robot_status = "ERROR".into();
                 self.runtime.set_status("ROBOTCYB", "ERROR");
                 Some(format!("RobotCYB worker error: {}", error))
@@ -185,6 +238,9 @@ TOOL RESULT:
             }
             Err(std::sync::mpsc::TryRecvError::Disconnected) => {
                 self.robot_job = None;
+                if let Some(contract) = self.robot_contract.take() {
+                    contract.finish("ERROR");
+                }
                 self.robot_status = "ERROR".into();
                 self.runtime.set_status("ROBOTCYB", "ERROR");
                 Some("RobotCYB worker disconnected before returning a result.".into())
