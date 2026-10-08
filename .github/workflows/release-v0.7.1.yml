@@ -1,0 +1,32 @@
+name: cybOS v0.7.1 macOS release
+
+on:
+  push:
+    branches:
+      - "release/v0.7.1"
+
+permissions:
+  contents: write
+
+jobs:
+  macos-release:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Package macOS app
+        run: bash ./scripts/package_macos.sh
+
+      - name: Publish GitHub release v0.7.1
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v0.7.1
+          target_commitish: ${{ github.sha }}
+          name: cybOS v0.7.1
+          generate_release_notes: true
+          files: dist/*.zip
