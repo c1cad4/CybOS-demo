@@ -164,6 +164,66 @@ impl CybOs {
                 }
             });
 
+        // CYB RADAR: real LAN peers now; physical distance is shown only when a transport provides it.
+        egui::Frame::new()
+            .fill(Color32::from_rgb(3, 14, 10))
+            .stroke(Stroke::new(1.0, Color32::from_rgb(24, 100, 64)))
+            .corner_radius(12)
+            .inner_margin(egui::Margin::same(14))
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("CYB RADAR").size(13.0).strong().color(neon));
+                    ui.label(RichText::new("LOCAL PROXIMITY DISCOVERY").size(9.0).color(dim));
+                });
+                ui.label(RichText::new(
+                    "Detected nodes are real. LAN alone cannot measure meters; BLE can provide distance later."
+                ).size(9.0).color(dim));
+                ui.add_space(8.0);
+
+                let available = ui.available_width().min(560.0);
+                let size = Vec2::new(available, 310.0);
+                let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
+                let painter = ui.painter_at(rect);
+                let center = rect.center();
+                let radius = rect.width().min(rect.height()) * 0.40;
+                let ring = Stroke::new(1.0, Color32::from_rgb(22, 86, 57));
+
+                for factor in [0.25_f32, 0.5, 0.75, 1.0] {
+                    painter.circle_stroke(center, radius * factor, ring);
+                }
+                painter.line_segment([
+                    egui::pos2(center.x - radius, center.y),
+                    egui::pos2(center.x + radius, center.y),
+                ], ring);
+                painter.line_segment([
+                    egui::pos2(center.x, center.y - radius),
+                    egui::pos2(center.x, center.y + radius),
+                ], ring);
+                painter.circle_filled(center, 7.0, neon);
+                painter.text(center + Vec2::new(10.0, -7.0), egui::Align2::LEFT_CENTER,
+                    "YOU", egui::FontId::monospace(9.0), neon);
+
+                for (index, peer) in self.lan_peers.iter().enumerate() {
+                    let (angle, distance_label) = if let Some(distance) = peer.distance_m {
+                        let normalized = (distance / 1000.0).clamp(0.08, 1.0);
+                        ((index as f32 * 2.399).sin(), format!("{:.0} m", distance))
+                    } else {
+                        ((index as f32 * 2.399).sin(), "LAN".to_string())
+                    };
+                    let angle = angle * std::f32::consts::PI;
+                    let radial = peer.distance_m.map(|d| radius * (d / 1000.0).clamp(0.10, 1.0)).unwrap_or(radius * 0.82);
+                    let point = center + Vec2::new(angle.cos() * radial, angle.sin() * radial);
+                    painter.circle_filled(point, 6.0, neon);
+                    painter.text(point + Vec2::new(10.0, -8.0), egui::Align2::LEFT_CENTER,
+                        format!("{} · {}", peer.node_id, distance_label), egui::FontId::monospace(8.0), neon);
+                }
+
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new(format!("{} NODE(S) DETECTED", self.lan_peers.len())).size(9.0).color(neon));
+                    ui.label(RichText::new("· RADAR POSITION IS NOT GEOLOCATION").size(9.0).color(dim));
+                });
+            });
+
         ui.add_space(10.0);
 
         for (name, status, live) in [
