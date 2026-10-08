@@ -552,6 +552,9 @@ fn spawn_listener_on_addr_with_stop(
         let exit_on_onion_bind =
             cfg!(debug_assertions)
                 && std::env::var_os("CYBOS_HEADLESS_TEST_EXIT_ON_ONION_BIND").is_some();
+        let mut drop_first_onion_packet =
+            cfg!(debug_assertions)
+                && std::env::var_os("CYBOS_HEADLESS_TEST_DROP_ONION_PACKET").is_some();
 
         loop {
             let (size, peer_addr) = match socket.recv_from(&mut buffer) {
@@ -855,6 +858,10 @@ fn spawn_listener_on_addr_with_stop(
             if let Some(payload) = message.strip_prefix(ONION_PREFIX).and_then(|r| r.strip_prefix(' ')) {
                 if exit_on_onion_packet {
                     std::process::exit(86);
+                }
+                if drop_first_onion_packet {
+                    drop_first_onion_packet = false;
+                    continue;
                 }
 
                 let Ok(packet) = serde_json::from_str::<onion::OnionPacket>(payload) else { continue };
@@ -1291,6 +1298,7 @@ enum ProcessTestFault {
     None,
     OnionPacket,
     OnionBind,
+    OnionPacketDrop,
 }
 
 #[cfg(any(debug_assertions, feature = "qa"))]
@@ -1316,6 +1324,7 @@ fn spawn_process_test_node(
         .env_remove("CYBOS_HEADLESS_TEST_NODE")
         .env_remove("CYBOS_HEADLESS_TEST_EXIT_ON_ONION_PACKET")
         .env_remove("CYBOS_HEADLESS_TEST_EXIT_ON_ONION_BIND")
+        .env_remove("CYBOS_HEADLESS_TEST_DROP_ONION_PACKET")
         .env("CYBOS_HEADLESS_TEST_NODE", "1")
         .env("CYBOS_HEADLESS_TEST_PORT", port.to_string())
         .env("CYBOS_HEADLESS_TEST_ACK", "1")
@@ -1329,6 +1338,9 @@ fn spawn_process_test_node(
         }
         ProcessTestFault::OnionBind => {
             command.env("CYBOS_HEADLESS_TEST_EXIT_ON_ONION_BIND", "1");
+        }
+        ProcessTestFault::OnionPacketDrop => {
+            command.env("CYBOS_HEADLESS_TEST_DROP_ONION_PACKET", "1");
         }
         ProcessTestFault::None => {}
     }
@@ -1467,6 +1479,212 @@ pub(crate) fn run_process_isolated_onion_test() -> Result<(), String> {
         stop_process_test_node(node);
     }
 
+    result
+}
+
+#[cfg(any(debug_assertions, feature = "qa"))]
+pub(crate) fn run_process_isolated_onion_packet_drop_test() -> Result<(), String> {
+    let binary = std::env::current_exe()
+        .map_err(|error| format!("cannot resolve cybOS test binary: {error}"))?;
+    let source = NodeIdentity::generate_ephemeral();
+
+    let specs = [
+        (free_udp_port()?, ProcessTestFault::None),
+        (free_udp_port()?, ProcessTestFault::OnionPacketDrop),
+        (free_udp_port()?, ProcessTestFault::None),
+    ];
+
+    let mut nodes = Vec::with_capacity(specs.len());
+    for (port, fault) in specs {
+        match spawn_process_test_node(&binary, port, fault) {
+            Ok(node) => nodes.push(node),
+            Err(error) => {
+                for node in &mut nodes {
+                    stop_process_test_node(node);
+                }
+                return Err(error);
+            }
+        }
+    }
+
+    let result = {
+        let relays: Vec<_> = nodes[..2]
+            .iter()
+            .map(|node| node.peer.clone())
+            .collect();
+        let destination = nodes[2].peer.clone();
+
+        let status = send_onion_private_chat_with_route_fallback(
+            &source,
+            &destination,
+            &relays,
+            "cybOS process-isolated mid-route packet-drop recovery test",
+        );
+
+        let delivered = matches!(
+            status,
+            LanSendStatus::Delivered { ref peer_id, .. } if peer_id == &destination.node_id
+        );
+        let relay_b_alive = nodes[1]
+            .child
+            .try_wait()
+            .map_err(|error| format!("cannot inspect dropped-packet relay process: {error}"))?
+            .is_none();
+
+        if delivered && relay_b_alive {
+            println!(
+                "ONION_DROP_PROCESS_TEST OK · mid-route drop recovered · {} → {}",
+                source.node_id(),
+                destination.node_id()
+            );
+            Ok(())
+        } else {
+            Err(format!(
+                "process-isolated onion packet-drop test failed: delivered={delivered} relay_b_alive={relay_b_alive} status={status:?}"
+            ))
+        }
+    };
+
+    for node in &mut nodes {
+        stop_process_test_node(node);
+    }
+
+    result
+}
+
+#[cfg(any(debug_assertions, feature = "qa"))]
+pub(crate) fn run_process_isolated_onion_bind_validation_test() -> Result<(), String> {
+    let binary = std::env::current_exe()
+        .map_err(|error| format!("cannot resolve cybOS test binary: {error}"))?;
+    let source = NodeIdentity::generate_ephemeral();
+    let relay_port = free_udp_port()?;
+    let relay = spawn_process_test_node(&binary, relay_port, ProcessTestFault::None)?;
+
+    let result = (|| {
+        let relay_peer = relay.peer.clone();
+        let socket = UdpSocket::bind(("127.0.0.1", 0))
+            .map_err(|error| format!("cannot bind validation socket: {error}"))?;
+        let (session_id, session_key) = ensure_anonymous_onion_session(&socket, &relay_peer)?;
+
+        let route_id = onion::new_route_id();
+        let future_expiry = now_secs().saturating_add(30);
+
+        send_onion_route_bind(
+            &socket,
+            &relay_peer,
+            &session_id,
+            &session_key,
+            &route_id,
+            0,
+            "127.0.0.1:1",
+            &source.node_id(),
+            "127.0.0.1:2",
+            future_expiry,
+        )?;
+
+        let malformed = OnionRouteBind {
+            session_id: session_id.clone(),
+            route_id: route_id.clone(),
+            hop_index: 0,
+            expires_at: future_expiry,
+            nonce: "%%%".into(),
+            ciphertext: "%%%".into(),
+        };
+        let malformed_body = serde_json::to_string(&malformed)
+            .map_err(|error| format!("cannot encode malformed onion bind: {error}"))?;
+        socket
+            .send_to(
+                format!("{} {}", ONION_BIND_PREFIX, malformed_body).as_bytes(),
+                &relay_peer.address,
+            )
+            .map_err(|error| format!("cannot send malformed onion bind: {error}"))?;
+
+        socket
+            .set_read_timeout(Some(Duration::from_millis(250)))
+            .map_err(|error| format!("cannot set validation read timeout: {error}"))?;
+        let mut buffer = [0u8; 8192];
+        if socket.recv_from(&mut buffer).is_ok() {
+            return Err("malformed onion bind unexpectedly received an acknowledgement".into());
+        }
+
+        send_onion_route_bind(
+            &socket,
+            &relay_peer,
+            &session_id,
+            &session_key,
+            &route_id,
+            0,
+            "127.0.0.1:1",
+            &source.node_id(),
+            "127.0.0.1:2",
+            future_expiry,
+        )?;
+
+        let expired_route = onion::new_route_id();
+        let expired_at = now_secs().saturating_sub(1);
+        let expired_frame = OnionRouteBindFrame {
+            route_id: expired_route.clone(),
+            hop_index: 0,
+            previous_address: "127.0.0.1:1".into(),
+            next_node_id: source.node_id(),
+            next_address: "127.0.0.1:2".into(),
+            expires_at: expired_at,
+        };
+        let expired_bytes = serde_json::to_vec(&expired_frame)
+            .map_err(|error| format!("cannot encode expired onion bind: {error}"))?;
+        let expired_aad = onion_bind_aad(
+            "onion-bind-v1",
+            &session_id,
+            &expired_route,
+            0,
+            expired_at,
+        );
+        let (expired_nonce, expired_ciphertext) =
+            crypto::encrypt(&session_key, &expired_aad, &expired_bytes)
+                .map_err(|error| error.to_string())?;
+        let expired_bind = OnionRouteBind {
+            session_id: session_id.clone(),
+            route_id: expired_route,
+            hop_index: 0,
+            expires_at: expired_at,
+            nonce: expired_nonce,
+            ciphertext: expired_ciphertext,
+        };
+        let expired_body = serde_json::to_string(&expired_bind)
+            .map_err(|error| format!("cannot encode expired onion bind frame: {error}"))?;
+        socket
+            .send_to(
+                format!("{} {}", ONION_BIND_PREFIX, expired_body).as_bytes(),
+                &relay_peer.address,
+            )
+            .map_err(|error| format!("cannot send expired onion bind: {error}"))?;
+
+        socket
+            .set_read_timeout(Some(Duration::from_millis(250)))
+            .map_err(|error| format!("cannot set validation read timeout: {error}"))?;
+        if socket.recv_from(&mut buffer).is_ok() {
+            return Err("expired onion bind unexpectedly received an acknowledgement".into());
+        }
+
+        let relay_alive = relay
+            .child
+            .try_wait()
+            .map_err(|error| format!("cannot inspect bind validation relay: {error}"))?
+            .is_none();
+        if !relay_alive {
+            return Err("relay process exited while validating malformed/expired onion binds".into());
+        }
+
+        println!(
+            "ONION_BIND_VALIDATION_TEST OK · malformed+expired bind rejected without relay crash · {} → {}",
+            source.node_id(),
+            relay_peer.node_id
+        );
+        Ok(())
+    })();
+
+    let mut relay = relay;
+    stop_process_test_node(&mut relay);
     result
 }
 
