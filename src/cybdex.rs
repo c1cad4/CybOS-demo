@@ -191,7 +191,7 @@ fn run_worker(
     busy: Arc<AtomicBool>,
 ) {
     while let Ok(command) = command_rx.recv() {
-        if matches!(command, CybDexCommand::Shutdown) {
+        if matches!(&command, CybDexCommand::Shutdown) {
             break;
         }
 
