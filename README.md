@@ -110,8 +110,8 @@ chmod +x START_cybOS.command
 ./START_cybOS.command
 ```
 
-For an isolated release-mode QA app that executes the real two-hop onion and
-relay-failure tests before launching:
+For an isolated release-mode QA app that executes the real two-hop onion,
+relay-failure and relay-bind-crash recovery tests before launching:
 
 ```bash
 chmod +x QA_cybOS.command
@@ -128,7 +128,8 @@ The complete manual acceptance protocol is in
 - OOB fingerprint provisioning and TOFU verification;
 - direct encrypted CybChat;
 - two-hop onion transport;
-- relay-failure recovery;
+- relay-failure recovery after packet entry;
+- relay-failure recovery immediately after route binding;
 - optional four-node GUI-driven 2-hop routing.
 
 GitHub Actions also packages both the normal macOS test app and the
