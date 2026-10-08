@@ -102,6 +102,17 @@ impl CybOs {
     }
 
     pub(crate) fn robot_answer(&self, q: &str) -> String {
+        self.robot_answer_with_deadline(
+            q,
+            Instant::now() + Duration::from_secs(30),
+        )
+    }
+
+    pub(crate) fn robot_answer_with_deadline(&self, q: &str, deadline: Instant) -> String {
+        if Instant::now() >= deadline {
+            return "RobotCYB превысил общий runtime budget.".into();
+        }
+
         let brain_context = self.build_brain_context(q);
 
         // Local Tool Router
@@ -155,11 +166,12 @@ Reply in the same language as the user.
             brain_context, tool_context
         );
 
-        match self.qwen_chat_json_with_temperature(
+        match self.qwen_chat_json_with_deadline(
             &system_prompt,
             q,
             400,
             0.7,
+            deadline,
         ) {
             Ok(value) => match Self::qwen_visible_content(&value) {
                 Some(content) if !content.trim().is_empty() => {
