@@ -59,6 +59,30 @@ impl CybOs {
                 );
             });
         }
+        ui.add_space(12.0);
+        ui.label(RichText::new("ECOSYSTEM BRIDGES").size(11.0).strong().color(neon));
+        ui.add_space(6.0);
+        egui::Frame::new()
+            .fill(Color32::from_rgb(4, 16, 11))
+            .stroke(egui::Stroke::new(1.0, Color32::from_rgb(24, 70, 46)))
+            .corner_radius(9)
+            .inner_margin(egui::Margin::same(11))
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("CYBLAUNCH").size(12.0).strong().color(neon));
+                    ui.label(RichText::new(crate::cyblaunch::STATUS).size(8.0).color(dim));
+                    if ui.button("OPEN REPOSITORY").clicked() {
+                        let _ = Command::new("open")
+                            .arg(crate::cyblaunch::REPOSITORY_URL)
+                            .spawn();
+                    }
+                });
+                ui.label(
+                    RichText::new(crate::cyblaunch::MODE)
+                        .size(8.0)
+                        .color(dim),
+                );
+            });
         ui.add_space(10.0);
 
         ui.horizontal(|ui| {
