@@ -1,15 +1,11 @@
 //! Bounded encrypted direct transport for CYBChat.
-//!
-//! LAN discovery remains UDP. Actual direct messages use TCP + Noise XX.
-//! The static Noise key is generated once and persisted in cybOS KV storage.
-//! Handshake and message work run outside the egui thread and have hard
-//! read/write deadlines.
-
 use serde::{Deserialize, Serialize};
-use snow::{Builder, HandshakeState, TransportState};
-use std::io::{Read, Write};
+use snow::Builder;
+use std::collections::HashMap;
+use std::io::{ErrorKind, Read, Write};
 use std::net::{TcpListener, TcpStream};
-use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{mpsc::{self, Receiver}, Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 use uuid::Uuid;
@@ -26,6 +22,7 @@ pub(crate) enum SecureEvent {
         node_id: String,
         message: String,
         fingerprint: String,
+        public_key: Vec<u8>,
     },
 }
 
@@ -36,9 +33,7 @@ pub(crate) enum SecureSendStatus {
 }
 
 #[derive(Serialize, Deserialize)]
-struct Hello {
-    node_id: String,
-}
+struct Hello { node_id: String }
 
 #[derive(Serialize, Deserialize)]
 struct Envelope {
@@ -48,63 +43,104 @@ struct Envelope {
     message: String,
 }
 
+pub(crate) type TrustMap = Arc<Mutex<HashMap<String, Vec<u8>>>>;
+
 pub(crate) fn load_or_create_static_key(store: &crate::store::Store) -> Result<Vec<u8>, String> {
     if let Some(encoded) = store.get("noise_static_private_hex") {
         return decode_hex(&encoded);
     }
-
     let params = PATTERN.parse().map_err(|e| format!("noise params: {e}"))?;
-    let builder = Builder::new(params);
-    let keypair = builder
+    let keypair = Builder::new(params)
         .generate_keypair()
         .map_err(|e| format!("noise key generation: {e}"))?;
-
-    let encoded = encode_hex(&keypair.private);
-    store.set("noise_static_private_hex", &encoded);
+    store.set("noise_static_private_hex", &encode_hex(&keypair.private));
     Ok(keypair.private)
 }
 
-pub(crate) fn public_fingerprint(private_key: &[u8]) -> Result<String, String> {
-    let params = PATTERN.parse().map_err(|e| format!("noise params: {e}"))?;
-    let hs = Builder::new(params)
-        .local_private_key(private_key)
-        .map_err(|e| format!("noise key: {e}"))?
-        .build_initiator()
-        .map_err(|e| format!("noise state: {e}"))?;
-    let public = hs
-        .get_remote_static()
-        .unwrap_or(&[]);
-    if public.is_empty() {
-        // For a XX pattern the local static public key is not exposed by the
-        // handshake state. The fingerprint is therefore derived from the
-        // private key as a stable display identifier, not used as crypto.
-        return Ok(short_hash(private_key));
+pub(crate) fn load_trust_map(store: &crate::store::Store) -> TrustMap {
+    let mut map = HashMap::new();
+    for (key, value) in store.kv_with_prefix("noise_peer_key:") {
+        if let Ok(bytes) = decode_hex(&value) {
+            map.insert(key.trim_start_matches("noise_peer_key:").to_string(), bytes);
+        }
     }
-    Ok(short_hash(public))
+    Arc::new(Mutex::new(map))
 }
 
-pub(crate) fn spawn_listener(node_id: String, private_key: Vec<u8>) -> Receiver<SecureEvent> {
+pub(crate) fn remember_peer_key(store: &crate::store::Store, node_id: &str, public_key: &[u8]) {
+    store.set(&format!("noise_peer_key:{node_id}"), &encode_hex(public_key));
+}
+
+pub(crate) fn public_fingerprint(public_key: &[u8]) -> String {
+    short_hash(public_key)
+}
+
+pub(crate) struct Listener {
+    pub(crate) events: Receiver<SecureEvent>,
+    stop: Arc<AtomicBool>,
+}
+
+impl Listener {
+    pub(crate) fn try_recv(&self) -> Result<SecureEvent, mpsc::TryRecvError> {
+        self.events.try_recv()
+    }
+}
+
+impl Drop for Listener {
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::Relaxed);
+    }
+}
+
+pub(crate) fn spawn_listener(node_id: String, private_key: Vec<u8>, trust: TrustMap) -> Listener {
     let (tx, rx) = mpsc::channel();
+    let stop = Arc::new(AtomicBool::new(false));
+    let stop_thread = Arc::clone(&stop);
+
     thread::spawn(move || {
         let listener = match TcpListener::bind(("0.0.0.0", PORT)) {
             Ok(v) => v,
             Err(_) => return,
         };
-        for stream in listener.incoming() {
-            let Ok(mut stream) = stream else { continue };
-            let _ = stream.set_read_timeout(Some(TIMEOUT));
-            let _ = stream.set_write_timeout(Some(TIMEOUT));
-            let tx = tx.clone();
-            let node_id = node_id.clone();
-            let key = private_key.clone();
-            thread::spawn(move || {
-                if let Ok(Some(event)) = receive_one(&mut stream, &node_id, &key) {
-                    let _ = tx.send(event);
+        if listener.set_nonblocking(true).is_err() {
+            return;
+        }
+
+        const MAX_ACTIVE: usize = 8;
+        let active = Arc::new(AtomicUsize::new(0));
+
+        while !stop_thread.load(Ordering::Relaxed) {
+            match listener.accept() {
+                Ok((mut stream, _addr)) => {
+                    if active.load(Ordering::Acquire) >= MAX_ACTIVE {
+                        continue;
+                    }
+                    let _ = stream.set_read_timeout(Some(TIMEOUT));
+                    let _ = stream.set_write_timeout(Some(TIMEOUT));
+                    active.fetch_add(1, Ordering::AcqRel);
+
+                    let tx = tx.clone();
+                    let node_id = node_id.clone();
+                    let key = private_key.clone();
+                    let trust = Arc::clone(&trust);
+                    let active = Arc::clone(&active);
+
+                    thread::spawn(move || {
+                        if let Ok(Some(event)) = receive_one(&mut stream, &node_id, &key, &trust) {
+                            let _ = tx.send(event);
+                        }
+                        active.fetch_sub(1, Ordering::AcqRel);
+                    });
                 }
-            });
+                Err(error) if error.kind() == ErrorKind::WouldBlock => {
+                    thread::sleep(Duration::from_millis(25));
+                }
+                Err(_) => thread::sleep(Duration::from_millis(50)),
+            }
         }
     });
-    rx
+
+    Listener { events: rx, stop }
 }
 
 pub(crate) fn send(
@@ -115,6 +151,7 @@ pub(crate) fn send(
     message: &str,
 ) -> SecureSendStatus {
     let message_id = Uuid::new_v4().to_string();
+
     let result = (|| -> Result<(), String> {
         if message.trim().is_empty() {
             return Err("empty message".into());
@@ -130,12 +167,8 @@ pub(crate) fn send(
             TIMEOUT,
         )
         .map_err(|e| format!("connect: {e}"))?;
-        stream
-            .set_read_timeout(Some(TIMEOUT))
-            .map_err(|e| e.to_string())?;
-        stream
-            .set_write_timeout(Some(TIMEOUT))
-            .map_err(|e| e.to_string())?;
+        stream.set_read_timeout(Some(TIMEOUT)).map_err(|e| e.to_string())?;
+        stream.set_write_timeout(Some(TIMEOUT)).map_err(|e| e.to_string())?;
 
         let params = PATTERN.parse().map_err(|e| format!("noise params: {e}"))?;
         let mut hs = Builder::new(params)
@@ -147,8 +180,7 @@ pub(crate) fn send(
         let mut buf = vec![0_u8; 65535];
         let mut payload = vec![0_u8; 65535];
 
-        let n = hs
-            .write_message(&[], &mut buf)
+        let n = hs.write_message(&[], &mut buf)
             .map_err(|e| format!("handshake 1: {e}"))?;
         write_frame(&mut stream, &buf[..n])?;
 
@@ -156,17 +188,13 @@ pub(crate) fn send(
         hs.read_message(&buf[..n], &mut payload)
             .map_err(|e| format!("handshake 2: {e}"))?;
 
-        let hello = serde_json::to_vec(&Hello {
-            node_id: sender_id.into(),
-        })
-        .map_err(|e| e.to_string())?;
-        let n = hs
-            .write_message(&hello, &mut buf)
+        let hello = serde_json::to_vec(&Hello { node_id: sender_id.into() })
+            .map_err(|e| e.to_string())?;
+        let n = hs.write_message(&hello, &mut buf)
             .map_err(|e| format!("handshake 3: {e}"))?;
         write_frame(&mut stream, &buf[..n])?;
 
-        let mut transport = hs
-            .into_transport_mode()
+        let mut transport = hs.into_transport_mode()
             .map_err(|e| format!("transport: {e}"))?;
 
         let envelope = serde_json::to_vec(&Envelope {
@@ -174,17 +202,14 @@ pub(crate) fn send(
             from: sender_id.into(),
             to: peer_id.into(),
             message: message.into(),
-        })
-        .map_err(|e| e.to_string())?;
+        }).map_err(|e| e.to_string())?;
 
-        let n = transport
-            .write_message(&envelope, &mut buf)
+        let n = transport.write_message(&envelope, &mut buf)
             .map_err(|e| format!("encrypt: {e}"))?;
         write_frame(&mut stream, &buf[..n])?;
 
         let n = read_frame(&mut stream, &mut buf)?;
-        transport
-            .read_message(&buf[..n], &mut payload)
+        transport.read_message(&buf[..n], &mut payload)
             .map_err(|e| format!("ack decrypt: {e}"))?;
 
         if payload != b"ACK" {
@@ -194,15 +219,8 @@ pub(crate) fn send(
     })();
 
     match result {
-        Ok(()) => SecureSendStatus::Delivered {
-            message_id,
-            peer_id: peer_id.into(),
-        },
-        Err(reason) => SecureSendStatus::Failed {
-            message_id,
-            peer_id: peer_id.into(),
-            reason,
-        },
+        Ok(()) => SecureSendStatus::Delivered { message_id, peer_id: peer_id.into() },
+        Err(reason) => SecureSendStatus::Failed { message_id, peer_id: peer_id.into(), reason },
     }
 }
 
@@ -210,6 +228,7 @@ fn receive_one(
     stream: &mut TcpStream,
     node_id: &str,
     private_key: &[u8],
+    trust: &TrustMap,
 ) -> Result<Option<SecureEvent>, String> {
     let params = PATTERN.parse().map_err(|e| format!("noise params: {e}"))?;
     let mut hs = Builder::new(params)
@@ -225,14 +244,12 @@ fn receive_one(
     hs.read_message(&buf[..n], &mut payload)
         .map_err(|e| format!("handshake 1: {e}"))?;
 
-    let n = hs
-        .write_message(&[], &mut buf)
+    let n = hs.write_message(&[], &mut buf)
         .map_err(|e| format!("handshake 2: {e}"))?;
     write_frame(stream, &buf[..n])?;
 
     let n = read_frame(stream, &mut buf)?;
-    let payload_len = hs
-        .read_message(&buf[..n], &mut payload)
+    let payload_len = hs.read_message(&buf[..n], &mut payload)
         .map_err(|e| format!("handshake 3: {e}"))?;
     let hello: Hello = serde_json::from_slice(&payload[..payload_len])
         .map_err(|e| format!("hello: {e}"))?;
@@ -241,18 +258,25 @@ fn receive_one(
         return Ok(None);
     }
 
-    let fingerprint = hs
-        .get_remote_static()
-        .map(short_hash)
-        .unwrap_or_else(|| "UNKNOWN".into());
+    let public_key = hs.get_remote_static()
+        .ok_or_else(|| "remote static key missing after XX handshake".to_string())?
+        .to_vec();
 
-    let mut transport = hs
-        .into_transport_mode()
+    if let Some(known) = trust.lock()
+        .map_err(|_| "trust store poisoned".to_string())?
+        .get(&hello.node_id)
+    {
+        if known.as_slice() != public_key.as_slice() {
+            return Err(format!("trusted key changed for {}", hello.node_id));
+        }
+    }
+
+    let fingerprint = public_fingerprint(&public_key);
+    let mut transport = hs.into_transport_mode()
         .map_err(|e| format!("transport: {e}"))?;
 
     let n = read_frame(stream, &mut buf)?;
-    let payload_len = transport
-        .read_message(&buf[..n], &mut payload)
+    let payload_len = transport.read_message(&buf[..n], &mut payload)
         .map_err(|e| format!("decrypt: {e}"))?;
     let envelope: Envelope = serde_json::from_slice(&payload[..payload_len])
         .map_err(|e| format!("envelope: {e}"))?;
@@ -261,8 +285,7 @@ fn receive_one(
         return Err("secure identity mismatch".into());
     }
 
-    let n = transport
-        .write_message(b"ACK", &mut buf)
+    let n = transport.write_message(b"ACK", &mut buf)
         .map_err(|e| format!("ack encrypt: {e}"))?;
     write_frame(stream, &buf[..n])?;
 
@@ -271,6 +294,7 @@ fn receive_one(
         node_id: envelope.from,
         message: envelope.message,
         fingerprint,
+        public_key,
     }))
 }
 
@@ -279,24 +303,19 @@ fn write_frame(stream: &mut TcpStream, data: &[u8]) -> Result<(), String> {
         return Err("frame too large".into());
     }
     let len = u32::try_from(data.len()).map_err(|_| "frame length overflow".to_string())?;
-    stream
-        .write_all(&len.to_be_bytes())
+    stream.write_all(&len.to_be_bytes())
         .and_then(|_| stream.write_all(data))
         .map_err(|e| format!("write frame: {e}"))
 }
 
 fn read_frame(stream: &mut TcpStream, buffer: &mut [u8]) -> Result<usize, String> {
     let mut len = [0_u8; 4];
-    stream
-        .read_exact(&mut len)
-        .map_err(|e| format!("read length: {e}"))?;
+    stream.read_exact(&mut len).map_err(|e| format!("read length: {e}"))?;
     let size = u32::from_be_bytes(len) as usize;
-    if size > buffer.len() {
-        return Err("frame exceeds receive buffer".into());
+    if size > buffer.len() || size > MAX_FRAME + 4096 {
+        return Err("frame exceeds receive limit".into());
     }
-    stream
-        .read_exact(&mut buffer[..size])
-        .map_err(|e| format!("read frame: {e}"))?;
+    stream.read_exact(&mut buffer[..size]).map_err(|e| format!("read frame: {e}"))?;
     Ok(size)
 }
 
@@ -308,15 +327,12 @@ fn decode_hex(value: &str) -> Result<Vec<u8>, String> {
     if value.len() % 2 != 0 {
         return Err("invalid hex length".into());
     }
-    (0..value.len())
-        .step_by(2)
+    (0..value.len()).step_by(2)
         .map(|i| u8::from_str_radix(&value[i..i + 2], 16).map_err(|_| "invalid hex".to_string()))
         .collect()
 }
 
 fn short_hash(bytes: &[u8]) -> String {
-    // Display-only fingerprint. The Noise handshake itself provides the
-    // cryptographic authentication of the static key.
     let mut state = 0xcbf29ce484222325_u64;
     for byte in bytes {
         state ^= u64::from(*byte);
@@ -327,11 +343,17 @@ fn short_hash(bytes: &[u8]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{decode_hex, encode_hex};
+    use super::{decode_hex, encode_hex, public_fingerprint};
 
     #[test]
     fn hex_roundtrip() {
         let data = [0, 1, 2, 15, 16, 255];
         assert_eq!(decode_hex(&encode_hex(&data)).unwrap(), data);
+    }
+
+    #[test]
+    fn fingerprint_is_stable_for_public_key() {
+        let key = [7_u8; 32];
+        assert_eq!(public_fingerprint(&key), public_fingerprint(&key));
     }
 }
