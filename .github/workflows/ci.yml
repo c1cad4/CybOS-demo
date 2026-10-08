@@ -29,6 +29,9 @@ jobs:
 
       - name: Headless onion smoke test
         run: CYBOS_HEADLESS_ONION_TEST=1 target/debug/cybos
+      - name: Full three-relay onion E2E smoke test
+        run: target/debug/cybos --self-test onion-3hop
+
       - name: Process-isolated onion crash recovery
         run: CYBOS_HEADLESS_ONION_PROCESS_TEST=1 target/debug/cybos
         timeout-minutes: 2
@@ -69,6 +72,9 @@ jobs:
 
       - name: Headless onion smoke test
         run: CYBOS_HEADLESS_ONION_TEST=1 target/debug/cybos
+
+      - name: Full three-relay onion E2E smoke test
+        run: target/debug/cybos --self-test onion-3hop
 
       - name: Process-isolated onion crash recovery
         run: CYBOS_HEADLESS_ONION_PROCESS_TEST=1 target/debug/cybos
