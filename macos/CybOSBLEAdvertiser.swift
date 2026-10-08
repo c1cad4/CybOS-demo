@@ -1,5 +1,6 @@
 import CoreBluetooth
 import Foundation
+import Darwin
 
 final class Advertiser: NSObject, CBPeripheralManagerDelegate {
     private var manager: CBPeripheralManager!
