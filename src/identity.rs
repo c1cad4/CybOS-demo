@@ -66,7 +66,7 @@ impl NodeIdentity {
         Self::from_pkcs8(document.as_ref().to_vec())
     }
 
-    #[cfg(debug_assertions)]
+    #[cfg(any(debug_assertions, feature = "qa"))]
     pub(crate) fn generate_ephemeral() -> Self {
         Self::generate()
     }
