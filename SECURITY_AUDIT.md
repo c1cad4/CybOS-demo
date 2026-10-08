@@ -52,6 +52,9 @@ Both defects were fixed on this branch.
 - Routed CybChat is implemented as a bounded UDP onion transport; it is not an
   anonymity network and does not hide traffic metadata, route membership or
   network endpoints from every observer.
+- Onion session admission uses a relay-signed stateless cookie bound to the
+  observed UDP endpoint, session ID and initiator ephemeral key before relay
+  session state is allocated.
 
 ## Residual risks / next hardening
 
