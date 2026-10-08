@@ -54,6 +54,7 @@ pub(crate) struct CybOs {
     pub(crate) qwen_status: String,
     pub(crate) qwen_retry_after: Instant,
     pub(crate) ble_advertiser: Option<Child>,
+    pub(crate) ble_advertiser_retry_after: Instant,
     pub(crate) toast: Option<(String, Instant)>,
     pub(crate) camera_zone: usize,
     pub(crate) search_focus: bool,
@@ -136,6 +137,7 @@ impl Default for CybOs {
             qwen_status: "QWEN · OFFLINE".into(),
             qwen_retry_after: Instant::now(),
             ble_advertiser: None,
+            ble_advertiser_retry_after: Instant::now(),
             toast: None,
             camera_zone: 0,
             search_focus: false,
@@ -158,6 +160,54 @@ impl Default for CybOs {
 
         app.initialize_graph();
         app
+    }
+}
+
+impl CybOs {
+    pub(crate) fn sync_ble_advertiser(&mut self) {
+        if !self.radar_visible {
+            if self.ble_advertiser.is_some() {
+                crate::network::ble_advertiser::stop(&mut self.ble_advertiser);
+                self.ble_status = "BLE · ADVERTISING STOPPED · HIDDEN".into();
+            }
+            self.ble_advertiser_retry_after = Instant::now();
+            return;
+        }
+
+        if self.ble_advertiser.is_some() {
+            match crate::network::ble_advertiser::poll(&mut self.ble_advertiser) {
+                Some(true) => {
+                    self.ble_status = "BLE · ADVERTISING · OPT-IN".into();
+                    self.runtime.set_status("RADAR", "READY");
+                }
+                Some(false) => {
+                    self.ble_status = "BLE · ADVERTISER EXITED · RETRYING";
+                    self.runtime.set_status("RADAR", "ERROR");
+                    self.ble_advertiser_retry_after =
+                        Instant::now() + std::time::Duration::from_secs(5);
+                }
+                None => {}
+            }
+            return;
+        }
+
+        if Instant::now() < self.ble_advertiser_retry_after {
+            return;
+        }
+
+        match crate::network::ble_advertiser::start(&self.node_id) {
+            Ok(child) => {
+                self.ble_advertiser = Some(child);
+                self.ble_status = "BLE · STARTING ADVERTISEMENT".into();
+                self.runtime.set_status("RADAR", "RUNNING");
+            }
+            Err(error) => {
+                self.ble_status = format!("BLE · ADVERTISER ERROR · {}", error);
+                self.runtime.set_status("RADAR", "ERROR");
+                self.ble_advertiser_retry_after =
+                    Instant::now() + std::time::Duration::from_secs(5);
+            }
+        }
     }
 }
 
