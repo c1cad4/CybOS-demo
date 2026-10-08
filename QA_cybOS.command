@@ -52,6 +52,9 @@ echo "== cybOS QA: two-hop onion self-test =="
 echo "== cybOS QA: relay failure recovery =="
 "$BIN" --self-test onion-process
 
+echo "== cybOS QA: relay bind-crash recovery =="
+"$BIN" --self-test onion-bind-process"
+
 echo
 echo "QA SELF-TESTS PASSED"
 echo "Launching cybOS-QA.app..."
