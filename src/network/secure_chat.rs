@@ -96,16 +96,26 @@ pub(crate) fn load_or_create_static_key(store: &crate::store::Store) -> Result<V
 }
 
 pub(crate) fn spawn_listener(node_id: String, private_key: Vec<u8>) -> Listener {
-    spawn_listener_at(node_id, private_key, PORT)
+    spawn_listener_bind(node_id, private_key, "0.0.0.0", PORT)
 }
 
+#[cfg(test)]
 fn spawn_listener_at(node_id: String, private_key: Vec<u8>, port: u16) -> Listener {
+    spawn_listener_bind(node_id, private_key, "127.0.0.1", port)
+}
+
+fn spawn_listener_bind(
+    node_id: String,
+    private_key: Vec<u8>,
+    host: &'static str,
+    port: u16,
+) -> Listener {
     let (tx, rx) = mpsc::channel();
     let stop = Arc::new(AtomicBool::new(false));
     let stop_thread = Arc::clone(&stop);
 
     thread::spawn(move || {
-        let listener = match TcpListener::bind(("127.0.0.1", port)) {
+        let listener = match TcpListener::bind((host, port)) {
             Ok(v) => v,
             Err(_) => return,
         };
