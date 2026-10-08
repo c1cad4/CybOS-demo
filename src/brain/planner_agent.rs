@@ -249,7 +249,7 @@ TOOL RESULT:
             noise_private_key: Vec::new(),
             secure_listener: {
                 let (_tx, rx) = std::sync::mpsc::channel();
-                crate::network::secure_chat::Listener::from_receiver(rx)
+                crate::network::secure_chat::Listener::empty()
             },
             secure_send_task: None,
             secure_status: "SECURE CHAT · WORKER CONTEXT".into(),
