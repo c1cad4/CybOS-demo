@@ -55,3 +55,23 @@ The UI must report a verified delivery rather than only a local send event.
 The onion path is routed encrypted transport, not a complete anonymity network. Traffic metadata, timing, packet sizes, participating endpoints, and local process state are still observable to relevant observers.
 
 Bluetooth, P2P, Nostr, and RTSP are not claimed as connected transports in this MVP.
+
+
+## Process-isolated onion recovery
+
+The debug binary can also run an OS-process-level routed recovery test:
+
+```bash
+CYBOS_HEADLESS_ONION_PROCESS_TEST=1 target/debug/cybos
+```
+
+The harness launches separate cybOS processes for three relays and a destination.
+One relay intentionally exits when the first onion packet arrives. The source then
+uses the existing route fallback logic and must complete delivery with a signed
+destination acknowledgement. A successful run prints:
+
+```
+ONION_PROCESS_TEST OK · relay crash recovered · <source-id> → <destination-id>
+```
+
+This covers a real process boundary rather than only in-process UDP threads.
