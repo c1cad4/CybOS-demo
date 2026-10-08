@@ -42,7 +42,7 @@ pub(crate) enum LanEvent {
     },
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub(crate) struct Listener {
     pub(crate) events: Receiver<LanEvent>,
     stop: Arc<AtomicBool>,
