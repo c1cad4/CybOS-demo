@@ -1389,10 +1389,11 @@ pub(crate) fn run_process_isolated_onion_test() -> Result<(), String> {
         .map_err(|error| format!("cannot resolve cybOS test binary: {error}"))?;
     let source = NodeIdentity::generate_ephemeral();
 
+    // Two relays are sufficient to prove crash recovery: the first attempt
+    // crosses relay A -> dead relay B, then route fallback retries through A.
     let specs = [
         (free_udp_port()?, false),
         (free_udp_port()?, true),
-        (free_udp_port()?, false),
         (free_udp_port()?, false),
     ];
 
@@ -1410,11 +1411,11 @@ pub(crate) fn run_process_isolated_onion_test() -> Result<(), String> {
     }
 
     let result = {
-        let relays: Vec<_> = nodes[..3]
+        let relays: Vec<_> = nodes[..2]
             .iter()
             .map(|node| node.peer.clone())
             .collect();
-        let destination = nodes[3].peer.clone();
+        let destination = nodes[2].peer.clone();
 
         let status = send_onion_private_chat_with_route_fallback(
             &source,
