@@ -7,6 +7,23 @@ impl CybOs {
         self.poll_lan_scan();
         self.poll_lan_send();
 
+        if let Some(result) = self.ble_scan.as_ref().and_then(crate::network::ble::poll_scan) {
+            self.ble_scan = None;
+            match result {
+                Ok(peers) => {
+                    self.ble_peers = peers;
+                    self.ble_status = format!("BLE · {} CYBOS PEER(S)", self.ble_peers.len());
+                    self.runtime.set_status("RADAR", "READY");
+                    self.notify("BLE RADAR SCAN COMPLETE");
+                }
+                Err(error) => {
+                    self.ble_status = format!("BLE · ERROR · {}", error);
+                    self.runtime.set_status("RADAR", "ERROR");
+                    self.notify("BLE RADAR UNAVAILABLE");
+                }
+            }
+        }
+
         let neon = Self::neon();
         let dim = Color32::from_rgb(55, 145, 105);
 
@@ -74,6 +91,17 @@ impl CybOs {
                     {
                         self.start_lan_scan();
                         self.notify("LAN SCAN STARTED");
+                    }
+
+                    let ble_scanning = self.ble_scan.is_some();
+                    if ui
+                        .add_enabled(!ble_scanning, egui::Button::new(if ble_scanning { "BLE SCANNING…" } else { "SCAN BLE" }))
+                        .clicked()
+                    {
+                        self.ble_scan = Some(crate::network::ble::start_scan());
+                        self.ble_status = "BLE · SCANNING · 5s WINDOW".into();
+                        self.runtime.set_status("RADAR", "RUNNING");
+                        self.notify("BLE RADAR SCAN STARTED");
                     }
                 });
 
@@ -200,8 +228,9 @@ impl CybOs {
                     ui.label(RichText::new("LOCAL PROXIMITY DISCOVERY").size(9.0).color(dim));
                 });
                 ui.label(RichText::new(
-                    "Detected nodes are real. LAN alone cannot measure meters; BLE can provide distance later."
+                    "LAN gives node presence. BLE adds measured RSSI from the radio; no GPS and no invented meter values."
                 ).size(9.0).color(dim));
+                ui.label(RichText::new(&self.ble_status).size(9.0).color(dim));
                 ui.add_space(8.0);
 
                 let available = ui.available_width().min(560.0);
@@ -242,8 +271,18 @@ impl CybOs {
                         format!("{} · {}", peer.node_id, distance_label), egui::FontId::monospace(8.0), neon);
                 }
 
+                for (index, peer) in self.ble_peers.iter().enumerate() {
+                    let strength = ((peer.rssi as f32 + 100.0) / 70.0).clamp(0.12, 1.0);
+                    let angle = index as f32 * 2.399;
+                    let radial = radius * (1.0 - strength * 0.72);
+                    let point = center + Vec2::new(angle.cos() * radial, angle.sin() * radial);
+                    painter.circle_filled(point, 6.0, neon);
+                    painter.text(point + Vec2::new(10.0, -8.0), egui::Align2::LEFT_CENTER,
+                        format!("{} · {} dBm", peer.name, peer.rssi), egui::FontId::monospace(8.0), neon);
+                }
+
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new(format!("{} NODE(S) DETECTED", self.lan_peers.len())).size(9.0).color(neon));
+                    ui.label(RichText::new(format!("{} LAN · {} BLE", self.lan_peers.len(), self.ble_peers.len())).size(9.0).color(neon));
                     ui.label(RichText::new("· RADAR POSITION IS NOT GEOLOCATION").size(9.0).color(dim));
                 });
             });
