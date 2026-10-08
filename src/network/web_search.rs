@@ -22,6 +22,13 @@ where
     }
 }
 
+fn web_agent() -> ureq::Agent {
+    ureq::Agent::config_builder()
+        .timeout_global(Some(WEB_SEARCH_BUDGET))
+        .build()
+        .into()
+}
+
 pub(crate) fn web_search(query: &str) -> String {
     let query = query.trim().to_string();
 
@@ -30,23 +37,12 @@ pub(crate) fn web_search(query: &str) -> String {
     }
 
     bounded_search(move || {
-
-
-
-
-
-
         let query = query.trim();
-
-        if query.is_empty() {
-            return "Web search query is empty.".into();
-        }
-
         let encoded = web_parse::percent_encode(query);
-
         let url = format!("https://html.duckduckgo.com/html/?q={}", encoded);
 
-        let response = match ureq::get(&url)
+        let response = match web_agent()
+            .get(&url)
             .header(
                 "User-Agent",
                 "Mozilla/5.0 (Macintosh; Intel Mac OS X) cybOS/0.6",
@@ -54,16 +50,12 @@ pub(crate) fn web_search(query: &str) -> String {
             .call()
         {
             Ok(response) => response,
-            Err(error) => {
-                return format!("Web search failed: {}", error);
-            }
+            Err(error) => return format!("Web search failed: {}", error),
         };
 
         let body = match response.into_body().read_to_string() {
             Ok(body) => body,
-            Err(error) => {
-                return format!("Web search response could not be read: {}", error);
-            }
+            Err(error) => return format!("Web search response could not be read: {}", error),
         };
 
         let mut results = Vec::new();
@@ -72,7 +64,7 @@ pub(crate) fn web_search(query: &str) -> String {
         while let Some(start) = remaining.find("result__a") {
             remaining = &remaining[start..];
 
-            let href_start = match remaining.find("href=\"") {
+            let href_start = match remaining.find("href="") {
                 Some(pos) => pos + 6,
                 None => break,
             };
@@ -101,7 +93,9 @@ pub(crate) fn web_search(query: &str) -> String {
 
             if !href.is_empty() && !title.is_empty() {
                 results.push(format!(
-                    "{}. {}\nSOURCE: {}\nURL: {}",
+                    "{}. {}
+SOURCE: {}
+URL: {}",
                     results.len() + 1,
                     title,
                     web_parse::source_class(&href),
@@ -121,9 +115,16 @@ pub(crate) fn web_search(query: &str) -> String {
         }
 
         format!(
-            "WEB SEARCH RESULTS FOR: {}\n\n{}\n\nIMPORTANT:\nSearch results are discovery data only. Read a relevant source with web_fetch before making factual claims.",
+            "WEB SEARCH RESULTS FOR: {}
+
+{}
+
+IMPORTANT:
+Search results are discovery data only. Read a relevant source with web_fetch before making factual claims.",
             query,
-            results.join("\n\n")
+            results.join("
+
+")
         )
     })
 }
