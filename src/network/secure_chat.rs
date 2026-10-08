@@ -463,7 +463,7 @@ mod tests {
 
         let sender_key = sender.private.clone();
         let sender_thread = thread::spawn(move || {
-            send(
+            send_to_port(
                 "node-a",
                 "node-b-reject",
                 "127.0.0.1",
