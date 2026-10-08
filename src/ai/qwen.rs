@@ -10,6 +10,10 @@ impl CybOs {
     pub(crate) fn ensure_qwen(&mut self) {
         let address = QWEN_ADDRESS;
 
+        if Instant::now() < self.qwen_retry_after {
+            return;
+        }
+
         // Qwen уже работает — ничего не запускаем повторно.
         if let Ok(addr) = address.parse() {
             if std::net::TcpStream::connect_timeout(&addr, Duration::from_millis(50)).is_ok() {
@@ -61,12 +65,14 @@ impl CybOs {
         {
             Ok(child) => {
                 self.qwen_child = Some(child);
+                self.qwen_retry_after = Instant::now() + Duration::from_secs(2);
                 self.qwen_status = "QWEN · STARTING".into();
                 self.status = "LOCAL-FIRST · QWEN STARTING".into();
             }
             Err(error) => {
                 self.qwen_status = format!("QWEN · START FAILED: {}", error);
                 self.status = "LOCAL-FIRST · QWEN ERROR".into();
+                self.qwen_retry_after = Instant::now() + Duration::from_secs(5);
             }
         }
     }
