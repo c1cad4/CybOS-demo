@@ -57,14 +57,10 @@ pub(crate) fn load_or_create_static_key(store: &crate::store::Store) -> Result<V
     Ok(keypair.private)
 }
 
-pub(crate) fn load_trust_map(store: &crate::store::Store) -> TrustMap {
-    let mut map = HashMap::new();
-    for (key, value) in store.kv_with_prefix("noise_peer_key:") {
-        if let Ok(bytes) = decode_hex(&value) {
-            map.insert(key.trim_start_matches("noise_peer_key:").to_string(), bytes);
-        }
-    }
-    Arc::new(Mutex::new(map))
+pub(crate) fn load_trust_map(_store: &crate::store::Store) -> TrustMap {
+    // The durable trust record is checked by CybOs when events arrive.
+    // The shared map only protects the live listener from mid-session key changes.
+    Arc::new(Mutex::new(HashMap::new()))
 }
 
 pub(crate) fn remember_peer_key(store: &crate::store::Store, node_id: &str, public_key: &[u8]) {
