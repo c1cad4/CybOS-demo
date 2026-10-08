@@ -438,6 +438,17 @@ impl Store {
         }
     }
 
+    pub(crate) fn provision_peer_fingerprint(&self, node_id: &str, fingerprint: &str) {
+        self.set(
+            &format!("peer_provisioned_fingerprint:{node_id}"),
+            &fingerprint.to_ascii_lowercase(),
+        );
+    }
+
+    pub(crate) fn provisioned_peer_fingerprint(&self, node_id: &str) -> Option<String> {
+        self.get(&format!("peer_provisioned_fingerprint:{node_id}"))
+    }
+
     pub(crate) fn events(&self) -> Vec<Event> {
         let rows: Vec<(String,String,String,String,bool,String)> = self.conn
             .prepare("SELECT id,time,kind,text,encrypted,payload FROM events ORDER BY rowid DESC LIMIT 100")
@@ -738,6 +749,20 @@ mod tests {
         ).unwrap();
 
         assert!(!store.memories().iter().any(|m| m.id == memory.id));
+    }
+
+    #[test]
+    fn out_of_band_peer_fingerprint_is_persisted() {
+        let store = Store::open();
+        let node_id = format!("test-oob-{}", Uuid::new_v4());
+        let fingerprint = "ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789";
+
+        store.provision_peer_fingerprint(&node_id, fingerprint);
+
+        assert_eq!(
+            store.provisioned_peer_fingerprint(&node_id).as_deref(),
+            Some(fingerprint.to_ascii_lowercase().as_str())
+        );
     }
 
     #[test]
