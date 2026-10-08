@@ -96,39 +96,68 @@ pub(crate) fn load_or_create_static_key(store: &crate::store::Store) -> Result<V
 }
 
 pub(crate) fn spawn_listener(node_id: String, private_key: Vec<u8>) -> Listener {
-    spawn_listener_on_port(node_id, private_key, PORT)
+    let listener = match TcpListener::bind(("0.0.0.0", PORT)) {
+        Ok(value) => value,
+        Err(_) => return Listener::empty(),
+    };
+    spawn_listener_from_socket(node_id, private_key, listener)
 }
 
-fn spawn_listener_on_port(node_id: String, private_key: Vec<u8>, port: u16) -> Listener {
+fn spawn_listener_on_port(
+    node_id: String,
+    private_key: Vec<u8>,
+    port: u16,
+) -> Listener {
+    let listener = match TcpListener::bind(("0.0.0.0", port)) {
+        Ok(value) => value,
+        Err(_) => return Listener::empty(),
+    };
+    spawn_listener_from_socket(node_id, private_key, listener)
+}
+
+#[cfg(test)]
+fn spawn_test_listener(
+    node_id: String,
+    private_key: Vec<u8>,
+) -> (Listener, u16) {
+    let listener = TcpListener::bind(("127.0.0.1", 0)).expect("bind ephemeral test port");
+    let port = listener.local_addr().expect("test listener address").port();
+    (spawn_listener_from_socket(node_id, private_key, listener), port)
+}
+
+fn spawn_listener_from_socket(
+    node_id: String,
+    private_key: Vec<u8>,
+    listener: TcpListener,
+) -> Listener {
     let (tx, rx) = mpsc::channel();
     let stop = Arc::new(AtomicBool::new(false));
     let stop_thread = Arc::clone(&stop);
 
+    if listener.set_nonblocking(true).is_err() {
+        return Listener::empty();
+    }
+
+    const MAX_ACTIVE: usize = 8;
+    let active = Arc::new(AtomicUsize::new(0));
+    let node_id = node_id.clone();
+    let key = private_key.clone();
+    let active_for_thread = Arc::clone(&active);
+
     thread::spawn(move || {
-        let listener = match TcpListener::bind(("0.0.0.0", port)) {
-            Ok(v) => v,
-            Err(_) => return,
-        };
-        if listener.set_nonblocking(true).is_err() {
-            return;
-        }
-
-        const MAX_ACTIVE: usize = 8;
-        let active = Arc::new(AtomicUsize::new(0));
-
         while !stop_thread.load(Ordering::Relaxed) {
             match listener.accept() {
                 Ok((mut stream, _addr)) => {
-                    if active.load(Ordering::Acquire) >= MAX_ACTIVE {
+                    if active_for_thread.load(Ordering::Acquire) >= MAX_ACTIVE {
                         continue;
                     }
                     let _ = stream.set_read_timeout(Some(TIMEOUT));
                     let _ = stream.set_write_timeout(Some(TIMEOUT));
-                    active.fetch_add(1, Ordering::AcqRel);
+                    active_for_thread.fetch_add(1, Ordering::AcqRel);
                     let tx = tx.clone();
                     let node_id = node_id.clone();
-                    let key = private_key.clone();
-                    let active = Arc::clone(&active);
+                    let key = key.clone();
+                    let active = Arc::clone(&active_for_thread);
                     thread::spawn(move || {
                         let deadline = Instant::now() + SESSION_BUDGET;
                         let _ = receive_one(&mut stream, &node_id, &key, deadline, &tx);
@@ -142,6 +171,7 @@ fn spawn_listener_on_port(node_id: String, private_key: Vec<u8>, port: u16) -> L
             }
         }
     });
+
     Listener { events: rx, stop }
 }
 
@@ -429,16 +459,13 @@ fn short_hash(bytes: &[u8]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{decode_hex, encode_hex, short_hash, spawn_listener_on_port, send_to_port, SecureSendStatus, SecureEvent, SecureReply, PATTERN};
+    use super::{decode_hex, encode_hex, short_hash, send_to_port, spawn_test_listener, SecureSendStatus, SecureEvent, SecureReply, PATTERN};
     use snow::{params::NoiseParams, Builder};
     use std::sync::Mutex;
     use std::thread;
     use std::time::{Duration, Instant};
 
     static TEST_LOCK: Mutex<()> = Mutex::new(());
-    const REJECT_PORT: u16 = 39401;
-    const DELIVERY_PORT: u16 = 39402;
-
     #[test]
     fn hex_roundtrip() {
         let data = [0, 1, 2, 15, 16, 255];
@@ -458,8 +485,9 @@ mod tests {
         let sender = Builder::new(params.clone()).generate_keypair().expect("sender keypair");
         let receiver = Builder::new(params).generate_keypair().expect("receiver keypair");
 
-        let listener = spawn_listener_on_port("node-b-reject".to_string(), receiver.private.clone(), REJECT_PORT);
-        thread::sleep(Duration::from_millis(100));
+        let (listener, reject_port) =
+            spawn_test_listener("node-b-reject".to_string(), receiver.private.clone());
+        thread::sleep(Duration::from_millis(50));
 
         let sender_key = sender.private.clone();
         let sender_thread = thread::spawn(move || {
@@ -467,7 +495,7 @@ mod tests {
                 "node-a",
                 "node-b-reject",
                 "127.0.0.1",
-                REJECT_PORT,
+                reject_port,
                 &sender_key,
                 "rejection test",
             )
@@ -511,8 +539,9 @@ mod tests {
         let sender = Builder::new(params.clone()).generate_keypair().expect("sender keypair");
         let receiver = Builder::new(params).generate_keypair().expect("receiver keypair");
 
-        let listener = spawn_listener_on_port("node-b".to_string(), receiver.private.clone(), DELIVERY_PORT);
-        thread::sleep(Duration::from_millis(100));
+        let (listener, delivery_port) =
+            spawn_test_listener("node-b".to_string(), receiver.private.clone());
+        thread::sleep(Duration::from_millis(50));
 
         let sender_key = sender.private.clone();
         let sender_thread = thread::spawn(move || {
@@ -520,7 +549,7 @@ mod tests {
                 "node-a",
                 "node-b",
                 "127.0.0.1",
-                DELIVERY_PORT,
+                delivery_port,
                 &sender_key,
                 "loopback secure test",
             )
