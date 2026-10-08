@@ -19,6 +19,30 @@ impl CybOs {
         ui.add_space(10.0);
 
         egui::Frame::new()
+            .fill(Color32::from_rgb(4, 16, 11))
+            .stroke(Stroke::new(1.0, Color32::from_rgb(24, 90, 58)))
+            .corner_radius(10)
+            .inner_margin(egui::Margin::same(12))
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("RADAR VISIBILITY").size(11.0).strong().color(neon));
+                    let label = if self.radar_visible { "VISIBLE" } else { "HIDDEN" };
+                    let button = egui::Button::new(RichText::new(label).strong().color(neon));
+                    if ui.add(button).clicked() {
+                        self.radar_visible = !self.radar_visible;
+                        self.radar_visibility.store(self.radar_visible, std::sync::atomic::Ordering::Relaxed);
+                        self.store.set("radar_visible", if self.radar_visible { "true" } else { "false" });
+                        self.notify(if self.radar_visible { "CYB RADAR: VISIBLE" } else { "CYB RADAR: HIDDEN" });
+                    }
+                });
+                ui.label(RichText::new(
+                    "OFF by default. When visible, nearby cybOS nodes can discover this node on the local network. No GPS coordinates are broadcast."
+                ).size(9.0).color(dim));
+            });
+
+        ui.add_space(10.0);
+
+        egui::Frame::new()
             .fill(Color32::from_rgb(5, 18, 13))
             .stroke(Stroke::new(1.0, Color32::from_rgb(28, 80, 52)))
             .corner_radius(12)
