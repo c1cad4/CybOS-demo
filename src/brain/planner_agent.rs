@@ -250,7 +250,7 @@ TOOL RESULT:
 
     fn from_agent_snapshot(snapshot: AgentSnapshot) -> Result<Self, String> {
         let store = crate::runtime::open_store();
-        let (_lan_tx, lan_events) = std::sync::mpsc::channel();
+        let lan_events = crate::network::lan::Listener::empty();
 
         Ok(Self {
             store,
