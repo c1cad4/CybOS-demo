@@ -30,7 +30,7 @@ Sources:
 
 ## Human population
 
-The dashboard links to Our World in Data's births/deaths explainer. Automated demographic ingestion is not yet wired in; the UI does not pretend annual estimates are a live count. Next step: ingest published population, births and deaths series, retain the source year, and label any interpolated per-second counters as estimates.
+The current prototype shows the 2025 annual reference values published by Our World in Data using UN World Population Prospects 2024: approximately 8.2 billion people, 132 million births, and 63 million deaths. These are annual estimates/projections, **not a live count**. Automated series ingestion is not yet wired in. Next step: ingest the published population, births and deaths series, retain source metadata, and label any interpolated per-second counters as estimates.
 
 Source:
 - https://ourworldindata.org/births-and-deaths
