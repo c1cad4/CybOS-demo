@@ -147,7 +147,10 @@ fn spawn_listener_bind(
                     let active = Arc::clone(&active);
                     thread::spawn(move || {
                         let deadline = Instant::now() + SESSION_BUDGET;
-                        let _ = receive_one(&mut stream, &node_id, &key, deadline, &tx);
+                        if let Err(error) = receive_one(&mut stream, &node_id, &key, deadline, &tx) {
+                            #[cfg(test)]
+                            eprintln!("secure listener session failed: {error}");
+                        }
                         active.fetch_sub(1, Ordering::AcqRel);
                     });
                 }
