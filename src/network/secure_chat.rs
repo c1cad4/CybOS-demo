@@ -23,6 +23,7 @@ pub(crate) enum SecureReply {
 
 #[derive(Clone, Debug)]
 pub(crate) enum SecureEvent {
+    ListenerStatus(String),
     Received {
         message_id: String,
         node_id: String,
@@ -128,11 +129,22 @@ fn spawn_listener_bind(
     thread::spawn(move || {
         let listener = match TcpListener::bind((host, port)) {
             Ok(v) => v,
-            Err(_) => return,
+            Err(error) => {
+                let _ = tx.send(SecureEvent::ListenerStatus(format!(
+                    "SECURE CHAT · LISTENER BIND FAILED · {host}:{port} · {error}"
+                )));
+                return;
+            }
         };
-        if listener.set_nonblocking(true).is_err() {
+        if let Err(error) = listener.set_nonblocking(true) {
+            let _ = tx.send(SecureEvent::ListenerStatus(format!(
+                "SECURE CHAT · LISTENER CONFIG FAILED · {error}"
+            )));
             return;
         }
+        let _ = tx.send(SecureEvent::ListenerStatus(format!(
+            "SECURE CHAT · LISTENING · {host}:{port}"
+        )));
 
         const MAX_ACTIVE: usize = 8;
         let active = Arc::new(AtomicUsize::new(0));
