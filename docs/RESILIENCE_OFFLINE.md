@@ -8,10 +8,11 @@ The goal is to make cybOS useful when internet services are unavailable: local m
 - The native UI has an **Offline Atlas** page reachable from the left rail and search.
 - It accepts a local `.mbtiles` path, opens the SQLite database read-only, reads the standard `metadata` table, and verifies that the `tiles` table contains at least one tile.
 - The report shows archive name, format, tile count, zoom range, bounds, center, and file size. The entered path and last inspection status are stored in local cybOS settings.
-- This check is deliberately conservative: it verifies readable archive structure and a non-empty tile table only. It does not render the tiles or certify that the archive is complete, licensed, current, or usable for navigation.
-- No network access is needed to inspect an existing local archive. No automatic map download is performed.
+- A first raster preview reads a 3×3 neighborhood around the archive center from local MBTiles rows and decodes PNG/JPEG tiles without requesting network resources. It uses the archive center or bounds and an available zoom level; it is a preview, not a full pan/zoom map renderer.
+- MBTiles TMS row numbering is converted to slippy-map Y coordinates for lookup. Tiles that are absent or cannot be decoded are shown as blank cells.
+- No network access is needed to inspect or preview an existing local archive. No automatic map download is performed.
 
-**Not implemented yet:** tile rendering, archive import/file picker, region download packs, GNSS integration, saved waypoints, routing, satellite imagery layer management, or offline operation tests with networking disabled. Those must be implemented and tested as separate stages before being labelled OFFLINE-READY.
+**Not implemented yet:** native file picker/import flow, interactive pan/zoom, vector-tile styling, region download packs, GNSS integration, saved waypoints, routing, satellite imagery layer management, and automated offline-operation tests. The current preview must not be labelled a complete offline navigation system.
 
 ## 1. Offline Atlas
 
