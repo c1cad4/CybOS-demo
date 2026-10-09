@@ -2,6 +2,17 @@
 
 The goal is to make cybOS useful when internet services are unavailable: local maps and imagery, offline navigation, resilient communications, and lawful radio-signal awareness. These are separate capabilities with explicit hardware and data-source status, not one fictional "apocalypse mode".
 
+## Current implementation status
+
+### Stage 1 — local MBTiles archive inspection (in progress)
+- The native UI has an **Offline Atlas** page reachable from the left rail and search.
+- It accepts a local `.mbtiles` path, opens the SQLite database read-only, reads the standard `metadata` table, and verifies that the `tiles` table contains at least one tile.
+- The report shows archive name, format, tile count, zoom range, bounds, center, and file size. The entered path and last inspection status are stored in local cybOS settings.
+- This check is deliberately conservative: it verifies readable archive structure and a non-empty tile table only. It does not render the tiles or certify that the archive is complete, licensed, current, or usable for navigation.
+- No network access is needed to inspect an existing local archive. No automatic map download is performed.
+
+**Not implemented yet:** tile rendering, archive import/file picker, region download packs, GNSS integration, saved waypoints, routing, satellite imagery layer management, or offline operation tests with networking disabled. Those must be implemented and tested as separate stages before being labelled OFFLINE-READY.
+
 ## 1. Offline Atlas
 
 ### Intended capabilities
