@@ -161,7 +161,7 @@ impl CybOs {
                         (Icon::Node, "LIVE NODE", Page::Dashboard),
                         (Icon::Assets, "TOKENS", Page::Assets),
                         (Icon::Energy, "ENERGY", Page::System),
-                        (Icon::Environment, "ENVIRONMENT", Page::Farm),
+                        (Icon::Environment, "PLANET PULSE", Page::PlanetaryPulse),
                         (Icon::Activity, "ACTIVITY", Page::Dashboard),
                     ];
                     for (icon, tooltip, page) in actions {
