@@ -340,10 +340,13 @@ fn fetch_text(url: &str, budget: Duration) -> Result<String, String> {
         .call()
         .map_err(|e| format!("Browser fetch failed: {e}"))?;
 
+    let bytes = read_bounded(response.into_body().into_reader())?;
+    Ok(String::from_utf8_lossy(&bytes).into_owned())
+}
+
+fn read_bounded<R: Read>(reader: R) -> Result<Vec<u8>, String> {
     let mut bytes = Vec::new();
-    response
-        .into_body()
-        .into_reader()
+    reader
         .take((MAX_BODY_BYTES + 1) as u64)
         .read_to_end(&mut bytes)
         .map_err(|e| format!("Browser body read failed: {e}"))?;
@@ -355,7 +358,7 @@ fn fetch_text(url: &str, budget: Duration) -> Result<String, String> {
         ));
     }
 
-    Ok(String::from_utf8_lossy(&bytes).into_owned())
+    Ok(bytes)
 }
 
 fn parse_document(
@@ -488,7 +491,8 @@ fn validate_input(input: &str) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{resolve, BrowserRoute};
+    use super::{read_bounded, resolve, BrowserRoute, MAX_BODY_BYTES};
+    use std::io::Cursor;
 
     #[test]
     fn resolves_http() {
@@ -515,5 +519,18 @@ mod tests {
     #[test]
     fn rejects_unknown_scheme() {
         assert!(resolve("ftp://example.org").is_err());
+    }
+
+    #[test]
+    fn accepts_body_at_exact_limit() {
+        let body = vec![b'x'; MAX_BODY_BYTES];
+        assert_eq!(read_bounded(Cursor::new(body.clone())).unwrap(), body);
+    }
+
+    #[test]
+    fn rejects_body_over_limit_without_reading_unbounded_data() {
+        let body = vec![b'x'; MAX_BODY_BYTES + 4096];
+        let error = read_bounded(Cursor::new(body)).unwrap_err();
+        assert!(error.contains("exceeds 2 MiB limit"));
     }
 }
