@@ -65,6 +65,46 @@ fn format_bytes(bytes: u64) -> String {
     }
 }
 
+
+fn tile_center(info: &MbtilesInfo) -> Option<(u8, i64, i64)> {
+    let center: Vec<f64> = info.center.split(',').filter_map(|part| part.trim().parse().ok()).collect();
+    let (lon, lat, center_zoom) = if center.len() >= 2 {
+        (center[0], center[1], center.get(2).copied())
+    } else {
+        let bounds: Vec<f64> = info.bounds.split(',').filter_map(|part| part.trim().parse().ok()).collect();
+        if bounds.len() != 4 { return None; }
+        ((bounds[0] + bounds[2]) / 2.0, (bounds[1] + bounds[3]) / 2.0, None)
+    };
+    if !lon.is_finite() || !lat.is_finite() || !(-180.0..=180.0).contains(&lon) { return None; }
+    let zoom = center_zoom
+        .map(|z| z.round() as i64)
+        .or_else(|| info.max_zoom.parse::<i64>().ok())
+        .unwrap_or(4)
+        .clamp(0, 14) as u8;
+    let n = 1_i64 << zoom;
+    let x = (((lon + 180.0) / 360.0 * n as f64).floor() as i64).clamp(0, n - 1);
+    let safe_lat = lat.clamp(-85.05112878, 85.05112878).to_radians();
+    let y = (((1.0 - (safe_lat.tan().asinh() / std::f64::consts::PI)) / 2.0 * n as f64).floor() as i64).clamp(0, n - 1);
+    Some((zoom, x, y))
+}
+
+fn read_tile(path: &Path, zoom: u8, x: i64, slippy_y: i64) -> Result<Option<Vec<u8>>, String> {
+    let conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)
+        .map_err(|e| format!("cannot open tile archive: {e}"))?;
+    let n = 1_i64 << zoom;
+    let x = x.rem_euclid(n);
+    let tms_y = n - 1 - slippy_y;
+    match conn.query_row(
+        "SELECT tile_data FROM tiles WHERE zoom_level=?1 AND tile_column=?2 AND tile_row=?3",
+        rusqlite::params![i64::from(zoom), x, tms_y],
+        |row| row.get::<_, Vec<u8>>(0),
+    ) {
+        Ok(bytes) => Ok(Some(bytes)),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(error) => Err(format!("cannot read map tile: {error}")),
+    }
+}
+
 impl CybOs {
     pub(crate) fn offline_atlas(&mut self, ui: &mut egui::Ui) {
         let neon = Self::neon();
@@ -121,6 +161,54 @@ impl CybOs {
                 ui.add_space(8.0);
                 let status = self.store.get("offline_atlas_status").unwrap_or_else(|| "NOT CHECKED".into());
                 ui.label(RichText::new(&status).size(10.0).color(if status.starts_with("ARCHIVE-VALIDATED") { neon } else { Color32::LIGHT_GRAY }));
+
+                if status.starts_with("ARCHIVE-VALIDATED") {
+                    if let Ok(info) = inspect_mbtiles(Path::new(path.trim())) {
+                        if let Some((zoom, center_x, center_y)) = tile_center(&info) {
+                            ui.add_space(12.0);
+                            ui.label(RichText::new(format!("LOCAL TILE PREVIEW · ZOOM {zoom} · NO NETWORK")).size(10.0).strong().color(neon));
+                            ui.label(RichText::new("Preview uses only tiles already stored in this MBTiles file. Blank cells mean the archive has no tile at that coordinate or uses an unsupported image format.").size(9.0).color(dim));
+                            ui.add_space(6.0);
+                            egui::Frame::new().fill(Color32::from_rgb(1, 8, 5)).stroke(Stroke::new(1.0, edge))
+                                .corner_radius(8).inner_margin(egui::Margin::same(5)).show(ui, |ui| {
+                                    ui.horizontal(|ui| {
+                                        for dx in -1_i64..=1 {
+                                            ui.vertical(|ui| {
+                                                for dy in -1_i64..=1 {
+                                                    let x = center_x + dx;
+                                                    let y = center_y + dy;
+                                                    let tile_id = egui::Id::new(("offline-atlas-tile", path.trim().to_owned(), zoom, x, y));
+                                                    let cached = ui.ctx().data(|data| data.get_temp::<egui::TextureHandle>(tile_id));
+                                                    let texture = cached.or_else(|| {
+                                                        let bytes = read_tile(Path::new(path.trim()), zoom, x, y).ok().flatten()?;
+                                                        let decoded = image::load_from_memory(&bytes).ok()?.to_rgba8();
+                                                        let size = [decoded.width() as usize, decoded.height() as usize];
+                                                        let color_image = egui::ColorImage::from_rgba_unmultiplied(size, decoded.as_raw());
+                                                        let texture = ui.ctx().load_texture(
+                                                            format!("offline-atlas-{zoom}-{x}-{y}"),
+                                                            color_image,
+                                                            egui::TextureOptions::LINEAR,
+                                                        );
+                                                        ui.ctx().data_mut(|data| data.insert_temp(tile_id, texture.clone()));
+                                                        Some(texture)
+                                                    });
+                                                    if let Some(texture) = texture {
+                                                        ui.image((texture.id(), egui::vec2(192.0, 192.0)));
+                                                    } else {
+                                                        let (rect, _) = ui.allocate_exact_size(egui::vec2(192.0, 192.0), egui::Sense::hover());
+                                                        ui.painter().rect_filled(rect, 0.0, Color32::from_rgb(7, 23, 16));
+                                                        ui.painter().text(rect.center(), egui::Align2::CENTER_CENTER, "NO TILE", egui::FontId::proportional(9.0), dim);
+                                                    }
+                                                }
+                                            });
+                                        }
+                                    });
+                                });
+                        } else {
+                            ui.label(RichText::new("MAP PREVIEW UNAVAILABLE · archive center/bounds metadata is missing or invalid").size(9.0).color(dim));
+                        }
+                    }
+                }
             });
 
         ui.add_space(12.0);
