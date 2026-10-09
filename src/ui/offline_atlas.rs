@@ -261,4 +261,40 @@ mod tests {
         assert_eq!(format_bytes(512), "512 bytes");
         assert_eq!(format_bytes(2 * 1024 * 1024), "2.00 MiB");
     }
+
+    #[test]
+    fn tile_center_uses_archive_center_and_clamps_zoom() {
+        let info = MbtilesInfo {
+            name: "test".into(),
+            format: "png".into(),
+            min_zoom: "0".into(),
+            max_zoom: "18".into(),
+            bounds: "-10,-10,10,10".into(),
+            center: "0,0,20".into(),
+            tile_count: 1,
+            bytes: 10,
+        };
+        let (zoom, x, y) = tile_center(&info).expect("valid center should produce a tile");
+        assert_eq!(zoom, 14);
+        assert_eq!(x, 8192);
+        assert_eq!(y, 8192);
+    }
+
+    #[test]
+    fn tile_center_falls_back_to_bounds_when_center_is_missing() {
+        let info = MbtilesInfo {
+            name: "test".into(),
+            format: "png".into(),
+            min_zoom: "0".into(),
+            max_zoom: "2".into(),
+            bounds: "-180,-85,180,85".into(),
+            center: "not declared".into(),
+            tile_count: 1,
+            bytes: 10,
+        };
+        let (zoom, x, y) = tile_center(&info).expect("valid bounds should produce a tile");
+        assert_eq!(zoom, 2);
+        assert_eq!(x, 2);
+        assert_eq!(y, 2);
+    }
 }
