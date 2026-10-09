@@ -23,23 +23,17 @@ impl CybCoreClient {
             return CoreStatus::Disabled;
         };
         // Explicit opt-in; prohibit insecure public HTTP and credentials in URLs.
-        let Ok(url) = ureq::http::Uri::try_from(endpoint) else {
-            return CoreStatus::Offline;
-        };
-        let scheme = url.scheme_str().unwrap_or_default();
-        let host = url.host().unwrap_or_default();
-        let loopback = matches!(host, "localhost" | "127.0.0.1" | "[::1]" | "::1");
-        if !(scheme == "https" || (scheme == "http" && loopback))
-            || url.authority().is_none()
-            || endpoint.contains('@')
-        {
+        let secure = endpoint.starts_with("https://");
+        let local = ["http://localhost:", "http://127.0.0.1:", "http://[::1]:"].iter()
+            .any(|prefix| endpoint.starts_with(prefix));
+        if !(secure || local) || endpoint.contains('@') || endpoint.contains('#') {
             return CoreStatus::Offline;
         }
         let url = format!("{}/healthz", endpoint.trim_end_matches('/'));
-        let agent = ureq::Agent::config_builder()
+        let agent: ureq::Agent = ureq::Agent::config_builder()
             .timeout_global(Some(Duration::from_secs(2)))
             .build()
-            .new_agent();
+            .into();
         match agent.get(&url).call() {
             Ok(response) if response.status() == 200 => CoreStatus::Online,
             _ => CoreStatus::Offline,
