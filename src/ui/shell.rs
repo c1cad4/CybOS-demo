@@ -220,7 +220,33 @@ impl CybOs {
                     });
                     ui.add_space(8.0);
                     ui.separator();
-                    ui.add_space(8.0);
+                    ui.add_space(6.0);
+
+                    // Consistent, beginner-friendly orientation on every screen.
+                    let (purpose, first_step, limitation) = self.page.guidance();
+                    egui::Frame::new()
+                        .fill(Color32::from_rgb(5, 20, 13))
+                        .stroke(Stroke::new(1.0, Color32::from_rgb(20, 75, 48)))
+                        .corner_radius(8.0)
+                        .inner_margin(egui::Margin::symmetric(10, 7))
+                        .show(ui, |ui| {
+                            ui.horizontal_wrapped(|ui| {
+                                ui.label(RichText::new("QUICK GUIDE").size(9.0).strong().color(neon));
+                                ui.label(RichText::new(purpose).size(10.0).color(Color32::from_rgb(175, 215, 190)));
+                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                    ui.collapsing(RichText::new("HOW TO USE").size(9.0).strong().color(neon), |ui| {
+                                        ui.label(RichText::new("START HERE").size(9.0).strong().color(neon));
+                                        ui.label(RichText::new(first_step).size(10.0).color(Color32::from_rgb(195, 225, 205)));
+                                        ui.add_space(4.0);
+                                        ui.label(RichText::new("GOOD TO KNOW").size(9.0).strong().color(neon));
+                                        ui.label(RichText::new(limitation).size(10.0).color(Color32::from_rgb(195, 225, 205)));
+                                        ui.add_space(4.0);
+                                        ui.label(RichText::new("TIP: use ⌘K to find a page; hover over icons and buttons for hints.").size(9.0).color(Color32::GRAY));
+                                    });
+                                });
+                            });
+                        });
+                    ui.add_space(6.0);
                     match self.page {
                         Page::Graph => self.graph(ui),
                         Page::Dashboard => {
