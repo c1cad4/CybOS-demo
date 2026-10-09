@@ -500,6 +500,7 @@ fn validate_input(input: &str) -> Result<(), String> {
 mod tests {
     use super::{read_bounded, resolve, BrowserRoute, MAX_BODY_BYTES};
     use std::io::Cursor;
+    use std::sync::mpsc::TrySendError;
 
     #[test]
     fn navigation_queue_is_bounded_and_reports_backpressure() {
