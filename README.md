@@ -6,6 +6,8 @@ The native implementation lives under `src/`, with the macOS launcher and BLE he
 
 For the native desktop installation path, see [NATIVE_INSTALL.md](NATIVE_INSTALL.md).
 
+For plain-language screen guidance, first steps, safety limitations, and the interaction checklist, see [UX_AND_ACCESSIBILITY.md](docs/UX_AND_ACCESSIBILITY.md).
+
 ## What is in this repository
 
 ### Browser prototype
