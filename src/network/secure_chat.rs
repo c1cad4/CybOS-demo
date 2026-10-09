@@ -77,16 +77,7 @@ impl Drop for Listener {
 
 pub(crate) fn load_or_create_static_key(store: &crate::store::Store) -> Result<Vec<u8>, String> {
     if let Some(encoded) = store.get("noise_static_private_hex") {
-        if encoded.len() != 64 || !encoded.chars().all(|c| c.is_ascii_hexdigit()) {
-            return Err(
-                "stored Noise identity key is malformed; refusing to silently rotate peer identity".into(),
-            );
-        }
-        let mut key = Vec::with_capacity(32);
-        for i in (0..encoded.len()).step_by(2) {
-            key.push(u8::from_str_radix(&encoded[i..i + 2], 16).map_err(|e| e.to_string())?);
-        }
-        return Ok(key);
+        return decode_static_private_key(&encoded);
     }
 
     let params = PATTERN.parse().map_err(|e| format!("noise params: {e}"))?;
@@ -101,6 +92,18 @@ pub(crate) fn load_or_create_static_key(store: &crate::store::Store) -> Result<V
         return Err("could not verify persisted Noise identity key; refusing to start".into());
     }
     Ok(keypair.private)
+}
+
+fn decode_static_private_key(encoded: &str) -> Result<Vec<u8>, String> {
+    if encoded.len() != 64 || !encoded.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err(
+            "stored Noise identity key is malformed; refusing to silently rotate peer identity".into(),
+        );
+    }
+    (0..encoded.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&encoded[i..i + 2], 16).map_err(|e| e.to_string()))
+        .collect()
 }
 
 pub(crate) fn spawn_listener(node_id: String, private_key: Vec<u8>) -> Listener {
@@ -440,6 +443,40 @@ mod tests {
     use snow::{params::NoiseParams, Builder};
     use std::thread;
     use std::time::{Duration, Instant};
+
+    #[test]
+    fn malformed_persisted_static_key_is_rejected() {
+        assert!(super::decode_static_private_key("not-a-key").is_err());
+        assert!(super::decode_static_private_key(&"0".repeat(62)).is_err());
+        assert!(super::decode_static_private_key(&"g".repeat(64)).is_err());
+    }
+
+    #[test]
+    fn persisted_static_key_decodes_exactly_32_bytes() {
+        let encoded = "ab".repeat(32);
+        let decoded = super::decode_static_private_key(&encoded).expect("valid key");
+        assert_eq!(decoded, vec![0xab; 32]);
+    }
+
+    #[test]
+    fn read_frame_rejects_oversized_length_before_reading_payload() {
+        use std::io::Write;
+        use std::net::{TcpListener, TcpStream};
+
+        let listener = TcpListener::bind(("127.0.0.1", 0)).expect("bind test listener");
+        let address = listener.local_addr().expect("listener address");
+        let client = thread::spawn(move || {
+            let mut stream = TcpStream::connect(address).expect("connect test client");
+            let too_large = (super::MAX_FRAME + 4097) as u32;
+            stream.write_all(&too_large.to_be_bytes()).expect("write frame length");
+        });
+        let (mut server, _) = listener.accept().expect("accept test client");
+        let mut buffer = vec![0_u8; 65535];
+        let error = super::read_frame(&mut server, &mut buffer)
+            .expect_err("oversized frame must fail");
+        assert!(error.contains("frame exceeds receive limit"));
+        client.join().expect("client thread");
+    }
 
     #[test]
     fn hex_roundtrip() {
