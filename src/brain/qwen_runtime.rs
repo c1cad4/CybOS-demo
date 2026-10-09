@@ -149,6 +149,12 @@ impl CybOs {
             return Err("Qwen worker deadline expired before request start.".into());
         }
 
+        let max_tokens = max_tokens.clamp(1, 8192);
+        let temperature = if temperature.is_finite() {
+            temperature.clamp(0.0, 2.0)
+        } else {
+            0.0
+        };
         let payload = json!({
             "model": QWEN_MODEL,
             "messages": [
@@ -169,5 +175,25 @@ impl CybOs {
         });
 
         bounded_qwen_request(payload, remaining)
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::{read_bounded_response, QWEN_MAX_RESPONSE_BYTES};
+    use std::io::Cursor;
+
+    #[test]
+    fn qwen_response_limit_accepts_exact_boundary() {
+        let data = vec![b'x'; QWEN_MAX_RESPONSE_BYTES];
+        assert_eq!(read_bounded_response(Cursor::new(data.clone())).unwrap(), data);
+    }
+
+    #[test]
+    fn qwen_response_limit_rejects_oversized_body() {
+        let data = vec![b'x'; QWEN_MAX_RESPONSE_BYTES + 1];
+        let error = read_bounded_response(Cursor::new(data)).unwrap_err();
+        assert!(error.contains("exceeds 4 MiB limit"));
     }
 }
