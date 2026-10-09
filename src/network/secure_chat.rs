@@ -146,7 +146,7 @@ fn spawn_listener_bind(
                     }
                     // Reserve capacity atomically; load-then-increment can exceed MAX_ACTIVE.
                     let reserved = active
-                        .fetch_update(Ordering::AcqRel, Ordering::Acquire, |count| {
+                        .try_update(Ordering::AcqRel, Ordering::Acquire, |count| {
                             (count < MAX_ACTIVE).then_some(count + 1)
                         })
                         .is_ok();
