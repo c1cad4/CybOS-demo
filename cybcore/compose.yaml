@@ -1,6 +1,17 @@
 name: cybcore
 
 services:
+  api:
+    build: ./server
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://cybcore:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@postgres:5432/cybcore
+      CYBCORE_BIND: 0.0.0.0:8080
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [backend]
+
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
