@@ -23,7 +23,7 @@ The System Core page currently samples host metrics every 2 seconds and retains 
 - OS network received/transmitted counters.
 - Highest available OS-reported temperature and the number of exposed sensors.
 - CPU/RAM sparklines, runtime-cell run counts, budgets, status and overruns.
-- Bounded worker execution traces with correlation IDs, start timestamps, elapsed duration, budget and final status (up to 100 active/recent tasks).
+- Bounded worker execution traces with correlation IDs, start timestamps, live elapsed duration refreshed on heartbeats, budget and final status (up to 100 active/recent tasks). Terminal timeout/error/cancellation states cannot be overwritten by a late worker success.
 - Export of telemetry history/current sample in the existing local JSON state export.
 
 Sampling is local-only. The module does not send telemetry to any service. History is bounded and in-memory unless the user explicitly exports a state file. Process CPU readings are OS snapshots and may fluctuate between samples. Network counters are OS counters, not per-cybOS traffic attribution.
