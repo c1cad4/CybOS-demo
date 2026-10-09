@@ -105,12 +105,7 @@ impl CybLexRuntime {
     }
 
     fn send_command(&self, command: CybLexCommand) -> Result<(), String> {
-        self.tx.try_send(command).map_err(|error| match error {
-            TrySendError::Full(_) => {
-                "CybLex command queue is full; wait for the current operation and retry".into()
-            }
-            TrySendError::Disconnected(_) => "CybLex worker is not running".into(),
-        })
+        send_bounded(&self.tx, command)
     }
 
     pub(crate) fn poll(&self) -> Vec<CybLexEvent> {
@@ -120,6 +115,15 @@ impl CybLexRuntime {
         }
         events
     }
+}
+
+fn send_bounded<T>(tx: &SyncSender<T>, command: T) -> Result<(), String> {
+    tx.try_send(command).map_err(|error| match error {
+        TrySendError::Full(_) => {
+            "CybLex command queue is full; wait for the current operation and retry".into()
+        }
+        TrySendError::Disconnected(_) => "CybLex worker is not running".into(),
+    })
 }
 
 impl Drop for CybLexRuntime {
@@ -465,8 +469,24 @@ fn torrent_sidecar_path(path: &Path) -> PathBuf {
 
 #[cfg(test)]
 mod tests {
-    use super::{validate_source, validate_path_text, write_sidecar_new};
-    use std::fs;
+    use super::{send_bounded, validate_source, validate_path_text, write_sidecar_new};
+    use std::{fs, sync::mpsc};
+
+    #[test]
+    fn command_queue_reports_backpressure_without_blocking() {
+        let (tx, _rx) = mpsc::sync_channel(1);
+        tx.try_send("first").expect("first command fits");
+        let error = send_bounded(&tx, "second").unwrap_err();
+        assert!(error.contains("queue is full"));
+    }
+
+    #[test]
+    fn command_queue_reports_stopped_worker() {
+        let (tx, rx) = mpsc::sync_channel::<()>(1);
+        drop(rx);
+        let error = send_bounded(&tx, ()).unwrap_err();
+        assert!(error.contains("worker is not running"));
+    }
 
     #[test]
     fn rejects_empty_and_unsupported_sources() {
