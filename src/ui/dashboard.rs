@@ -36,7 +36,7 @@ impl CybOs {
                     ("⟷", "NETWORK", Page::Network, egui::vec2(245.0, 85.0)),
                     ("⌬", "CICADAFARM", Page::Farm, egui::vec2(0.0, 170.0)),
                     // EXTRA MATHEMATICAL SYMBOLS
-                    ("∆", "DELTA", Page::Dashboard, egui::vec2(-95.0, -170.0)),
+                    ("◉", "PLANET PULSE", Page::PlanetaryPulse, egui::vec2(-95.0, -170.0)),
                     ("√", "CORE", Page::Brain, egui::vec2(95.0, -170.0)),
                     ("∞", "MEMORY", Page::Brain, egui::vec2(-95.0, 170.0)),
                     ("⊕", "ENERGY", Page::System, egui::vec2(95.0, 170.0)),
