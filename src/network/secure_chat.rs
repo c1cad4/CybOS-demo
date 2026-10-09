@@ -123,7 +123,7 @@ fn load_or_create_keychain_key(store: &crate::store::Store) -> Result<Vec<u8>, S
                 if legacy_key != key {
                     return Err("macOS Keychain and SQLite Noise identities differ; refusing to rotate identity or delete either copy".into());
                 }
-                store.try_delete(LEGACY_KEY)?;
+                store.try_delete_and_compact(LEGACY_KEY)?;
             }
             Ok(key)
         }
@@ -144,7 +144,7 @@ fn load_or_create_keychain_key(store: &crate::store::Store) -> Result<Vec<u8>, S
                 return Err("macOS Keychain read-back mismatch; preserving legacy data and refusing to start".into());
             }
             if legacy.is_some() {
-                store.try_delete(LEGACY_KEY)?;
+                store.try_delete_and_compact(LEGACY_KEY)?;
             }
             Ok(key)
         }
