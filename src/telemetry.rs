@@ -95,7 +95,7 @@ impl TelemetrySampler {
         let temperature = components
             .list()
             .iter()
-            .filter_map(|component| component.temperature())
+            .map(|component| component.temperature())
             .filter(|value| value.is_finite())
             .reduce(f32::max);
 
