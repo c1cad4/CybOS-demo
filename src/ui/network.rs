@@ -55,6 +55,24 @@ impl CybOs {
             .corner_radius(10)
             .inner_margin(egui::Margin::same(12))
             .show(ui, |ui| {
+                ui.label(RichText::new("CYBCORE · OPTIONAL SERVER").strong().color(neon));
+                let configured = std::env::var("CYBCORE_URL").ok().filter(|v| !v.trim().is_empty());
+                if configured.is_some() {
+                    ui.label(RichText::new("Configured · offline-first mode preserved").size(10.0).color(dim));
+                } else {
+                    ui.label(RichText::new("DISABLED · Set CYBCORE_URL to opt in").size(10.0).color(dim));
+                }
+                ui.label(RichText::new("No automatic network requests or private data uploads.").size(9.0).color(dim));
+            });
+
+        ui.add_space(10.0);
+
+        egui::Frame::new()
+            .fill(Color32::from_rgb(4, 16, 11))
+            .stroke(Stroke::new(1.0, Color32::from_rgb(24, 90, 58)))
+            .corner_radius(10)
+            .inner_margin(egui::Margin::same(12))
+            .show(ui, |ui| {
                 ui.horizontal(|ui| {
                     ui.label(RichText::new("RADAR VISIBILITY").size(11.0).strong().color(neon));
                     let label = if self.radar_visible { "VISIBLE" } else { "HIDDEN" };
