@@ -109,17 +109,29 @@ impl WorkerContract {
     }
 
     pub(crate) fn finish(&self, status: &'static str) {
-        if let Ok(mut value) = self.status.lock() {
-            *value = status;
+        // A timeout/error reported by the UI thread must not be overwritten
+        // later by a worker that eventually returns after its budget.
+        let final_status = if let Ok(mut current) = self.status.lock() {
+            if *current == "TIMEOUT" || *current == "ERROR" || *current == "CANCELLED" {
+                *current
+            } else {
+                *current = status;
+                *current
+            }
+        } else {
+            "ERROR"
+        };
+        if let Ok(mut value) = self.heartbeat.lock() {
+            *value = Instant::now();
         }
-        self.heartbeat();
+        self.runs.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         record_worker_trace(WorkerTrace {
             id: self.task_id.clone(),
             cell: self.cell.to_string(),
             started_at: self.started_at.clone(),
             elapsed_ms: self.started.elapsed().as_millis(),
             budget_ms: self.budget.as_millis(),
-            status: status.to_string(),
+            status: final_status.to_string(),
         });
     }
 
@@ -318,6 +330,18 @@ mod tests {
         assert_eq!(trace.cell, "TEST_TRACE");
         assert!(trace.elapsed_ms < 1000);
         assert_eq!(trace.budget_ms, 1000);
+    }
+
+    #[test]
+    fn worker_terminal_timeout_is_not_overwritten_by_late_success() {
+        let worker = super::WorkerContract::new("TEST_TIMEOUT", std::time::Duration::from_millis(1));
+        worker.finish("TIMEOUT");
+        worker.finish("READY");
+        assert_eq!(worker.status(), "TIMEOUT");
+        let trace = super::recent_worker_traces().into_iter()
+            .find(|trace| trace.cell == "TEST_TIMEOUT")
+            .expect("timeout trace should remain visible");
+        assert_eq!(trace.status, "TIMEOUT");
     }
 
     #[test]
