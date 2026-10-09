@@ -21,3 +21,4 @@ pub mod mesh;
 pub mod vpn;
 pub mod browser;
 pub mod cybcore_client;
+pub mod cybcore_identity;
