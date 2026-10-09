@@ -469,19 +469,13 @@ impl CybOs {
                     reply,
                 } => {
                     let trust_key = format!("noise_peer_key:{}", node_id);
-                    let stored = self.store.get(&trust_key).and_then(|value| {
-                        if value.len() % 2 != 0 {
-                            return None;
-                        }
-                        (0..value.len())
-                            .step_by(2)
-                            .map(|i| u8::from_str_radix(&value[i..i + 2], 16).ok())
-                            .collect::<Option<Vec<u8>>>()
+                    let stored = self.store.get(&trust_key).map(|value| {
+                        crate::network::secure_chat::decode_hex(&value)
                     });
 
                     let trusted = match stored {
-                        Some(known) if known == public_key => true,
-                        Some(_) => {
+                        Some(Ok(known)) if known == public_key => true,
+                        Some(Ok(_)) => {
                             self.secure_status =
                                 format!("SECURE CHAT · IDENTITY CHANGED · {}", node_id);
                             self.runtime.set_status("CYBCHAT", "ERROR");
@@ -496,6 +490,20 @@ impl CybOs {
                                 ),
                             );
                             self.notify("SECURE IDENTITY CHANGE REJECTED");
+                            continue;
+                        }
+                        Some(Err(error)) => {
+                            self.secure_status =
+                                format!("SECURE CHAT · CORRUPT TRUST RECORD · {}", node_id);
+                            self.runtime.set_status("CYBCHAT", "ERROR");
+                            let _ = reply.send(crate::network::secure_chat::SecureReply::Reject(
+                                "stored peer trust record is corrupt".into(),
+                            ));
+                            self.add_event(
+                                "SECURITY",
+                                format!("Rejected secure message from {node_id}: corrupt pinned key ({error})"),
+                            );
+                            self.notify("CORRUPT PEER TRUST RECORD REJECTED");
                             continue;
                         }
                         None => {
