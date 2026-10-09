@@ -604,6 +604,7 @@ mod tests {
         let deadline = Instant::now() + Duration::from_secs(4);
         let message_id = loop {
             match listener.try_recv() {
+                Ok(SecureEvent::ListenerStatus(_)) => continue,
                 Ok(SecureEvent::Received { message_id, reply, .. }) => {
                     reply
                         .send(SecureReply::Reject("receiver rejected test".into()))
@@ -656,6 +657,7 @@ mod tests {
         let deadline = Instant::now() + Duration::from_secs(4);
         let message_id = loop {
             match listener.try_recv() {
+                Ok(SecureEvent::ListenerStatus(_)) => continue,
                 Ok(SecureEvent::Received {
                     message_id,
                     node_id,
