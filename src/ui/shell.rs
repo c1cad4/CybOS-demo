@@ -75,6 +75,7 @@ impl CybOs {
                     if (search.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)))
                         || ui
                             .add(egui::Button::new(RichText::new("GO").strong().color(neon)))
+                            .on_hover_text("Open the best matching page for the search text. Try a page name or keyword.")
                             .clicked()
                     {
                         self.apply_search();
@@ -179,7 +180,7 @@ impl CybOs {
                         } else {
                             dim
                         });
-                        if ui.add(egui::Button::new(text).frame(false)).clicked() {
+                        if ui.add(egui::Button::new(text).frame(false)).on_hover_text(page.guidance().0).clicked() {
                             self.go(page);
                         }
                         ui.label(RichText::new("·").size(12.0).color(dim));
