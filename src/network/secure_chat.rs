@@ -99,23 +99,27 @@ pub(crate) fn spawn_listener(node_id: String, private_key: Vec<u8>) -> Listener 
     spawn_listener_bind(node_id, private_key, "0.0.0.0", PORT)
 }
 
-#[cfg(test)]
-fn spawn_listener_at(node_id: String, private_key: Vec<u8>, port: u16) -> Listener {
-    spawn_listener_bind(node_id, private_key, "127.0.0.1", port)
-}
-
 fn spawn_listener_bind(
     node_id: String,
     private_key: Vec<u8>,
     host: &'static str,
     port: u16,
 ) -> Listener {
+    // Keep binding and socket creation separate so tests can reserve ephemeral ports.
+    let socket = TcpListener::bind((host, port));
+    spawn_listener_socket(node_id, private_key, socket)
+}
+
+fn spawn_listener_socket(
+    node_id: String,
+    private_key: Vec<u8>,
+    socket: std::io::Result<TcpListener>,
+) -> Listener {
     let (tx, rx) = mpsc::channel();
     let stop = Arc::new(AtomicBool::new(false));
     let stop_thread = Arc::clone(&stop);
-
     thread::spawn(move || {
-        let listener = match TcpListener::bind((host, port)) {
+        let listener = match socket {
             Ok(v) => v,
             Err(_) => return,
         };
@@ -130,6 +134,11 @@ fn spawn_listener_bind(
             match listener.accept() {
                 Ok((mut stream, _addr)) => {
                     if active.load(Ordering::Acquire) >= MAX_ACTIVE {
+                        continue;
+                    }
+                    // Accepted sockets inherit nonblocking mode on some platforms.
+                    // read_exact/write_all and bounded timeouts require blocking I/O.
+                    if stream.set_nonblocking(false).is_err() {
                         continue;
                     }
                     let _ = stream.set_read_timeout(Some(TIMEOUT));
@@ -419,7 +428,7 @@ fn short_hash(bytes: &[u8]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{decode_hex, encode_hex, short_hash, spawn_listener_at, send_on_port, SecureSendStatus, SecureEvent, SecureReply, PATTERN};
+    use super::{decode_hex, encode_hex, short_hash, spawn_listener_socket, send_on_port, SecureSendStatus, SecureEvent, SecureReply, PATTERN};
     use snow::{params::NoiseParams, Builder};
     use std::thread;
     use std::time::{Duration, Instant};
@@ -442,9 +451,9 @@ mod tests {
         let sender = Builder::new(params.clone()).generate_keypair().expect("sender keypair");
         let receiver = Builder::new(params).generate_keypair().expect("receiver keypair");
 
-        let port = 39401;
-        let listener = spawn_listener_at("node-b-reject".to_string(), receiver.private.clone(), port);
-        thread::sleep(Duration::from_millis(100));
+        let socket = std::net::TcpListener::bind(("127.0.0.1", 0)).expect("test listener");
+        let port = socket.local_addr().unwrap().port();
+        let listener = spawn_listener_socket("node-b-reject".to_string(), receiver.private.clone(), Ok(socket));
 
         let sender_key = sender.private.clone();
         let sender_thread = thread::spawn(move || {
@@ -493,9 +502,9 @@ mod tests {
         let sender = Builder::new(params.clone()).generate_keypair().expect("sender keypair");
         let receiver = Builder::new(params).generate_keypair().expect("receiver keypair");
 
-        let port = 39402;
-        let listener = spawn_listener_at("node-b".to_string(), receiver.private.clone(), port);
-        thread::sleep(Duration::from_millis(100));
+        let socket = std::net::TcpListener::bind(("127.0.0.1", 0)).expect("test listener");
+        let port = socket.local_addr().unwrap().port();
+        let listener = spawn_listener_socket("node-b".to_string(), receiver.private.clone(), Ok(socket));
 
         let sender_key = sender.private.clone();
         let sender_thread = thread::spawn(move || {
