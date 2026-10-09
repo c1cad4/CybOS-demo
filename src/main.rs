@@ -17,6 +17,7 @@ mod cybdex;
 mod graph;
 mod hardware;
 mod navigation;
+mod language;
 mod network;
 mod oracle;
 mod power;
