@@ -120,7 +120,7 @@ impl CybOs {
                 });
                 ui.add_space(8.0);
                 let status = self.store.get("offline_atlas_status").unwrap_or_else(|| "NOT CHECKED".into());
-                ui.label(RichText::new(status).size(10.0).color(if status.starts_with("ARCHIVE-VALIDATED") { neon } else { Color32::LIGHT_GRAY }));
+                ui.label(RichText::new(&status).size(10.0).color(if status.starts_with("ARCHIVE-VALIDATED") { neon } else { Color32::LIGHT_GRAY }));
             });
 
         ui.add_space(12.0);
