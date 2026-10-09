@@ -155,8 +155,8 @@ impl CybDexRuntime {
         timeframe: CybDexTimeframe,
     ) -> Result<(), String> {
         let address = pair_address.trim();
-        if address.is_empty() || address.len() > MAX_QUERY {
-            return Err("Invalid pool address".into());
+        if !looks_like_solana_address(address) {
+            return Err("Invalid Solana pool address (expected a Base58 public key)".into());
         }
         self.tx
             .send(CybDexCommand::LoadPair {
