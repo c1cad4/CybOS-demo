@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Cyb Contribution Attestation v0.1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "attestation_id",
+    "subject",
+    "domain",
+    "evidence_digest",
+    "issuer",
+    "issued_at_ms"
+  ],
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "attestation_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "subject": {
+      "type": "string",
+      "minLength": 1
+    },
+    "domain": {
+      "type": "string",
+      "minLength": 1
+    },
+    "evidence_digest": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "issuer": {
+      "type": "string",
+      "minLength": 1
+    },
+    "issued_at_ms": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "expires_at_ms": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "revocation_ref": {
+      "type": "string"
+    },
+    "visibility": {
+      "enum": [
+        "private",
+        "shared",
+        "public"
+      ]
+    }
+  }
+}
