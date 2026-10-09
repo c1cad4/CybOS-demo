@@ -3,6 +3,7 @@ use rusqlite::{params, Connection};
 use std::{fs, path::PathBuf, time::Duration};
 use uuid::Uuid;
 
+use crate::agent_economy::{AgentTask, LedgerEntry};
 use crate::models::{Event, GraphLink, GraphNode, Memory};
 
 pub(crate) struct Store {
@@ -79,6 +80,30 @@ impl Store {
 
             CREATE INDEX IF NOT EXISTS idx_secure_message_ids_time
                 ON secure_message_ids(time);
+
+            CREATE TABLE IF NOT EXISTS agent_tasks(
+                id TEXT PRIMARY KEY,
+                status TEXT NOT NULL,
+                title TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                payload TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_agent_tasks_status
+                ON agent_tasks(status);
+
+            CREATE TABLE IF NOT EXISTS agent_ledger(
+                id TEXT PRIMARY KEY,
+                timestamp TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                amount REAL NOT NULL,
+                currency TEXT NOT NULL,
+                task_id TEXT,
+                payload TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_agent_ledger_timestamp
+                ON agent_ledger(timestamp);
             "#,
         )
         .expect("cannot initialize database");
@@ -294,6 +319,77 @@ impl Store {
         }
 
         inserted
+    }
+
+    /// Persist a validated task contract. No work is executed by this method.
+    pub(crate) fn save_agent_task(&self, task: &AgentTask) -> Result<(), String> {
+        task.validate()?;
+        let payload = serde_json::to_string(task)
+            .map_err(|error| format!("cannot serialize agent task: {error}"))?;
+        self.conn.execute(
+            "INSERT INTO agent_tasks(id,status,title,updated_at,payload)
+             VALUES(?1,?2,?3,?4,?5)
+             ON CONFLICT(id) DO UPDATE SET
+                 status=excluded.status,
+                 title=excluded.title,
+                 updated_at=excluded.updated_at,
+                 payload=excluded.payload",
+            params![task.id, task.status.as_str(), task.title, task.updated_at, payload],
+        ).map_err(|error| format!("cannot save agent task: {error}"))?;
+        Ok(())
+    }
+
+    pub(crate) fn agent_tasks(&self) -> Vec<AgentTask> {
+        let mut st = match self.conn.prepare(
+            "SELECT payload FROM agent_tasks ORDER BY updated_at DESC LIMIT 500"
+        ) {
+            Ok(st) => st,
+            Err(_) => return Vec::new(),
+        };
+        st.query_map([], |row| row.get::<_, String>(0))
+            .ok()
+            .into_iter()
+            .flatten()
+            .filter_map(Result::ok)
+            .filter_map(|payload| serde_json::from_str::<AgentTask>(&payload).ok())
+            .collect()
+    }
+
+    /// Append an accounting record. It does not send money or assert settlement.
+    pub(crate) fn append_agent_ledger(&self, entry: &LedgerEntry) -> Result<(), String> {
+        entry.validate()?;
+        let payload = serde_json::to_string(entry)
+            .map_err(|error| format!("cannot serialize ledger entry: {error}"))?;
+        self.conn.execute(
+            "INSERT INTO agent_ledger(id,timestamp,kind,amount,currency,task_id,payload)
+             VALUES(?1,?2,?3,?4,?5,?6,?7)",
+            params![
+                entry.id,
+                entry.timestamp,
+                entry.kind.as_str(),
+                entry.amount,
+                entry.currency,
+                entry.task_id,
+                payload
+            ],
+        ).map_err(|error| format!("cannot append ledger entry: {error}"))?;
+        Ok(())
+    }
+
+    pub(crate) fn agent_ledger(&self) -> Vec<LedgerEntry> {
+        let mut st = match self.conn.prepare(
+            "SELECT payload FROM agent_ledger ORDER BY timestamp DESC, rowid DESC LIMIT 1000"
+        ) {
+            Ok(st) => st,
+            Err(_) => return Vec::new(),
+        };
+        st.query_map([], |row| row.get::<_, String>(0))
+            .ok()
+            .into_iter()
+            .flatten()
+            .filter_map(Result::ok)
+            .filter_map(|payload| serde_json::from_str::<LedgerEntry>(&payload).ok())
+            .collect()
     }
 
     pub(crate) fn database_integrity(&self) -> String {
