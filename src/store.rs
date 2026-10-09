@@ -89,8 +89,20 @@ impl Store {
             .query_row("SELECT value FROM kv WHERE key=?1", [key], |r| r.get(0))
             .ok()
     }
+    /// Persist a setting and preserve SQLite errors for security-critical state.
+    pub(crate) fn try_set(&self, key: &str, value: &str) -> Result<(), String> {
+        self.conn
+            .execute(
+                "INSERT INTO kv(key,value) VALUES(?1,?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                params![key, value],
+            )
+            .map(|_| ())
+            .map_err(|error| format!("cannot persist setting '{key}': {error}"))
+    }
+
+    /// Best-effort preference write. Use try_set for identity and trust state.
     pub(crate) fn set(&self, key: &str, value: &str) {
-        let _ = self.conn.execute("INSERT INTO kv(key,value) VALUES(?1,?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value", params![key,value]);
+        let _ = self.try_set(key, value);
     }
     pub(crate) fn add_memory(&self, memory: &Memory) {
         let _ = self.conn.execute(
@@ -357,6 +369,24 @@ fn dirs_fallback() -> PathBuf {
 mod tests {
     use super::Store;
     use rusqlite::Connection;
+
+    #[test]
+    fn try_set_reports_sqlite_write_errors() {
+        let conn = Connection::open_in_memory().expect("in-memory sqlite");
+        conn.execute_batch(
+            "CREATE TABLE kv(key TEXT PRIMARY KEY, value TEXT NOT NULL);
+             CREATE TRIGGER reject_kv BEFORE INSERT ON kv
+             BEGIN SELECT RAISE(ABORT, 'simulated storage failure'); END;",
+        )
+        .expect("test schema");
+        let store = Store {
+            path: std::path::PathBuf::from(":memory:"),
+            conn,
+        };
+        let error = store.try_set("noise_static_private_hex", "secret").unwrap_err();
+        assert!(error.contains("cannot persist setting"));
+        assert!(store.get("noise_static_private_hex").is_none());
+    }
 
     #[test]
     fn secure_message_id_claim_is_idempotent() {
