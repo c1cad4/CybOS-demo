@@ -75,9 +75,9 @@ impl CybOs {
                         );
                         ui.label(
                             RichText::new(format!(
-                                "{}ms budget · heartbeat {}ms ago · {} runs · {} overruns",
+                                "{}ms budget · last status signal {}ms ago · {} runs · {} overruns",
                                 cell.budget.as_millis(),
-                                cell.heartbeat_age_ms(),
+                                cell.signal_age_ms(),
                                 cell.runs,
                                 cell.overruns
                             ))
@@ -134,7 +134,7 @@ impl CybOs {
                         "id": cell.id,
                         "status": cell.status,
                         "budget_ms": cell.budget.as_millis(),
-                        "heartbeat_age_ms": cell.heartbeat_age_ms(),
+                        "last_status_signal_age_ms": cell.signal_age_ms(),
                         "last_run_ms": cell.last_run.as_millis(),
                         "runs": cell.runs,
                         "overruns": cell.overruns,
