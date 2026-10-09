@@ -4,6 +4,8 @@
 //! execute arbitrary commands, perform network calls, or move funds.
 
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::Arc;
 use uuid::Uuid;
 
 pub(crate) const MAX_CAPABILITY_ID: usize = 96;
@@ -87,6 +89,141 @@ impl CapabilitySpec {
             return Err(format!("capability input is {bytes} bytes; limit is {}", self.max_input_bytes));
         }
         Ok(())
+    }
+}
+
+
+/// Synchronous tool contract. Implementations should be short-running and side-effect
+/// free unless their capability is explicitly classified and approved.
+pub(crate) trait CapabilityHandler: Send + Sync {
+    fn execute(&self, input: &serde_json::Value) -> Result<serde_json::Value, String>;
+}
+
+#[derive(Clone)]
+struct RegisteredCapability {
+    spec: CapabilitySpec,
+    handler: Arc<dyn CapabilityHandler>,
+}
+
+/// In-process allow-list. Unknown capability IDs are never dispatched.
+#[derive(Default, Clone)]
+pub(crate) struct CapabilityRegistry {
+    entries: HashMap<String, RegisteredCapability>,
+}
+
+impl CapabilityRegistry {
+    pub(crate) fn register(
+        &mut self,
+        spec: CapabilitySpec,
+        handler: Arc<dyn CapabilityHandler>,
+    ) -> Result<(), String> {
+        spec.validate()?;
+        if self.entries.contains_key(&spec.id) {
+            return Err(format!("capability '{}' is already registered", spec.id));
+        }
+        self.entries.insert(spec.id.clone(), RegisteredCapability { spec, handler });
+        Ok(())
+    }
+
+    pub(crate) fn list(&self) -> Vec<CapabilitySpec> {
+        let mut specs: Vec<_> = self.entries.values().map(|entry| entry.spec.clone()).collect();
+        specs.sort_by(|a, b| a.id.cmp(&b.id));
+        specs
+    }
+
+    pub(crate) fn execute(
+        &self,
+        capability_id: &str,
+        input: &serde_json::Value,
+        explicitly_approved: bool,
+    ) -> Result<serde_json::Value, String> {
+        let entry = self.entries.get(capability_id)
+            .ok_or_else(|| format!("capability '{capability_id}' is not registered"))?;
+        entry.spec.validate_input(input)?;
+        if entry.spec.requires_approval && !explicitly_approved {
+            return Err(format!("capability '{capability_id}' requires explicit approval"));
+        }
+        if entry.spec.risk == CapabilityRisk::ExternalSideEffect && !explicitly_approved {
+            return Err(format!("external side effect '{capability_id}' was not approved"));
+        }
+        let output = entry.handler.execute(input)?;
+        let bytes = serde_json::to_vec(&output)
+            .map_err(|error| format!("cannot encode capability output: {error}"))?.len();
+        if bytes > MAX_INPUT_BYTES {
+            return Err(format!("capability output exceeds {MAX_INPUT_BYTES} bytes"));
+        }
+        Ok(output)
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub(crate) struct WorkflowStep {
+    pub(crate) capability_id: String,
+    pub(crate) input: serde_json::Value,
+    /// Side-effect capabilities are blocked unless this flag is set by an explicit
+    /// user approval flow; plans loaded from disk must not be trusted blindly.
+    pub(crate) approved: bool,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub(crate) struct WorkflowPlan {
+    pub(crate) name: String,
+    pub(crate) steps: Vec<WorkflowStep>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub(crate) struct WorkflowExecutionReport {
+    pub(crate) workflow_name: String,
+    pub(crate) completed_steps: usize,
+    pub(crate) outputs: Vec<serde_json::Value>,
+    pub(crate) failed_step: Option<usize>,
+    pub(crate) error: Option<String>,
+}
+
+/// Executes only the finite, ordered plan supplied by the caller. It does not
+/// generate commands, retry implicitly, or execute unregistered tools.
+pub(crate) struct WorkflowRunner<'a> {
+    registry: &'a CapabilityRegistry,
+    max_steps: usize,
+}
+
+impl<'a> WorkflowRunner<'a> {
+    pub(crate) fn new(registry: &'a CapabilityRegistry, max_steps: usize) -> Result<Self, String> {
+        if max_steps == 0 || max_steps > 256 {
+            return Err("workflow max_steps must be between 1 and 256".into());
+        }
+        Ok(Self { registry, max_steps })
+    }
+
+    pub(crate) fn run(&self, plan: &WorkflowPlan) -> Result<WorkflowExecutionReport, String> {
+        if plan.name.trim().is_empty() || plan.name.chars().count() > 160 {
+            return Err("workflow plan name must contain 1-160 characters".into());
+        }
+        if plan.steps.is_empty() || plan.steps.len() > self.max_steps {
+            return Err(format!("workflow must contain 1-{} steps", self.max_steps));
+        }
+        let mut outputs = Vec::with_capacity(plan.steps.len());
+        for (index, step) in plan.steps.iter().enumerate() {
+            match self.registry.execute(&step.capability_id, &step.input, step.approved) {
+                Ok(output) => outputs.push(output),
+                Err(error) => {
+                    return Ok(WorkflowExecutionReport {
+                        workflow_name: plan.name.clone(),
+                        completed_steps: outputs.len(),
+                        outputs,
+                        failed_step: Some(index),
+                        error: Some(error),
+                    });
+                }
+            }
+        }
+        Ok(WorkflowExecutionReport {
+            workflow_name: plan.name.clone(),
+            completed_steps: outputs.len(),
+            outputs,
+            failed_step: None,
+            error: None,
+        })
     }
 }
 
@@ -273,6 +410,52 @@ impl WorkflowCheckpoint {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    struct EchoHandler;
+    impl CapabilityHandler for EchoHandler {
+        fn execute(&self, input: &serde_json::Value) -> Result<serde_json::Value, String> {
+            Ok(input.clone())
+        }
+    }
+
+    #[test]
+    fn runner_executes_allowlisted_steps_in_order_and_stops_on_error() {
+        let mut registry = CapabilityRegistry::default();
+        registry.register(
+            CapabilitySpec::new("echo", "Return input for test", CapabilityRisk::ReadOnly, false, 1024).unwrap(),
+            Arc::new(EchoHandler),
+        ).unwrap();
+        let runner = WorkflowRunner::new(&registry, 4).unwrap();
+        let plan = WorkflowPlan {
+            name: "test".into(),
+            steps: vec![
+                WorkflowStep { capability_id: "echo".into(), input: serde_json::json!({"n":1}), approved: false },
+                WorkflowStep { capability_id: "missing".into(), input: serde_json::json!({}), approved: false },
+                WorkflowStep { capability_id: "echo".into(), input: serde_json::json!({"n":3}), approved: false },
+            ],
+        };
+        let report = runner.run(&plan).unwrap();
+        assert_eq!(report.completed_steps, 1);
+        assert_eq!(report.failed_step, Some(1));
+        assert!(report.error.as_deref().unwrap().contains("not registered"));
+    }
+
+    #[test]
+    fn runner_requires_explicit_approval_for_external_side_effects() {
+        let mut registry = CapabilityRegistry::default();
+        registry.register(
+            CapabilitySpec::new("publish", "Publish externally", CapabilityRisk::ExternalSideEffect, true, 1024).unwrap(),
+            Arc::new(EchoHandler),
+        ).unwrap();
+        let runner = WorkflowRunner::new(&registry, 2).unwrap();
+        let plan = WorkflowPlan {
+            name: "approval-test".into(),
+            steps: vec![WorkflowStep { capability_id: "publish".into(), input: serde_json::json!({}), approved: false }],
+        };
+        let report = runner.run(&plan).unwrap();
+        assert_eq!(report.completed_steps, 0);
+        assert!(report.error.as_deref().unwrap().contains("requires explicit approval"));
+    }
 
     #[test]
     fn external_side_effects_cannot_be_registered_without_approval() {
