@@ -8,6 +8,25 @@ impl CybOs {
         self.refresh_proximity();
         self.poll_lan_send();
         self.sync_ble_advertiser();
+        // Non-blocking manual probe: receiver persists across UI frames.
+        use std::sync::{Mutex, OnceLock, mpsc};
+        static CORE_PROBE: OnceLock<Mutex<Option<mpsc::Receiver<crate::network::cybcore_client::CoreStatus>>>> = OnceLock::new();
+        static CORE_RESULT: OnceLock<Mutex<Option<crate::network::cybcore_client::CoreStatus>>> = OnceLock::new();
+        let probe = CORE_PROBE.get_or_init(|| Mutex::new(None));
+        let result = CORE_RESULT.get_or_init(|| Mutex::new(None));
+        if let Ok(mut pending) = probe.lock() {
+            if let Some(receiver) = pending.as_ref() {
+                match receiver.try_recv() {
+                    Ok(status) => {
+                        if let Ok(mut last) = result.lock() { *last = Some(status); }
+                        *pending = None;
+                    }
+                    Err(mpsc::TryRecvError::Disconnected) => { *pending = None; }
+                    Err(mpsc::TryRecvError::Empty) => { ui.ctx().request_repaint_after(std::time::Duration::from_millis(100)); }
+                }
+            }
+        }
+
 
         if let Some(contract) = self.ble_scan_contract.clone() {
             if contract.expired() {
@@ -62,14 +81,24 @@ impl CybOs {
                 } else {
                     ui.label(RichText::new("DISABLED · Set CYBCORE_URL to opt in").size(10.0).color(dim));
                 }
-                if ui.button("CHECK CYBCORE").clicked() {
-                    let endpoint = configured.clone();
-                    std::thread::spawn(move || {
-                        let client = crate::network::cybcore_client::CybCoreClient::new(endpoint);
-                        let status = client.status();
-                        eprintln!("CybCore probe: {:?}", status);
-                    });
-                    self.notify("CYBCORE CHECK STARTED · SEE APPLICATION LOG");
+                let checking = probe.lock().map(|p| p.is_some()).unwrap_or(true);
+                if ui.add_enabled(!checking && configured.is_some(), egui::Button::new(if checking { "CHECKING…" } else { "CHECK CYBCORE" })).clicked() {
+                    let (tx, rx) = mpsc::channel();
+                    if let Ok(mut pending) = probe.lock() {
+                        *pending = Some(rx);
+                        if let Ok(mut last) = result.lock() { *last = None; }
+                        let endpoint = configured.clone();
+                        std::thread::spawn(move || {
+                            let status = crate::network::cybcore_client::CybCoreClient::new(endpoint).status();
+                            let _ = tx.send(status);
+                        });
+                        ui.ctx().request_repaint_after(std::time::Duration::from_millis(100));
+                    }
+                }
+                if let Ok(last) = result.lock() {
+                    if let Some(status) = last.as_ref() {
+                        ui.label(RichText::new(format!("CYBCORE STATUS · {:?}", status)).size(10.0).color(neon));
+                    }
                 }
                 ui.label(RichText::new("Manual check only. No messages or private data uploaded.").size(9.0).color(dim));
             });
