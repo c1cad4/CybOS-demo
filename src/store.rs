@@ -110,6 +110,14 @@ impl Store {
             .map_err(|error| format!("cannot persist setting '{key}': {error}"))
     }
 
+    /// Remove a setting while preserving SQLite errors for security-sensitive migrations.
+    pub(crate) fn try_delete(&self, key: &str) -> Result<(), String> {
+        self.conn
+            .execute("DELETE FROM kv WHERE key=?1", [key])
+            .map(|_| ())
+            .map_err(|error| format!("cannot delete setting '{key}': {error}"))
+    }
+
     /// Best-effort preference write. Use try_set for identity and trust state.
     pub(crate) fn set(&self, key: &str, value: &str) {
         let _ = self.try_set(key, value);
