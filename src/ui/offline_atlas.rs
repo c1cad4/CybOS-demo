@@ -144,6 +144,12 @@ impl CybOs {
                                     info.name, info.format, info.tile_count, info.min_zoom, info.max_zoom,
                                     info.bounds, info.center, format_bytes(info.bytes)
                                 );
+                                ui.ctx().data_mut(|data| {
+                                    data.insert_temp(
+                                        egui::Id::new(("offline-atlas-info", path.trim().to_owned())),
+                                        info.clone(),
+                                    );
+                                });
                                 self.store.set("offline_atlas_status", &report);
                                 self.notify("LOCAL MAP ARCHIVE INSPECTED");
                             }
@@ -163,7 +169,10 @@ impl CybOs {
                 ui.label(RichText::new(&status).size(10.0).color(if status.starts_with("ARCHIVE-VALIDATED") { neon } else { Color32::LIGHT_GRAY }));
 
                 if status.starts_with("ARCHIVE-VALIDATED") {
-                    if let Ok(info) = inspect_mbtiles(Path::new(path.trim())) {
+                    let info = ui.ctx().data(|data| {
+                        data.get_temp::<MbtilesInfo>(egui::Id::new(("offline-atlas-info", path.trim().to_owned())))
+                    });
+                    if let Some(info) = info {
                         if let Some((zoom, center_x, center_y)) = tile_center(&info) {
                             ui.add_space(12.0);
                             ui.label(RichText::new(format!("LOCAL TILE PREVIEW · ZOOM {zoom} · NO NETWORK")).size(10.0).strong().color(neon));
@@ -178,20 +187,26 @@ impl CybOs {
                                                     let x = center_x + dx;
                                                     let y = center_y + dy;
                                                     let tile_id = egui::Id::new(("offline-atlas-tile", path.trim().to_owned(), zoom, x, y));
-                                                    let cached = ui.ctx().data(|data| data.get_temp::<egui::TextureHandle>(tile_id));
-                                                    let texture = cached.or_else(|| {
-                                                        let bytes = read_tile(Path::new(path.trim()), zoom, x, y).ok().flatten()?;
-                                                        let decoded = image::load_from_memory(&bytes).ok()?.to_rgba8();
-                                                        let size = [decoded.width() as usize, decoded.height() as usize];
-                                                        let color_image = egui::ColorImage::from_rgba_unmultiplied(size, decoded.as_raw());
-                                                        let texture = ui.ctx().load_texture(
-                                                            format!("offline-atlas-{zoom}-{x}-{y}"),
-                                                            color_image,
-                                                            egui::TextureOptions::LINEAR,
-                                                        );
-                                                        ui.ctx().data_mut(|data| data.insert_temp(tile_id, texture.clone()));
-                                                        Some(texture)
-                                                    });
+                                                    let cached = ui.ctx().data(|data| data.get_temp::<Option<egui::TextureHandle>>(tile_id));
+                                                    let texture = if let Some(cached) = cached {
+                                                        cached
+                                                    } else {
+                                                        let loaded = read_tile(Path::new(path.trim()), zoom, x, y)
+                                                            .ok().flatten()
+                                                            .and_then(|bytes| image::load_from_memory(&bytes).ok())
+                                                            .map(|decoded| {
+                                                                let decoded = decoded.to_rgba8();
+                                                                let size = [decoded.width() as usize, decoded.height() as usize];
+                                                                let color_image = egui::ColorImage::from_rgba_unmultiplied(size, decoded.as_raw());
+                                                                ui.ctx().load_texture(
+                                                                    format!("offline-atlas-{zoom}-{x}-{y}"),
+                                                                    color_image,
+                                                                    egui::TextureOptions::LINEAR,
+                                                                )
+                                                            });
+                                                        ui.ctx().data_mut(|data| data.insert_temp(tile_id, loaded.clone()));
+                                                        loaded
+                                                    };
                                                     if let Some(texture) = texture {
                                                         ui.image((texture.id(), egui::vec2(192.0, 192.0)));
                                                     } else {
