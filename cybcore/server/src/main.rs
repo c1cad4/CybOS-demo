@@ -1,3 +1,4 @@
+mod events;
 use axum::{extract::State, http::{HeaderMap, StatusCode}, routing::get, Json, Router};
 use serde::Serialize;
 use sqlx::PgPool;
