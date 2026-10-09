@@ -45,7 +45,7 @@ impl CybOs {
                                 .color(Color32::from_rgb(255, 190, 70)),
                         );
                         ui.label(
-                            RichText::new("Messages from a first-seen key are held. Compare the full SHA-256 fingerprint with the peer over a separate trusted channel before approving. Noise encryption alone does not verify who is on the other end.")
+                            RichText::new("The first message from an unknown key is rejected and not delivered. Compare the full SHA-256 fingerprint over a separate trusted channel, approve the key, then ask the peer to retry. Noise encryption alone does not verify who is on the other end.")
                                 .size(9.0)
                                 .color(Color32::from_rgb(240, 220, 185)),
                         );
@@ -56,10 +56,10 @@ impl CybOs {
                             ui.label(RichText::new(format!("SHA-256 · {}", item.fingerprint)).size(8.0).color(Color32::from_rgb(240, 220, 185)));
                             ui.horizontal(|ui| {
                                 let trust = ui.button(RichText::new("TRUST KEY").strong().color(neon))
-                                    .on_hover_text("Persist this exact public key and release the held message only after you have verified the fingerprint out of band.")
+                                    .on_hover_text("Persist this exact public key only after you have verified the fingerprint out of band. The sender must retry the message after approval.")
                                     .clicked();
                                 let reject = ui.button(RichText::new("REJECT").strong().color(Color32::from_rgb(255, 110, 110)))
-                                    .on_hover_text("Reject this message without trusting or persisting the new peer key.")
+                                    .on_hover_text("Reject this peer without trusting or persisting the new key.")
                                     .clicked();
                                 if trust {
                                     self.approve_pending_secure_peer(index);
