@@ -7,13 +7,14 @@ use librqbit::{AddTorrent, AddTorrentOptions, CreateTorrentOptions, Session, Ses
 use std::{
     fs,
     path::{Path, PathBuf},
-    sync::mpsc::{self, Receiver, Sender, TryRecvError},
+    sync::mpsc::{self, Receiver, SyncSender, TryRecvError, TrySendError},
     sync::Arc,
     thread,
     time::Duration,
 };
 
 const SNAPSHOT_INTERVAL: Duration = Duration::from_millis(750);
+const MAX_PENDING_COMMANDS: usize = 32;
 const MAX_SOURCE_LEN: usize = 64 * 1024;
 const MAX_PATH_LEN: usize = 4096;
 
@@ -49,7 +50,7 @@ enum CybLexCommand {
 }
 
 pub(crate) struct CybLexRuntime {
-    tx: Sender<CybLexCommand>,
+    tx: SyncSender<CybLexCommand>,
     rx: Receiver<CybLexEvent>,
 }
 
@@ -61,7 +62,8 @@ impl Default for CybLexRuntime {
 
 impl CybLexRuntime {
     pub(crate) fn new() -> Self {
-        let (tx, command_rx) = mpsc::channel();
+        // Bound pending UI commands so a busy UI cannot grow an unbounded queue.
+        let (tx, command_rx) = mpsc::sync_channel(MAX_PENDING_COMMANDS);
         let (event_tx, rx) = mpsc::channel();
 
         thread::Builder::new()
@@ -75,12 +77,10 @@ impl CybLexRuntime {
     pub(crate) fn add_source(&self, source: String, output_folder: String) -> Result<(), String> {
         validate_source(&source)?;
         validate_path_text(&output_folder)?;
-        self.tx
-            .send(CybLexCommand::AddSource {
-                source: source.trim().to_string(),
-                output_folder: expand_tilde(output_folder.trim()),
-            })
-            .map_err(|_| "CybLex worker is not running".to_string())
+        self.send_command(CybLexCommand::AddSource {
+            source: source.trim().to_string(),
+            output_folder: expand_tilde(output_folder.trim()),
+        })
     }
 
     pub(crate) fn seed_path(&self, path: String) -> Result<(), String> {
@@ -89,21 +89,28 @@ impl CybLexRuntime {
         if !Path::new(&path).exists() {
             return Err(format!("Path does not exist: {path}"));
         }
-        self.tx
-            .send(CybLexCommand::SeedPath { path })
-            .map_err(|_| "CybLex worker is not running".to_string())
+        self.send_command(CybLexCommand::SeedPath { path })
     }
 
     pub(crate) fn pause(&self, id: usize) -> Result<(), String> {
-        self.tx.send(CybLexCommand::Pause { id }).map_err(|_| "CybLex worker is not running".into())
+        self.send_command(CybLexCommand::Pause { id })
     }
 
     pub(crate) fn resume(&self, id: usize) -> Result<(), String> {
-        self.tx.send(CybLexCommand::Resume { id }).map_err(|_| "CybLex worker is not running".into())
+        self.send_command(CybLexCommand::Resume { id })
     }
 
     pub(crate) fn forget(&self, id: usize, delete_files: bool) -> Result<(), String> {
-        self.tx.send(CybLexCommand::Forget { id, delete_files }).map_err(|_| "CybLex worker is not running".into())
+        self.send_command(CybLexCommand::Forget { id, delete_files })
+    }
+
+    fn send_command(&self, command: CybLexCommand) -> Result<(), String> {
+        self.tx.try_send(command).map_err(|error| match error {
+            TrySendError::Full(_) => {
+                "CybLex command queue is full; wait for the current operation and retry".into()
+            }
+            TrySendError::Disconnected(_) => "CybLex worker is not running".into(),
+        })
     }
 
     pub(crate) fn poll(&self) -> Vec<CybLexEvent> {
