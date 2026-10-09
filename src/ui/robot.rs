@@ -231,7 +231,7 @@ impl CybOs {
                     self.store.set("agent_work_form_criteria", &criteria);
                     self.store.set("agent_work_form_budget", &budget);
 
-                    if ui.button(RichText::new("＋ CREATE PROPOSAL").strong().color(neon)).clicked() {
+                    if ui.button(RichText::new("＋ CREATE PROPOSAL").strong().color(neon)).on_hover_text("Save a task draft with a clear outcome, acceptance criteria, and a budget ceiling. This does not start execution.").clicked() {
                         let parsed_budget = budget.trim().parse::<f64>();
                         let result = parsed_budget
                             .map_err(|_| "Budget must be a valid number".to_string())
@@ -268,7 +268,7 @@ impl CybOs {
                             task.status.as_str(), task.budget_limit, task.estimated_cost
                         )).size(9.0).color(dim));
                         ui.label(RichText::new(&task.acceptance_criteria).size(10.0).color(Color32::from_rgb(145, 190, 165)));
-                        if ui.small_button("＋ NEW WORKFLOW RUN").clicked() {
+                        if ui.small_button("＋ NEW WORKFLOW RUN").on_hover_text("Create a persisted workflow record for this task. It will not run automatically.").clicked() {
                             let input = serde_json::json!({
                                 "task_id": task.id,
                                 "title": task.title,
@@ -297,7 +297,7 @@ impl CybOs {
                                 _ => None,
                             };
                             if let Some((next_status, label)) = next {
-                                if ui.small_button(label).clicked() {
+                                if ui.small_button(label).on_hover_text("Move the task to the next allowed lifecycle state. Review the status before continuing.").clicked() {
                                     let mut changed = task.clone();
                                     if changed.transition(next_status).is_ok() {
                                         update = Some(changed);
@@ -305,7 +305,7 @@ impl CybOs {
                                 }
                             }
                             if matches!(&task.status, Status::Proposed | Status::Ready | Status::InProgress | Status::Rejected)
-                                && ui.small_button("CANCEL").clicked()
+                                && ui.small_button("CANCEL").on_hover_text("Cancel this task proposal or active task when cancellation is allowed.").clicked()
                             {
                                 let mut changed = task.clone();
                                 if changed.transition(Status::Cancelled).is_ok() {
@@ -339,7 +339,7 @@ impl CybOs {
                         ui.label(RichText::new(format!("{} · step {} · updated {}", run.status.as_str(), run.step, run.updated_at)).size(9.0).color(dim));
                         ui.horizontal_wrapped(|ui| {
                             if matches!(&run.status, crate::agent_runtime::WorkflowStatus::Running) {
-                                if ui.small_button("RUN CONTRACT CHECK").clicked() {
+                                if ui.small_button("RUN CONTRACT CHECK").on_hover_text("Run the built-in read-only check for title, description, and acceptance criteria; save its result as a checkpoint.").clicked() {
                                     let mut registry = crate::agent_runtime::CapabilityRegistry::default();
                                     let registration = crate::agent_runtime::CapabilitySpec::new(
                                         "task.validate_contract",
@@ -402,14 +402,14 @@ impl CybOs {
                                 _ => None,
                             };
                             if let Some((status, label)) = next {
-                                if ui.small_button(label).clicked() {
+                                if ui.small_button(label).on_hover_text("Move the task to the next allowed lifecycle state. Review the status before continuing.").clicked() {
                                     let mut changed = run.clone();
                                     if changed.transition(status).is_ok() {
                                         run_update = Some(changed);
                                     }
                                 }
                             }
-                            if matches!(&run.status, Status::Running | Status::Checkpointed) && ui.small_button("CHECKPOINT").clicked() {
+                            if matches!(&run.status, Status::Running | Status::Checkpointed) && ui.small_button("CHECKPOINT").on_hover_text("Save the current workflow state as a checkpoint so the timeline can be inspected or resumed.").clicked() {
                                 let mut changed = run.clone();
                                 let data = serde_json::json!({
                                     "step_before_checkpoint": run.step,
@@ -430,7 +430,7 @@ impl CybOs {
                                 }
                             }
                             if matches!(&run.status, Status::Planned | Status::Running | Status::Checkpointed | Status::Validating | Status::Rejected)
-                                && ui.small_button("CANCEL RUN").clicked()
+                                && ui.small_button("CANCEL RUN").on_hover_text("Mark this workflow run cancelled. This does not undo any external action.").clicked()
                             {
                                 let mut changed = run.clone();
                                 if changed.transition(Status::Cancelled).is_ok() {
