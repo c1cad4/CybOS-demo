@@ -137,12 +137,21 @@ fn spawn_listener_bind(
         while !stop_thread.load(Ordering::Relaxed) {
             match listener.accept() {
                 Ok((mut stream, _addr)) => {
-                    if active.load(Ordering::Acquire) >= MAX_ACTIVE {
+                    // Normalize accepted sockets before read_exact-based framing.
+                    if stream.set_nonblocking(false).is_err() {
+                        continue;
+                    }
+                    // Reserve capacity atomically; load-then-increment can exceed MAX_ACTIVE.
+                    let reserved = active
+                        .fetch_update(Ordering::AcqRel, Ordering::Acquire, |count| {
+                            (count < MAX_ACTIVE).then_some(count + 1)
+                        })
+                        .is_ok();
+                    if !reserved {
                         continue;
                     }
                     let _ = stream.set_read_timeout(Some(TIMEOUT));
                     let _ = stream.set_write_timeout(Some(TIMEOUT));
-                    active.fetch_add(1, Ordering::AcqRel);
                     let tx = tx.clone();
                     let node_id = node_id.clone();
                     let key = private_key.clone();
