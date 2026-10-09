@@ -212,6 +212,12 @@ pub(crate) fn tr(language: Language, key: &str) -> &'static str {
             Language::Russian => "среднее изменение численности наблюдаемых популяций диких животных",
             Language::Hindi => "निगरानी की गई वन्यजीव आबादी की संख्या में औसत बदलाव",
         },
+        (_, "pulse_index_baseline") => match language {
+            Language::English => "2022 index ≈ 27% of the 1970 baseline",
+            Language::Chinese => "2022 年指数约为 1970 年基准的 27%",
+            Language::Russian => "Индекс 2022 года ≈ 27% от уровня 1970 года",
+            Language::Hindi => "2022 सूचकांक ≈ 1970 के आधार स्तर का 27%",
+        },
         (_, "pulse_wildlife_period") => match language {
             Language::English => "1970–2022 · Living Planet Index 2026",
             Language::Chinese => "1970–2022 · 2026 年地球生命指数",
@@ -648,7 +654,7 @@ mod tests {
         for language in Language::ALL {
             assert_eq!(page_title(language, Page::PlanetaryPulse), tr(language, "planetary_pulse"));
             assert!(!page_guidance(language, Page::PlanetaryPulse).0.is_empty());
-            for key in ["pulse_subtitle", "pulse_wildlife", "pulse_air", "pulse_humanity", "pulse_integrity", "pulse_next_integration"] {
+            for key in ["pulse_subtitle", "pulse_wildlife", "pulse_air", "pulse_humanity", "pulse_integrity", "pulse_next_integration", "pulse_index_baseline"] {
                 assert!(!tr(language, key).is_empty(), "missing {key} for {}", language.code());
             }
         }
