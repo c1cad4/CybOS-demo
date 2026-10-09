@@ -53,7 +53,7 @@ impl CybOs {
                 ui.horizontal(|ui| {
                     ui.add(
                         egui::TextEdit::singleline(&mut self.cyblex_source)
-                            .desired_width(560.0)
+                            .desired_width((ui.available_width() - 150.0).max(150.0))
                             .hint_text("magnet:?… or https://…/file.torrent"),
                     );
 
@@ -72,7 +72,7 @@ impl CybOs {
                     ui.label(RichText::new("OUTPUT").size(9.0).color(dim));
                     ui.add(
                         egui::TextEdit::singleline(&mut self.cyblex_download_path)
-                            .desired_width(560.0),
+                            .desired_width((ui.available_width() - 90.0).max(150.0)),
                     );
 
                     if ui.button("DEFAULT").clicked() {
@@ -100,7 +100,7 @@ impl CybOs {
                 ui.horizontal(|ui| {
                     ui.add(
                         egui::TextEdit::singleline(&mut self.cyblex_seed_path)
-                            .desired_width(560.0)
+                            .desired_width((ui.available_width() - 150.0).max(150.0))
                             .hint_text("~/path/to/file-or-folder"),
                     );
 
