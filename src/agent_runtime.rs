@@ -93,6 +93,33 @@ impl CapabilitySpec {
 }
 
 
+/// Built-in, deterministic contract check used to validate a task before real work.
+pub(crate) struct TaskContractValidator;
+
+impl CapabilityHandler for TaskContractValidator {
+    fn execute(&self, input: &serde_json::Value) -> Result<serde_json::Value, String> {
+        let required = ["title", "description", "acceptance_criteria"];
+        let mut missing = Vec::new();
+        for field in required {
+            if input.get(field).and_then(serde_json::Value::as_str)
+                .is_none_or(|value| value.trim().is_empty())
+            {
+                missing.push(field);
+            }
+        }
+        Ok(serde_json::json!({
+            "check": "task_contract",
+            "valid": missing.is_empty(),
+            "missing_fields": missing,
+            "message": if missing.is_empty() {
+                "Task has a title, description, and acceptance criteria."
+            } else {
+                "Task is incomplete; fill in the missing contract fields before execution."
+            }
+        }))
+    }
+}
+
 /// Synchronous tool contract. Implementations should be short-running and side-effect
 /// free unless their capability is explicitly classified and approved.
 pub(crate) trait CapabilityHandler: Send + Sync {
