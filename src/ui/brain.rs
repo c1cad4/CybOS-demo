@@ -66,9 +66,9 @@ impl CybOs {
                 ui.horizontal(|ui| {
                     ui.add(
                         egui::TextEdit::singleline(&mut self.remember_note)
-                            .hint_text("A fact cybOS should keep…").on_hover_text("Enter a short note to save in this device’s local memory.")
+                            .hint_text("A fact cybOS should keep…")
                             .desired_width(ui.available_width() - 130.0),
-                    );
+                    ).on_hover_text("Enter a short note to save in this device’s local memory.");
                     if ui
                         .add(egui::Button::new(RichText::new("STORE").strong().color(neon)).min_size(Vec2::new(110.0, 30.0)))
                         .on_hover_text("Save this note to the local cybOS database. Empty notes are ignored.")
