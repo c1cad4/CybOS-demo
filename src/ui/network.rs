@@ -62,7 +62,16 @@ impl CybOs {
                 } else {
                     ui.label(RichText::new("DISABLED · Set CYBCORE_URL to opt in").size(10.0).color(dim));
                 }
-                ui.label(RichText::new("No automatic network requests or private data uploads.").size(9.0).color(dim));
+                if ui.button("CHECK CYBCORE").clicked() {
+                    let endpoint = configured.clone();
+                    std::thread::spawn(move || {
+                        let client = crate::network::cybcore_client::CybCoreClient::new(endpoint);
+                        let status = client.status();
+                        eprintln!("CybCore probe: {:?}", status);
+                    });
+                    self.notify("CYBCORE CHECK STARTED · SEE APPLICATION LOG");
+                }
+                ui.label(RichText::new("Manual check only. No messages or private data uploaded.").size(9.0).color(dim));
             });
 
         ui.add_space(10.0);
