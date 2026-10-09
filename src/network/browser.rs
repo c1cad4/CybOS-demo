@@ -7,7 +7,7 @@
 
 use std::{
     io::Read,
-    sync::mpsc::{self, Receiver, Sender, TryRecvError},
+    sync::mpsc::{self, Receiver, Sender},
     thread,
     time::Duration,
 };
@@ -82,6 +82,15 @@ impl Default for BrowserRuntime {
 }
 
 impl BrowserRuntime {
+    /// Creates a disconnected runtime for short-lived worker snapshots.
+    pub(crate) fn empty() -> Self {
+        let (tx, command_rx) = mpsc::channel();
+        drop(command_rx);
+        let (event_tx, rx) = mpsc::channel();
+        drop(event_tx);
+        Self { tx, rx }
+    }
+
     pub(crate) fn new() -> Self {
         let (tx, command_rx) = mpsc::channel();
         let (event_tx, rx) = mpsc::channel();
@@ -151,7 +160,7 @@ fn run_worker(command_rx: Receiver<BrowserCommand>, event_tx: Sender<BrowserEven
                     }
                 }
             }
-            Ok(BrowserCommand::Shutdown) | Err(TryRecvError::Disconnected) => break,
+            Ok(BrowserCommand::Shutdown) | Err(mpsc::RecvError) => break,
         }
     }
 }
@@ -329,7 +338,7 @@ fn fetch_text(url: &str, budget: Duration) -> Result<String, String> {
         return Err("Browser request budget expired".into());
     }
 
-    let agent = ureq::Agent::config_builder()
+    let agent: ureq::Agent = ureq::Agent::config_builder()
         .timeout_global(Some(timeout))
         .build()
         .into();
@@ -343,6 +352,7 @@ fn fetch_text(url: &str, budget: Duration) -> Result<String, String> {
     let mut bytes = Vec::new();
     response
         .into_body()
+        .into_reader()
         .take((MAX_BODY_BYTES + 1) as u64)
         .read_to_end(&mut bytes)
         .map_err(|e| format!("Browser body read failed: {e}"))?;
@@ -498,7 +508,8 @@ mod tests {
 
     #[test]
     fn resolves_cyb_ipfs() {
-        let resolved = resolve("cyb://ipfs/bafybeigdyrzt5example");
+        let resolved = resolve("cyb://ipfs/bafybeigdyrzt5example")
+            .expect("valid cyb://ipfs URL should resolve");
         assert_eq!(resolved.route, BrowserRoute::IpfsLocal);
         assert!(resolved.resolved_url.contains("/ipfs/"));
         assert!(resolved.fallback_url.is_some());
@@ -506,7 +517,8 @@ mod tests {
 
     #[test]
     fn resolves_arweave() {
-        let resolved = resolve("ar://AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+        let resolved = resolve("ar://AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
+            .expect("valid ar:// URL should resolve");
         assert_eq!(resolved.route, BrowserRoute::ArweaveGateway);
         assert!(resolved.resolved_url.contains("arweave.net"));
     }

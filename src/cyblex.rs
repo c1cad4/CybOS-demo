@@ -60,6 +60,15 @@ impl Default for CybLexRuntime {
 }
 
 impl CybLexRuntime {
+    /// Creates a disconnected runtime for short-lived RobotCYB worker contexts.
+    pub(crate) fn empty() -> Self {
+        let (tx, command_rx) = mpsc::channel();
+        drop(command_rx);
+        let (event_tx, rx) = mpsc::channel();
+        drop(event_tx);
+        Self { tx, rx }
+    }
+
     pub(crate) fn new() -> Self {
         let (tx, command_rx) = mpsc::channel();
         let (event_tx, rx) = mpsc::channel();
@@ -75,10 +84,16 @@ impl CybLexRuntime {
     pub(crate) fn add_source(&self, source: String, output_folder: String) -> Result<(), String> {
         validate_source(&source)?;
         validate_path_text(&output_folder)?;
+        let output_folder = if output_folder.trim().is_empty() {
+            default_download_dir().display().to_string()
+        } else {
+            expand_tilde(output_folder.trim())
+        };
+
         self.tx
             .send(CybLexCommand::AddSource {
                 source: source.trim().to_string(),
-                output_folder: expand_tilde(output_folder.trim()),
+                output_folder,
             })
             .map_err(|_| "CybLex worker is not running".to_string())
     }
@@ -121,6 +136,23 @@ impl Drop for CybLexRuntime {
     }
 }
 
+async fn create_session(
+    download_dir: PathBuf,
+    persistence_dir: PathBuf,
+) -> Result<Arc<Session>, String> {
+    Session::new_with_opts(
+        download_dir,
+        SessionOptions {
+            persistence: Some(SessionPersistenceConfig::Json {
+                folder: Some(persistence_dir),
+            }),
+            ..Default::default()
+        },
+    )
+    .await
+    .map_err(|e| format!("CybLex session init: {e:#}"))
+}
+
 fn run_worker(command_rx: Receiver<CybLexCommand>, event_tx: Sender<CybLexEvent>) {
     let runtime = match tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)
@@ -158,20 +190,18 @@ fn run_worker(command_rx: Receiver<CybLexCommand>, event_tx: Sender<CybLexEvent>
                 match command_rx.try_recv() {
                     Ok(CybLexCommand::AddSource { source, output_folder }) => {
                         if session.is_none() {
-                            session = Some(
-                                Session::new_with_opts(
-                                    download_dir.clone(),
-                                    SessionOptions {
-                                        persistence: Some(SessionPersistenceConfig::Json {
-                                            folder: Some(persistence_dir.clone()),
-                                        }),
-                                        ..Default::default()
-                                    },
-                                )
-                                    .await
-                                    .map_err(|e| format!("CybLex session init: {e:#}"))?,
-                            );
-                            let _ = event_tx_inner.send(CybLexEvent::Status("CYBLEX · P2P SESSION ACTIVE".into()));
+                            match create_session(download_dir.clone(), persistence_dir.clone()).await {
+                                Ok(created) => {
+                                    session = Some(created);
+                                    let _ = event_tx_inner.send(CybLexEvent::Status(
+                                        "CYBLEX · P2P SESSION ACTIVE".into()
+                                    ));
+                                }
+                                Err(error) => {
+                                    let _ = event_tx_inner.send(CybLexEvent::Error(error));
+                                    continue;
+                                }
+                            }
                         }
 
                         let active = session.as_ref().expect("session initialized");
@@ -202,12 +232,18 @@ fn run_worker(command_rx: Receiver<CybLexCommand>, event_tx: Sender<CybLexEvent>
                     }
                     Ok(CybLexCommand::SeedPath { path }) => {
                         if session.is_none() {
-                            session = Some(
-                                Session::new(download_dir.clone())
-                                    .await
-                                    .map_err(|e| format!("CybLex session init: {e:#}"))?,
-                            );
-                            let _ = event_tx_inner.send(CybLexEvent::Status("CYBLEX · P2P SESSION ACTIVE".into()));
+                            match create_session(download_dir.clone(), persistence_dir.clone()).await {
+                                Ok(created) => {
+                                    session = Some(created);
+                                    let _ = event_tx_inner.send(CybLexEvent::Status(
+                                        "CYBLEX · P2P SESSION ACTIVE".into()
+                                    ));
+                                }
+                                Err(error) => {
+                                    let _ = event_tx_inner.send(CybLexEvent::Error(error));
+                                    continue;
+                                }
+                            }
                         }
 
                         let active = session.as_ref().expect("session initialized");
