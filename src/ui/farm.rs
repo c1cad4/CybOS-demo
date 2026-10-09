@@ -291,6 +291,7 @@ impl CybOs {
                                 )
                                 .min_size(Vec2::new(250.0, 36.0)),
                             )
+                            .on_hover_text("Create a payment request for 50 eggs for pickup only. Verify the wallet and amount in your own wallet before approving any transaction.")
                             .clicked()
                         {
                             self.payment_uri = format!(
