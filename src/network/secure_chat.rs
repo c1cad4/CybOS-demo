@@ -615,8 +615,10 @@ mod tests {
                 Err(std::sync::mpsc::TryRecvError::Empty) if Instant::now() < deadline => {
                     thread::sleep(Duration::from_millis(20));
                 }
+                Err(std::sync::mpsc::TryRecvError::Empty) => {
+                    panic!("secure listener timed out")
+                }
                 Err(error) => panic!("secure listener did not receive message: {error:?}"),
-                _ => panic!("secure listener timed out"),
             }
         };
 
@@ -674,8 +676,10 @@ mod tests {
                 Err(std::sync::mpsc::TryRecvError::Empty) if Instant::now() < deadline => {
                     thread::sleep(Duration::from_millis(20));
                 }
+                Err(std::sync::mpsc::TryRecvError::Empty) => {
+                    panic!("secure listener timed out")
+                }
                 Err(error) => panic!("secure listener did not receive message: {error:?}"),
-                _ => panic!("secure listener timed out"),
             }
         };
 
