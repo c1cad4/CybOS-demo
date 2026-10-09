@@ -4,14 +4,14 @@ CybCore is a **separate, opt-in** backend for collaboration, remote workers, Nos
 
 ## First deployable milestone
 
-This directory introduces a Compose stack: PostgreSQL 16, Redis 7, MinIO and a minimal Rust Axum API with database migrations and internal /healthz and /readyz endpoints. **It does not yet provide authenticated application APIs, a Nostr relay, E2E chat bridge, or worker execution.** None of these services should be exposed to the public internet as configured.
+This directory introduces a Compose stack: PostgreSQL 16, Redis 7, MinIO and a minimal Rust Axum API with database migrations, public /healthz liveness and bearer-token-protected /readyz database readiness endpoints. **It does not yet provide authenticated application APIs, a Nostr relay, E2E chat bridge, or worker execution.** None of these services should be exposed to the public internet as configured.
 
 Prerequisites: Docker Engine with Compose plugin. From the repository root:
 
 ```sh
 cd cybcore
 cp .env.example .env
-# Edit .env: replace ALL placeholder credentials with unique strong secrets.
+# Edit .env: replace ALL placeholder credentials and CYBCORE_STATUS_TOKEN with unique strong secrets.
 docker compose up -d
 docker compose ps
 docker compose down
@@ -36,3 +36,7 @@ State persists in named volumes. `docker compose down -v` **deletes** local data
 4. Agent worker queues, bounded execution, retry/ACK semantics and metrics.
 5. Optional Nostr relay and encrypted CybChat delivery; test two-node offline/online recovery.
 6. Reproducible macOS .app release and end-to-end smoke tests.
+
+## Internal API diagnostics
+
+The API listens on port 8080 **inside** the internal Docker network; no host port is exposed. `/healthz` reports process liveness without database access. `/readyz` checks PostgreSQL and requires `Authorization: Bearer <CYBCORE_STATUS_TOKEN>`. Neither endpoint is a user-facing application API. The token is an internal diagnostic credential, **not** a replacement for user/node authentication or TLS. Never commit `.env` or print credentials in logs.
