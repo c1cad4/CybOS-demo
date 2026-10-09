@@ -440,6 +440,25 @@ mod tests {
     }
 
     #[test]
+    fn delete_and_compact_removes_legacy_secret_row() {
+        let dir = std::env::temp_dir().join(format!("cybos-store-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("cybos.db");
+        let conn = Connection::open(&path).unwrap();
+        conn.execute_batch(
+            "PRAGMA journal_mode=WAL;
+             CREATE TABLE kv(key TEXT PRIMARY KEY, value TEXT NOT NULL);
+             INSERT INTO kv(key,value) VALUES('noise_static_private_hex','legacy-secret');",
+        ).unwrap();
+        let store = Store { path: path.clone(), conn };
+
+        store.try_delete_and_compact("noise_static_private_hex").unwrap();
+        assert!(store.get("noise_static_private_hex").is_none());
+        drop(store);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
     fn secure_message_id_claim_is_idempotent() {
         let conn = Connection::open_in_memory().expect("in-memory sqlite");
         conn.execute_batch(
