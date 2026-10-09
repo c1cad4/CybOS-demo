@@ -340,11 +340,12 @@ fn fetch_text(url: &str, budget: Duration) -> Result<String, String> {
         .call()
         .map_err(|e| format!("Browser fetch failed: {e}"))?;
 
-    let mut bytes = Vec::new();
-    response
-        .into_body()
-        .take((MAX_BODY_BYTES + 1) as u64)
-        .read_to_end(&mut bytes)
+    let mut response = response;
+    let bytes = response
+        .body_mut()
+        .with_config()
+        .limit((MAX_BODY_BYTES + 1) as u64)
+        .read_to_vec()
         .map_err(|e| format!("Browser body read failed: {e}"))?;
 
     if bytes.len() > MAX_BODY_BYTES {
