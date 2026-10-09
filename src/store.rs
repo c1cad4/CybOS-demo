@@ -4,7 +4,7 @@ use std::{fs, path::PathBuf, time::Duration};
 use uuid::Uuid;
 
 use crate::agent_economy::{AgentManifest, AgentTask, KnowledgeRecord, LedgerEntry};
-use crate::agent_runtime::{CapabilitySpec, WorkflowCheckpoint, WorkflowRun};
+use crate::agent_runtime::{CapabilitySpec, WorkflowArtifact, WorkflowCheckpoint, WorkflowRun};
 use crate::models::{Event, GraphLink, GraphNode, Memory};
 
 pub(crate) struct Store {
@@ -138,6 +138,11 @@ impl Store {
                 created_at TEXT NOT NULL, payload TEXT NOT NULL
             );
             CREATE INDEX IF NOT EXISTS idx_workflow_checkpoints_run_step ON workflow_checkpoints(run_id, step);
+            CREATE TABLE IF NOT EXISTS workflow_artifacts(
+                id TEXT PRIMARY KEY, run_id TEXT NOT NULL, name TEXT NOT NULL,
+                media_type TEXT NOT NULL, created_at TEXT NOT NULL, payload TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_workflow_artifacts_run ON workflow_artifacts(run_id, created_at);
             "#,
         )
         .expect("cannot initialize database");
@@ -560,6 +565,40 @@ impl Store {
             .filter_map(|payload| serde_json::from_str::<WorkflowCheckpoint>(&payload).ok()).collect()
     }
 
+    /// Save a bounded artifact only when its parent workflow run exists.
+    /// Artifacts are append-only; duplicate IDs fail rather than overwrite provenance.
+    pub(crate) fn append_workflow_artifact(&self, artifact: &WorkflowArtifact) -> Result<(), String> {
+        artifact.validate()?;
+        let run_exists = self.conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM workflow_runs WHERE id=?1)",
+            [&artifact.run_id],
+            |row| row.get::<_, bool>(0),
+        ).map_err(|error| format!("cannot verify artifact workflow: {error}"))?;
+        if !run_exists {
+            return Err("cannot save artifact: parent workflow run does not exist".into());
+        }
+        let payload = serde_json::to_string(artifact)
+            .map_err(|error| format!("cannot serialize workflow artifact: {error}"))?;
+        self.conn.execute(
+            "INSERT INTO workflow_artifacts(id,run_id,name,media_type,created_at,payload)
+             VALUES(?1,?2,?3,?4,?5,?6)",
+            params![artifact.id, artifact.run_id, artifact.name, artifact.media_type, artifact.created_at, payload],
+        ).map_err(|error| format!("cannot append workflow artifact: {error}"))?;
+        Ok(())
+    }
+
+    pub(crate) fn workflow_artifacts(&self, run_id: &str) -> Vec<WorkflowArtifact> {
+        let mut st = match self.conn.prepare(
+            "SELECT payload FROM workflow_artifacts WHERE run_id=?1 ORDER BY created_at ASC, rowid ASC"
+        ) {
+            Ok(st) => st, Err(_) => return Vec::new(),
+        };
+        st.query_map([run_id], |row| row.get::<_, String>(0))
+            .ok().into_iter().flatten().filter_map(Result::ok)
+            .filter_map(|payload| serde_json::from_str::<WorkflowArtifact>(&payload).ok())
+            .collect()
+    }
+
     pub(crate) fn database_integrity(&self) -> String {
         self.conn
             .query_row("PRAGMA integrity_check(1)", [], |row| row.get::<_, String>(0))
@@ -722,13 +761,13 @@ mod tests {
 
     #[test]
     fn workflow_and_capability_records_round_trip() {
-        use crate::agent_runtime::{CapabilityRisk, CapabilitySpec, WorkflowCheckpoint, WorkflowRun, WorkflowStatus};
+        use crate::agent_runtime::{CapabilityRisk, CapabilitySpec, WorkflowArtifact, WorkflowCheckpoint, WorkflowRun, WorkflowStatus};
 
         let conn = Connection::open_in_memory().expect("in-memory sqlite");
         conn.execute_batch(
             "CREATE TABLE agent_capabilities(id TEXT PRIMARY KEY, risk TEXT NOT NULL, requires_approval INTEGER NOT NULL, payload TEXT NOT NULL);
              CREATE TABLE workflow_runs(id TEXT PRIMARY KEY, workflow_name TEXT NOT NULL, status TEXT NOT NULL, updated_at TEXT NOT NULL, payload TEXT NOT NULL);
-             CREATE TABLE workflow_checkpoints(id TEXT PRIMARY KEY, run_id TEXT NOT NULL, step INTEGER NOT NULL, created_at TEXT NOT NULL, payload TEXT NOT NULL);"
+             CREATE TABLE workflow_checkpoints(id TEXT PRIMARY KEY, run_id TEXT NOT NULL, step INTEGER NOT NULL, created_at TEXT NOT NULL, payload TEXT NOT NULL); CREATE TABLE workflow_artifacts(id TEXT PRIMARY KEY, run_id TEXT NOT NULL, name TEXT NOT NULL, media_type TEXT NOT NULL, created_at TEXT NOT NULL, payload TEXT NOT NULL);"
         ).expect("workflow schema");
         let store = Store { path: std::path::PathBuf::from(":memory:"), conn };
 
@@ -750,6 +789,17 @@ mod tests {
         assert_eq!(store.workflow_runs().len(), 1);
         assert_eq!(store.workflow_runs()[0].workflow_name, "farm_report");
         assert_eq!(store.workflow_checkpoints(&run.id).len(), 1);
+        let artifact = WorkflowArtifact::new(
+            run.id.clone(), "contract-check.json", "application/json",
+            serde_json::json!({"valid": true}).to_string(),
+        ).expect("valid artifact");
+        store.append_workflow_artifact(&artifact).expect("append artifact");
+        let artifacts = store.workflow_artifacts(&run.id);
+        assert_eq!(artifacts.len(), 1);
+        assert_eq!(artifacts[0].name, "contract-check.json");
+        assert!(store.append_workflow_artifact(&WorkflowArtifact::new(
+            "missing-run", "orphan.txt", "text/plain", "not allowed"
+        ).expect("well-formed artifact")).is_err());
     }
 
     #[test]
