@@ -229,9 +229,7 @@ fn run_worker(command_rx: Receiver<CybLexCommand>, event_tx: Sender<CybLexEvent>
 
                                 let sidecar = torrent.as_bytes()
                                     .map_err(|e| e.to_string())
-                                    .and_then(|bytes| {
-                                        fs::write(&torrent_path, &bytes).map_err(|e| e.to_string())
-                                    });
+                                    .and_then(|bytes| write_sidecar_new(&torrent_path, &bytes));
 
                                 let detail = match sidecar {
                                     Ok(()) => format!(
@@ -412,6 +410,27 @@ fn expand_tilde(path: &str) -> String {
     path.into()
 }
 
+/// Never overwrite an existing sidecar or an unrelated user file.
+fn write_sidecar_new(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    use std::io::Write;
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .map_err(|error| {
+            if error.kind() == std::io::ErrorKind::AlreadyExists {
+                format!("refusing to overwrite existing torrent sidecar: {}", path.display())
+            } else {
+                format!("cannot create torrent sidecar {}: {error}", path.display())
+            }
+        })?;
+    file.write_all(bytes)
+        .map_err(|error| format!("cannot write torrent sidecar {}: {error}", path.display()))?;
+    file.sync_all()
+        .map_err(|error| format!("cannot sync torrent sidecar {}: {error}", path.display()))?;
+    Ok(())
+}
+
 fn default_download_dir() -> PathBuf {
     std::env::var("HOME")
         .map(PathBuf::from)
@@ -439,6 +458,55 @@ fn torrent_sidecar_path(path: &Path) -> PathBuf {
 
 #[cfg(test)]
 mod tests {
+    use super::{validate_source, validate_path_text, write_sidecar_new};
+    use std::fs;
+
+    #[test]
+    fn rejects_empty_and_unsupported_sources() {
+        assert!(validate_source(" ").is_err());
+        assert!(validate_source("file:///etc/passwd").is_err());
+        assert!(validate_source("ftp://example.org/a.torrent").is_err());
+    }
+
+    #[test]
+    fn accepts_magnet_and_https_torrent_sources() {
+        assert!(validate_source("magnet:?xt=urn:btih:abc").is_ok());
+        assert!(validate_source("https://example.org/file.torrent").is_ok());
+    }
+
+    #[test]
+    fn rejects_empty_or_oversized_paths() {
+        assert!(validate_path_text("").is_err());
+        assert!(validate_path_text(&"x".repeat(4097)).is_err());
+        assert!(validate_path_text("~/Downloads/CybLex").is_ok());
+    }
+
+    #[test]
+    fn sidecar_writer_never_overwrites_existing_file() {
+        let dir = std::env::temp_dir().join(format!("cyblex-sidecar-test-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("content.torrent");
+        fs::write(&path, b"existing").unwrap();
+
+        let error = write_sidecar_new(&path, b"replacement").unwrap_err();
+        assert!(error.contains("refusing to overwrite"));
+        assert_eq!(fs::read(&path).unwrap(), b"existing");
+
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn sidecar_writer_creates_file_atomically_without_overwriting() {
+        let dir = std::env::temp_dir().join(format!("cyblex-sidecar-test-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("content.torrent");
+
+        write_sidecar_new(&path, b"torrent-data").unwrap();
+        assert_eq!(fs::read(&path).unwrap(), b"torrent-data");
+
+        fs::remove_dir_all(&dir).unwrap();
+    }
+}
     use super::{validate_source, MAX_SOURCE_LEN};
 
     #[test]
