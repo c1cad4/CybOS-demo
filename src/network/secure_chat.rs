@@ -77,13 +77,7 @@ impl Drop for Listener {
 
 pub(crate) fn load_or_create_static_key(store: &crate::store::Store) -> Result<Vec<u8>, String> {
     if let Some(encoded) = store.get("noise_static_private_hex") {
-        if encoded.len() == 64 && encoded.chars().all(|c| c.is_ascii_hexdigit()) {
-            let mut key = Vec::with_capacity(32);
-            for i in (0..encoded.len()).step_by(2) {
-                key.push(u8::from_str_radix(&encoded[i..i + 2], 16).map_err(|e| e.to_string())?);
-            }
-            return Ok(key);
-        }
+        return decode_static_key(&encoded);
     }
 
     let params = PATTERN.parse().map_err(|e| format!("noise params: {e}"))?;
@@ -92,7 +86,21 @@ pub(crate) fn load_or_create_static_key(store: &crate::store::Store) -> Result<V
         .map_err(|e| format!("noise key generation: {e}"))?;
     let encoded = keypair.private.iter().map(|b| format!("{b:02x}")).collect::<String>();
     store.set("noise_static_private_hex", &encoded);
+
+    // Store::set intentionally hides database errors for ordinary preferences.
+    // A node identity is different: never start with a key that won't survive restart.
+    if store.get("noise_static_private_hex").as_deref() != Some(encoded.as_str()) {
+        return Err("could not persist Noise identity key; refusing to start with a temporary identity".into());
+    }
+
     Ok(keypair.private)
+}
+
+fn decode_static_key(encoded: &str) -> Result<Vec<u8>, String> {
+    if encoded.len() != 64 || !encoded.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err("stored Noise identity key is malformed; refusing to replace node identity".into());
+    }
+    decode_hex(encoded).map_err(|_| "stored Noise identity key is malformed; refusing to replace node identity".into())
 }
 
 pub(crate) fn spawn_listener(node_id: String, private_key: Vec<u8>) -> Listener {
@@ -438,10 +446,18 @@ fn short_hash(bytes: &[u8]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{decode_hex, encode_hex, short_hash, spawn_listener_at, send_on_port, SecureSendStatus, SecureEvent, SecureReply, PATTERN};
+    use super::{decode_hex, decode_static_key, encode_hex, short_hash, spawn_listener_at, send_on_port, SecureSendStatus, SecureEvent, SecureReply, PATTERN};
     use snow::{params::NoiseParams, Builder};
     use std::thread;
     use std::time::{Duration, Instant};
+
+    #[test]
+    fn stored_identity_key_requires_exactly_32_bytes_of_hex() {
+        assert_eq!(decode_static_key(&"ab".repeat(32)).unwrap(), vec![0xab; 32]);
+        assert!(decode_static_key(&"a".repeat(63)).is_err());
+        assert!(decode_static_key(&"g".repeat(64)).is_err());
+        assert!(decode_static_key("").is_err());
+    }
 
     #[test]
     fn hex_roundtrip() {
