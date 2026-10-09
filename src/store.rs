@@ -3,7 +3,7 @@ use rusqlite::{params, Connection};
 use std::{fs, path::PathBuf, time::Duration};
 use uuid::Uuid;
 
-use crate::agent_economy::{AgentTask, LedgerEntry};
+use crate::agent_economy::{AgentManifest, AgentTask, KnowledgeRecord, LedgerEntry};
 use crate::models::{Event, GraphLink, GraphNode, Memory};
 
 pub(crate) struct Store {
@@ -104,6 +104,24 @@ impl Store {
 
             CREATE INDEX IF NOT EXISTS idx_agent_ledger_timestamp
                 ON agent_ledger(timestamp);
+
+            CREATE TABLE IF NOT EXISTS agent_manifests(
+                id TEXT PRIMARY KEY,
+                display_name TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                payload TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS knowledge_records(
+                id TEXT PRIMARY KEY,
+                title TEXT NOT NULL,
+                source_uri TEXT NOT NULL,
+                collected_at TEXT NOT NULL,
+                payload TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_knowledge_records_source
+                ON knowledge_records(source_uri);
             "#,
         )
         .expect("cannot initialize database");
@@ -321,6 +339,69 @@ impl Store {
         inserted
     }
 
+    pub(crate) fn save_agent_manifest(&self, manifest: &AgentManifest) -> Result<(), String> {
+        manifest.validate()?;
+        let payload = serde_json::to_string(manifest)
+            .map_err(|error| format!("cannot serialize agent manifest: {error}"))?;
+        self.conn.execute(
+            "INSERT INTO agent_manifests(id,display_name,created_at,payload)
+             VALUES(?1,?2,?3,?4)
+             ON CONFLICT(id) DO UPDATE SET
+                 display_name=excluded.display_name,
+                 payload=excluded.payload",
+            params![manifest.id, manifest.display_name, manifest.created_at, payload],
+        ).map_err(|error| format!("cannot save agent manifest: {error}"))?;
+        Ok(())
+    }
+
+    pub(crate) fn agent_manifests(&self) -> Vec<AgentManifest> {
+        let mut st = match self.conn.prepare(
+            "SELECT payload FROM agent_manifests ORDER BY created_at DESC LIMIT 500"
+        ) {
+            Ok(st) => st,
+            Err(_) => return Vec::new(),
+        };
+        st.query_map([], |row| row.get::<_, String>(0))
+            .ok()
+            .into_iter()
+            .flatten()
+            .filter_map(Result::ok)
+            .filter_map(|payload| serde_json::from_str::<AgentManifest>(&payload).ok())
+            .collect()
+    }
+
+    pub(crate) fn save_knowledge_record(&self, record: &KnowledgeRecord) -> Result<(), String> {
+        record.validate()?;
+        let payload = serde_json::to_string(record)
+            .map_err(|error| format!("cannot serialize knowledge record: {error}"))?;
+        self.conn.execute(
+            "INSERT INTO knowledge_records(id,title,source_uri,collected_at,payload)
+             VALUES(?1,?2,?3,?4,?5)
+             ON CONFLICT(id) DO UPDATE SET
+                 title=excluded.title,
+                 source_uri=excluded.source_uri,
+                 payload=excluded.payload",
+            params![record.id, record.title, record.source_uri, record.collected_at, payload],
+        ).map_err(|error| format!("cannot save knowledge record: {error}"))?;
+        Ok(())
+    }
+
+    pub(crate) fn knowledge_records(&self) -> Vec<KnowledgeRecord> {
+        let mut st = match self.conn.prepare(
+            "SELECT payload FROM knowledge_records ORDER BY collected_at DESC LIMIT 2000"
+        ) {
+            Ok(st) => st,
+            Err(_) => return Vec::new(),
+        };
+        st.query_map([], |row| row.get::<_, String>(0))
+            .ok()
+            .into_iter()
+            .flatten()
+            .filter_map(Result::ok)
+            .filter_map(|payload| serde_json::from_str::<KnowledgeRecord>(&payload).ok())
+            .collect()
+    }
+
     /// Persist a validated task contract. No work is executed by this method.
     pub(crate) fn save_agent_task(&self, task: &AgentTask) -> Result<(), String> {
         task.validate()?;
@@ -514,6 +595,42 @@ mod tests {
         assert_eq!(ledger.len(), 1);
         assert_eq!(ledger[0].amount, 12.0);
         assert_eq!(ledger[0].currency, "USD");
+    }
+
+    #[test]
+    fn agent_manifest_and_knowledge_provenance_round_trip() {
+        use crate::agent_economy::{AgentManifest, KnowledgeRecord};
+
+        let conn = Connection::open_in_memory().expect("in-memory sqlite");
+        conn.execute_batch(
+            "CREATE TABLE agent_manifests(
+                id TEXT PRIMARY KEY, display_name TEXT NOT NULL, created_at TEXT NOT NULL, payload TEXT NOT NULL
+             );
+             CREATE TABLE knowledge_records(
+                id TEXT PRIMARY KEY, title TEXT NOT NULL, source_uri TEXT NOT NULL,
+                collected_at TEXT NOT NULL, payload TEXT NOT NULL
+             );",
+        ).expect("schema");
+        let store = Store {
+            path: std::path::PathBuf::from(":memory:"),
+            conn,
+        };
+
+        let manifest = AgentManifest::new(
+            "RobotCYB", "Generate farm reports", vec!["read_observations".into()],
+            vec!["observe".into(), "create".into()], 100, false,
+        ).expect("manifest");
+        store.save_agent_manifest(&manifest).expect("save manifest");
+        assert_eq!(store.agent_manifests()[0].display_name, "RobotCYB");
+
+        let record = KnowledgeRecord::new(
+            "Soil sensor observation", "cicadafarm://soil/zone-a", "sensor",
+            "owner-provided", 0.9, "", "Local observation",
+        ).expect("knowledge record");
+        store.save_knowledge_record(&record).expect("save knowledge");
+        let loaded = store.knowledge_records();
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded[0].source_uri, "cicadafarm://soil/zone-a");
     }
 
     #[test]
