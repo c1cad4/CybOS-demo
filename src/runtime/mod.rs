@@ -100,22 +100,6 @@ impl RuntimeCell {
         }
     }
 
-    fn tick(&mut self) {
-        let started = Instant::now();
-
-        // The scheduler tick itself is deliberately tiny. Real I/O and model
-        // calls are submitted to worker threads and only polled by the cell.
-        self.heartbeat = Instant::now();
-        self.runs = self.runs.saturating_add(1);
-        self.last_run = started.elapsed();
-
-        if self.last_run > self.budget {
-            self.status = "OVER_BUDGET";
-            self.overruns = self.overruns.saturating_add(1);
-        }
-
-    }
-
     pub(crate) fn heartbeat_age_ms(&self) -> u128 {
         self.heartbeat.elapsed().as_millis()
     }
@@ -154,9 +138,8 @@ impl Runtime {
         self.last_tick = Instant::now();
         self.ticks = self.ticks.saturating_add(1);
 
-        for cell in &mut self.cells {
-            cell.tick();
-        }
+        // Do not manufacture per-cell heartbeats or run counts here. A cell's
+        // heartbeat changes only when its own status is updated by a subsystem.
     }
 
     pub(crate) fn cell(&self, id: &str) -> Option<&RuntimeCell> {
@@ -212,14 +195,25 @@ mod tests {
     }
 
     #[test]
-    fn tick_updates_heartbeats_and_run_counters() {
+    fn scheduler_ticks_do_not_fake_cell_heartbeats_or_runs() {
         let mut runtime = Runtime::new();
         runtime.tick();
         assert_eq!(runtime.ticks, 1);
-        assert!(runtime.cells.iter().all(|cell| cell.runs == 1));
-        assert!(runtime.cells.iter().all(|cell| cell.heartbeat_age_ms() < 1000));
+        assert!(runtime.cells.iter().all(|cell| cell.runs == 0));
         assert!(runtime.cells.iter().all(|cell| cell.status == "IDLE"));
         assert_eq!(runtime.healthy_count(), 0);
+    }
+
+    #[test]
+    fn cell_heartbeat_changes_only_on_explicit_status_update() {
+        let mut runtime = Runtime::new();
+        let initial_age = runtime.cell("CYBCHAT").unwrap().heartbeat_age_ms();
+        runtime.tick();
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        assert!(runtime.cell("CYBCHAT").unwrap().heartbeat_age_ms() >= initial_age);
+
+        runtime.set_status("CYBCHAT", "READY");
+        assert!(runtime.cell("CYBCHAT").unwrap().heartbeat_age_ms() < 1000);
     }
 
     #[test]
