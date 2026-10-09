@@ -5,14 +5,53 @@
 //! model work itself; those operations stay in bounded worker threads.
 
 use crate::store::Store;
+use std::collections::VecDeque;
+use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 use uuid::Uuid;
+
+const WORKER_TRACE_LIMIT: usize = 100;
+static WORKER_TRACES: OnceLock<Mutex<VecDeque<WorkerTrace>>> = OnceLock::new();
+
+#[derive(Clone, Debug)]
+pub(crate) struct WorkerTrace {
+    pub(crate) id: String,
+    pub(crate) cell: String,
+    pub(crate) started_at: String,
+    pub(crate) elapsed_ms: u128,
+    pub(crate) budget_ms: u128,
+    pub(crate) status: String,
+}
+
+fn trace_store() -> &'static Mutex<VecDeque<WorkerTrace>> {
+    WORKER_TRACES.get_or_init(|| Mutex::new(VecDeque::new()))
+}
+
+fn record_worker_trace(trace: WorkerTrace) {
+    if let Ok(mut traces) = trace_store().lock() {
+        if let Some(existing) = traces.iter_mut().find(|item| item.id == trace.id) {
+            *existing = trace;
+        } else {
+            traces.push_front(trace);
+        }
+        while traces.len() > WORKER_TRACE_LIMIT {
+            traces.pop_back();
+        }
+    }
+}
+
+pub(crate) fn recent_worker_traces() -> Vec<WorkerTrace> {
+    trace_store().lock().map(|traces| traces.iter().cloned().collect()).unwrap_or_default()
+}
 
 #[derive(Clone, Debug)]
 pub(crate) struct WorkerContract {
     pub(crate) cell: &'static str,
     pub(crate) started: Instant,
     pub(crate) deadline: Instant,
+    task_id: String,
+    started_at: String,
+    budget: Duration,
     status: std::sync::Arc<std::sync::Mutex<&'static str>>,
     heartbeat: std::sync::Arc<std::sync::Mutex<Instant>>,
     runs: std::sync::Arc<std::sync::atomic::AtomicU64>,
@@ -21,10 +60,23 @@ pub(crate) struct WorkerContract {
 impl WorkerContract {
     pub(crate) fn new(cell: &'static str, budget: Duration) -> Self {
         let now = Instant::now();
+        let task_id = Uuid::new_v4().to_string();
+        let started_at = chrono::Local::now().to_rfc3339();
+        record_worker_trace(WorkerTrace {
+            id: task_id.clone(),
+            cell: cell.to_string(),
+            started_at: started_at.clone(),
+            elapsed_ms: 0,
+            budget_ms: budget.as_millis(),
+            status: "RUNNING".into(),
+        });
         Self {
             cell,
             started: now,
             deadline: now + budget,
+            task_id,
+            started_at,
+            budget,
             status: std::sync::Arc::new(std::sync::Mutex::new("RUNNING")),
             heartbeat: std::sync::Arc::new(std::sync::Mutex::new(now)),
             runs: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(1)),
@@ -51,6 +103,14 @@ impl WorkerContract {
             *value = status;
         }
         self.heartbeat();
+        record_worker_trace(WorkerTrace {
+            id: self.task_id.clone(),
+            cell: self.cell.to_string(),
+            started_at: self.started_at.clone(),
+            elapsed_ms: self.started.elapsed().as_millis(),
+            budget_ms: self.budget.as_millis(),
+            status: status.to_string(),
+        });
     }
 
     pub(crate) fn status(&self) -> &'static str {
