@@ -371,14 +371,29 @@ pub(crate) fn validate_source(source: &str) -> Result<(), String> {
     }
 
     let lower = source.to_ascii_lowercase();
-    if lower.starts_with("magnet:?")
-        || lower.starts_with("http://")
-        || lower.starts_with("https://")
-    {
-        Ok(())
-    } else {
-        Err("CybLex accepts magnet:, http:// or https:// torrent sources".into())
+    if let Some(query) = lower.strip_prefix("magnet:?") {
+        let has_topic = query.split('&').any(|part| {
+            part.strip_prefix("xt=")
+                .is_some_and(|topic| topic.starts_with("urn:btih:") || topic.starts_with("urn:btmh:"))
+        });
+        return if has_topic {
+            Ok(())
+        } else {
+            Err("Magnet link must include a BitTorrent xt=urn:btih: or xt=urn:btmh: topic".into())
+        };
     }
+
+    let authority = lower
+        .strip_prefix("https://")
+        .or_else(|| lower.strip_prefix("http://"));
+    if let Some(authority) = authority {
+        let host = authority.split(['/', '?', '#']).next().unwrap_or_default();
+        if !host.is_empty() && !host.bytes().any(|byte| byte.is_ascii_whitespace()) {
+            return Ok(());
+        }
+    }
+
+    Err("CybLex accepts a valid magnet link or an HTTP(S) URL with a host".into())
 }
 
 fn validate_path_text(path: &str) -> Result<(), String> {
@@ -435,13 +450,18 @@ mod tests {
 
     #[test]
     fn accepts_magnet_sources() {
-        assert!(validate_source("magnet:?xt=urn:btih:abc").is_ok());
+        assert!(validate_source("magnet:?xt=urn:btih:0123456789abcdef").is_ok());
+        assert!(validate_source("magnet:?dn=missing-topic").is_err());
+        assert!(validate_source("magnet:?xt=urn:btmh:1220abcd").is_ok());
     }
 
     #[test]
     fn accepts_torrent_urls() {
         assert!(validate_source("https://example.com/file.torrent").is_ok());
         assert!(validate_source("http://127.0.0.1/file.torrent").is_ok());
+        assert!(validate_source("https://").is_err());
+        assert!(validate_source("http:///file.torrent").is_err());
+        assert!(validate_source("https://example.com /file.torrent").is_err());
     }
 
     #[test]
