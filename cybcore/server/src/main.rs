@@ -1,4 +1,5 @@
 mod events;
+mod acl;
 use axum::{extract::State, http::{HeaderMap, StatusCode}, routing::{get, post}, Json, Router};
 use serde::Serialize;
 use sqlx::PgPool;
@@ -69,6 +70,11 @@ async fn ingest_event(
         .as_millis();
     let now_ms = i64::try_from(now_ms).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     event.verify(now_ms).map_err(|_| StatusCode::BAD_REQUEST)?;
+    if !acl::may_publish(&state.db, &event.author_key, &event.kind)
+        .await
+        .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)? {
+        return Err(StatusCode::FORBIDDEN);
+    }
     let inserted = sqlx::query(
         "INSERT INTO signed_events (author_key, event_id, kind, created_at_ms, content, signature) \
          VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING",
