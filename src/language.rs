@@ -182,7 +182,7 @@ pub(crate) fn tr(language: Language, key: &str) -> &'static str {
             Language::Russian => "ROBOTCYB",
             Language::Hindi => "ROBOTCYB रोबोट",
         },
-        (_, "planetary_pulse") => match language {
+        (_, "offline_atlas") => match language {\n            Language::English => "OFFLINE ATLAS",\n            Language::Chinese => "离线地图集",\n            Language::Russian => "ОФЛАЙН-АТЛАС",\n            Language::Hindi => "ऑफ़लाइन एटलस",\n        },\n        (_, "planetary_pulse") => match language {
             Language::English => "PLANETARY PULSE",
             Language::Chinese => "地球脉搏",
             Language::Russian => "ПУЛЬС ПЛАНЕТЫ",
