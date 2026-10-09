@@ -177,14 +177,26 @@ impl CybOs {
 
                         if torrent.paused {
                             if ui.button("RESUME").clicked() {
-                                let _ = self.cyblex.resume(torrent.id);
+                                if let Err(error) = self.cyblex.resume(torrent.id) {
+                                    self.notify(format!("CYBLEX: {error}"));
+                                } else {
+                                    self.notify("CYBLEX RESUME QUEUED");
+                                }
                             }
                         } else if ui.button("PAUSE").clicked() {
-                            let _ = self.cyblex.pause(torrent.id);
+                            if let Err(error) = self.cyblex.pause(torrent.id) {
+                                self.notify(format!("CYBLEX: {error}"));
+                            } else {
+                                self.notify("CYBLEX PAUSE QUEUED");
+                            }
                         }
 
                         if ui.button("REMOVE").clicked() {
-                            let _ = self.cyblex.forget(torrent.id, false);
+                            if let Err(error) = self.cyblex.forget(torrent.id, false) {
+                                self.notify(format!("CYBLEX: {error}"));
+                            } else {
+                                self.notify("CYBLEX TORRENT REMOVAL QUEUED");
+                            }
                         }
                     });
 
