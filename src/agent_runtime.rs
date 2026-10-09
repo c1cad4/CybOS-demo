@@ -565,6 +565,40 @@ mod tests {
     }
 
     #[test]
+    fn workflow_transition_matrix_rejects_undeclared_edges() {
+        use WorkflowStatus::*;
+
+        let states = [
+            Planned, Running, Checkpointed, Validating, Submitted,
+            Accepted, Rejected, Failed, Cancelled,
+        ];
+        let allowed: &[(WorkflowStatus, WorkflowStatus)] = &[
+            (Planned, Running), (Planned, Cancelled),
+            (Running, Checkpointed), (Running, Validating),
+            (Running, Failed), (Running, Cancelled),
+            (Checkpointed, Running), (Checkpointed, Validating),
+            (Checkpointed, Failed), (Checkpointed, Cancelled),
+            (Validating, Running), (Validating, Submitted),
+            (Validating, Rejected), (Validating, Failed), (Validating, Cancelled),
+            (Submitted, Accepted), (Submitted, Rejected),
+            (Rejected, Running), (Rejected, Cancelled),
+        ];
+
+        for from in &states {
+            for to in &states {
+                let expected = allowed.iter().any(|(source, target)| source == from && target == to);
+                assert_eq!(
+                    from.can_transition_to(to),
+                    expected,
+                    "unexpected workflow transition: {} -> {}",
+                    from.as_str(),
+                    to.as_str(),
+                );
+            }
+        }
+    }
+
+    #[test]
     fn workflow_transitions_and_checkpoints_are_validated() {
         let mut run = WorkflowRun::new("farm_report", None, serde_json::json!({"zone":"north"}))
             .expect("valid workflow");
