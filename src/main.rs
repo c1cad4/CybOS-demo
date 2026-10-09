@@ -3,6 +3,7 @@
 mod models;
 mod store;
 mod agent_economy;
+mod agent_runtime;
 
 mod actions;
 mod ai;
