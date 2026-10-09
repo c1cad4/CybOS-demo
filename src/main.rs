@@ -2,6 +2,7 @@
 
 mod models;
 mod store;
+mod agent_economy;
 
 mod actions;
 mod ai;
