@@ -69,6 +69,15 @@ impl Listener {
             stop: Arc::new(AtomicBool::new(true)),
         }
     }
+
+    pub(crate) fn failed(reason: String) -> Self {
+        let (_tx, events) = mpsc::channel();
+        Self {
+            events,
+            startup_error: Some(reason),
+            stop: Arc::new(AtomicBool::new(true)),
+        }
+    }
 }
 
 impl Drop for Listener {
