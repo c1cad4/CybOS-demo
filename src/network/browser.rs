@@ -498,7 +498,7 @@ mod tests {
 
     #[test]
     fn resolves_cyb_ipfs() {
-        let resolved = resolve("cyb://ipfs/bafybeigdyrzt5example");
+        let resolved = resolve("cyb://ipfs/bafybeigdyrzt5example").unwrap();
         assert_eq!(resolved.route, BrowserRoute::IpfsLocal);
         assert!(resolved.resolved_url.contains("/ipfs/"));
         assert!(resolved.fallback_url.is_some());
@@ -506,7 +506,7 @@ mod tests {
 
     #[test]
     fn resolves_arweave() {
-        let resolved = resolve("ar://AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+        let resolved = resolve("ar://AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA").unwrap();
         assert_eq!(resolved.route, BrowserRoute::ArweaveGateway);
         assert!(resolved.resolved_url.contains("arweave.net"));
     }
