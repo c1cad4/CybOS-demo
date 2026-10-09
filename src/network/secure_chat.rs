@@ -56,6 +56,8 @@ pub(crate) struct Listener {
 }
 
 impl Listener {
+    pub(crate) fn is_stopped(&self) -> bool { self.stop.load(Ordering::Relaxed) }
+
     pub(crate) fn try_recv(&self) -> Result<SecureEvent, mpsc::TryRecvError> {
         self.events.try_recv()
     }
