@@ -11,6 +11,6 @@ jobs:
       - name: Check server
         working-directory: cybcore/server
         run: cargo check --all-targets
-      - name: Unit tests
+      - name: Tests
         working-directory: cybcore/server
-        run: cargo test --lib --bins
+        run: cargo test --all-targets
