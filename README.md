@@ -4,7 +4,7 @@ This repository contains both the browser prototype and the native macOS-first R
 
 The native implementation lives under `src/`, with the macOS launcher and BLE helper under `START_cybOS.command` and `macos/`.
 
-For the native desktop installation path, see [NATIVE_INSTALL.md](NATIVE_INSTALL.md).
+For the native desktop installation path, see [NATIVE_INSTALL.md](NATIVE_INSTALL.md). For the cross-stack execution plan and release gates, see [the 0.7-to-1.0 roadmap](docs/ROADMAP_0.7_TO_1.0.md).
 
 ## What is in this repository
 
