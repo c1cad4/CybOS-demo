@@ -3,6 +3,7 @@
 use crate::CybOs;
 
 use serde_json::{json, Value};
+use std::io::Read;
 use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -17,6 +18,7 @@ pub(crate) const QWEN_MODEL: &str =
 
 const QWEN_REQUEST_BUDGET: Duration = Duration::from_secs(30);
 const QWEN_MAX_PROMPT_BYTES: usize = 64 * 1024;
+const QWEN_MAX_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
 
 fn qwen_agent(budget: Duration) -> ureq::Agent {
     ureq::Agent::config_builder()
@@ -56,13 +58,9 @@ fn bounded_qwen_request(payload: Value, budget: Duration) -> Result<Value, Strin
                 .send_json(&payload)
                 .map_err(|error| error.to_string())?;
 
-            let body = response
-                .into_body()
-                .read_to_string()
-                .map_err(|error| error.to_string())?;
-
-            serde_json::from_str::<Value>(&body)
-                .map_err(|error| error.to_string())
+            let body = read_bounded_response(response.into_body().into_reader())?;
+            serde_json::from_slice::<Value>(&body)
+                .map_err(|error| format!("Qwen returned invalid JSON: {error}"))
         })();
 
         let _ = tx.send(result);
@@ -70,6 +68,21 @@ fn bounded_qwen_request(payload: Value, budget: Duration) -> Result<Value, Strin
 
     rx.recv_timeout(budget)
         .map_err(|_| format!("Qwen request exceeded its {} second runtime budget.", budget.as_secs()))?
+}
+
+fn read_bounded_response<R: Read>(reader: R) -> Result<Vec<u8>, String> {
+    let mut bytes = Vec::new();
+    reader
+        .take((QWEN_MAX_RESPONSE_BYTES + 1) as u64)
+        .read_to_end(&mut bytes)
+        .map_err(|error| format!("Qwen response read failed: {error}"))?;
+    if bytes.len() > QWEN_MAX_RESPONSE_BYTES {
+        return Err(format!(
+            "Qwen response exceeds {} MiB limit.",
+            QWEN_MAX_RESPONSE_BYTES / 1024 / 1024
+        ));
+    }
+    Ok(bytes)
 }
 
 impl CybOs {
@@ -95,6 +108,12 @@ impl CybOs {
         max_tokens: u64,
         temperature: f64,
     ) -> Result<Value, String> {
+        let max_tokens = max_tokens.clamp(1, 8192);
+        let temperature = if temperature.is_finite() {
+            temperature.clamp(0.0, 2.0)
+        } else {
+            0.0
+        };
         let payload = json!({
             "model": QWEN_MODEL,
             "messages": [
