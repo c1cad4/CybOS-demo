@@ -4,6 +4,7 @@ use eframe::egui;
 use egui::{Color32, RichText};
 use std::process::Command;
 use std::fs;
+use std::io::Write;
 
 impl CybOs {
     pub(crate) fn system(&mut self, ui: &mut egui::Ui) {
@@ -111,32 +112,39 @@ impl CybOs {
                 let path = dirs_fallback_for_export()
                     .join(format!("cybOS-state-{timestamp}.json"));
 
+                // Diagnostics are metadata-only by default. Chat, memory text,
+                // event text, trust records and credentials may contain private data.
                 let payload = serde_json::json!({
+                    "schema_version": 1,
                     "version": APP_VERSION,
                     "node_id": self.node_id,
                     "status": self.status,
                     "qwen_status": self.qwen_status,
+                    "database_integrity": self.database_integrity,
+                    "counts": {
+                        "runtime_cells": self.runtime.cells.len(),
+                        "ready_cells": self.runtime.healthy_count(),
+                        "local_events": self.store.exportable_events().len(),
+                        "memories": self.store.exportable_memories().len(),
+                        "graph_nodes": self.nodes.len(),
+                        "graph_links": self.links.len(),
+                        "chat_messages": self.store.exportable_chat().len(),
+                    },
                     "runtime": self.runtime.cells.iter().map(|cell| serde_json::json!({
                         "id": cell.id,
                         "status": cell.status,
                         "budget_ms": cell.budget.as_millis(),
+                        "heartbeat_age_ms": cell.heartbeat_age_ms(),
                         "last_run_ms": cell.last_run.as_millis(),
                         "runs": cell.runs,
                         "overruns": cell.overruns,
                     })).collect::<Vec<_>>(),
-                    "events": self.store.exportable_events(),
-                    "memories": self.store.exportable_memories(),
-                    "graph_nodes": &self.nodes,
-                    "graph_links": &self.links,
-                    "chat": self.store.exportable_chat(),
-                    "note": "Private Noise keys and peer TOFU keys are intentionally excluded."
+                    "note": "Metadata-only diagnostic export. Private chat, memory/event text, Noise keys, peer trust pins, and credentials are excluded."
                 });
 
                 match serde_json::to_string_pretty(&payload)
                     .map_err(|error| error.to_string())
-                    .and_then(|content| {
-                        fs::write(&path, content).map_err(|error| error.to_string())
-                    }) {
+                    .and_then(|content| write_private_export(&path, content.as_bytes())) {
                     Ok(()) => self.notify(format!("STATE EXPORTED: {}", path.display())),
                     Err(error) => self.notify(format!("STATE EXPORT FAILED: {}", error)),
                 }
@@ -165,4 +173,22 @@ fn dirs_fallback_for_export() -> std::path::PathBuf {
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|_| std::path::PathBuf::from("."))
         .join("Desktop")
+}
+
+fn write_private_export(path: &std::path::Path, bytes: &[u8]) -> Result<(), String> {
+    let mut options = fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut file = options
+        .open(path)
+        .map_err(|error| format!("cannot create private diagnostic export {}: {error}", path.display()))?;
+    file.write_all(bytes)
+        .map_err(|error| format!("cannot write diagnostic export: {error}"))?;
+    file.sync_all()
+        .map_err(|error| format!("cannot sync diagnostic export: {error}"))?;
+    Ok(())
 }
