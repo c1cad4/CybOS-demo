@@ -8,6 +8,8 @@ For the native desktop installation path, see [NATIVE_INSTALL.md](NATIVE_INSTALL
 
 For plain-language screen guidance, first steps, safety limitations, and the interaction checklist, see [UX_AND_ACCESSIBILITY.md](docs/UX_AND_ACCESSIBILITY.md).\n\nFor the new source-attributed environmental and demographic dashboard, see [Planetary Pulse](docs/PLANETARY_PULSE.md).
 
+For the offline-first resilience roadmap (local maps, satellite imagery packages, GNSS, radio communications, and SDR analysis), see [Resilience Stack](docs/RESILIENCE_OFFLINE.md).
+
 ## What is in this repository
 
 ### Browser prototype
