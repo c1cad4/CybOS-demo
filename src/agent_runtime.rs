@@ -207,6 +207,67 @@ pub(crate) struct WorkflowExecutionReport {
     pub(crate) error: Option<String>,
 }
 
+/// A bounded, local workflow output with explicit provenance.
+/// Artifacts are records only; creating one does not publish or transmit its content.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub(crate) struct WorkflowArtifact {
+    pub(crate) id: String,
+    pub(crate) run_id: String,
+    pub(crate) name: String,
+    pub(crate) media_type: String,
+    pub(crate) content: String,
+    pub(crate) created_at: String,
+}
+
+impl WorkflowArtifact {
+    pub(crate) const MAX_CONTENT_BYTES: usize = 48 * 1024;
+
+    pub(crate) fn new(
+        run_id: impl Into<String>,
+        name: impl Into<String>,
+        media_type: impl Into<String>,
+        content: impl Into<String>,
+    ) -> Result<Self, String> {
+        let artifact = Self {
+            id: Uuid::new_v4().to_string(),
+            run_id: run_id.into().trim().to_string(),
+            name: name.into().trim().to_string(),
+            media_type: media_type.into().trim().to_ascii_lowercase(),
+            content: content.into(),
+            created_at: chrono::Utc::now().to_rfc3339(),
+        };
+        artifact.validate()?;
+        Ok(artifact)
+    }
+
+    pub(crate) fn validate(&self) -> Result<(), String> {
+        if self.run_id.is_empty() || self.run_id.len() > 128 {
+            return Err("artifact run_id must contain 1-128 bytes".into());
+        }
+        if self.name.is_empty() || self.name.chars().count() > 160
+            || self.name.chars().any(char::is_control)
+        {
+            return Err("artifact name must contain 1-160 printable characters".into());
+        }
+        if !matches!(self.media_type.as_str(),
+            "text/plain" | "text/markdown" | "application/json")
+        {
+            return Err("artifact media type must be text/plain, text/markdown, or application/json".into());
+        }
+        if self.content.len() > Self::MAX_CONTENT_BYTES {
+            return Err(format!("artifact content exceeds {} bytes", Self::MAX_CONTENT_BYTES));
+        }
+        if self.created_at.trim().is_empty() || self.created_at.len() > 64 {
+            return Err("artifact timestamp must contain 1-64 bytes".into());
+        }
+        if self.media_type == "application/json" {
+            serde_json::from_str::<serde_json::Value>(&self.content)
+                .map_err(|error| format!("JSON artifact is invalid: {error}"))?;
+        }
+        Ok(())
+    }
+}
+
 /// Executes only the finite, ordered plan supplied by the caller. It does not
 /// generate commands, retry implicitly, or execute unregistered tools.
 pub(crate) struct WorkflowRunner<'a> {
