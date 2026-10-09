@@ -161,7 +161,7 @@ fn spawn_listener_bind(
     // Do not return until the listener is bound, so callers and tests never race startup.
     match ready_rx.recv_timeout(Duration::from_secs(3)) {
         Ok(Ok(())) => Listener { events: rx, stop },
-        Ok(Err(_error)) | Err(_) => Listener { events: rx, stop }
+        Ok(Err(_)) | Err(_) => Listener { events: rx, stop }
     }
 }
 
