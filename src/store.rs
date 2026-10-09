@@ -1,6 +1,6 @@
 use chrono::Local;
 use rusqlite::{params, Connection};
-use std::{fs, path::PathBuf, time::Duration};
+use std::{fs, path::{Path, PathBuf}, time::Duration};
 use uuid::Uuid;
 
 use crate::models::{Event, GraphLink, GraphNode, Memory};
@@ -13,8 +13,12 @@ impl Store {
     pub(crate) fn open() -> Self {
         let base = dirs_fallback();
         let _ = fs::create_dir_all(&base);
+        // The app data directory also contains SQLite WAL/SHM sidecars and
+        // local identity/trust records. Restrict directory traversal on Unix.
+        restrict_permissions(&base, 0o700);
         let path = base.join("cybos.db");
         let conn = Connection::open(&path).expect("cannot open cybOS database");
+        restrict_permissions(&path, 0o600);
         let _ = conn.busy_timeout(Duration::from_secs(3));
         let _ = conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;");
         conn.execute_batch(
@@ -355,6 +359,22 @@ impl Store {
         );
     }
 }
+fn restrict_permissions(path: &Path, mode: u32) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Ok(metadata) = fs::metadata(path) {
+            let mut permissions = metadata.permissions();
+            permissions.set_mode(mode);
+            let _ = fs::set_permissions(path, permissions);
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (path, mode);
+    }
+}
+
 fn dirs_fallback() -> PathBuf {
     if let Ok(p) = std::env::var("HOME") {
         PathBuf::from(p).join("Library/Application Support/cybOS")
