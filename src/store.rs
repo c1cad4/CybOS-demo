@@ -4,6 +4,7 @@ use std::{fs, path::PathBuf, time::Duration};
 use uuid::Uuid;
 
 use crate::agent_economy::{AgentManifest, AgentTask, KnowledgeRecord, LedgerEntry};
+use crate::agent_runtime::{CapabilitySpec, WorkflowCheckpoint, WorkflowRun};
 use crate::models::{Event, GraphLink, GraphNode, Memory};
 
 pub(crate) struct Store {
@@ -122,6 +123,21 @@ impl Store {
 
             CREATE INDEX IF NOT EXISTS idx_knowledge_records_source
                 ON knowledge_records(source_uri);
+
+            CREATE TABLE IF NOT EXISTS agent_capabilities(
+                id TEXT PRIMARY KEY, risk TEXT NOT NULL,
+                requires_approval INTEGER NOT NULL, payload TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS workflow_runs(
+                id TEXT PRIMARY KEY, workflow_name TEXT NOT NULL,
+                status TEXT NOT NULL, updated_at TEXT NOT NULL, payload TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_workflow_runs_status ON workflow_runs(status);
+            CREATE TABLE IF NOT EXISTS workflow_checkpoints(
+                id TEXT PRIMARY KEY, run_id TEXT NOT NULL, step INTEGER NOT NULL,
+                created_at TEXT NOT NULL, payload TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_workflow_checkpoints_run_step ON workflow_checkpoints(run_id, step);
             "#,
         )
         .expect("cannot initialize database");
