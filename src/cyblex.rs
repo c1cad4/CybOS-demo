@@ -7,7 +7,7 @@ use librqbit::{AddTorrent, AddTorrentOptions, CreateTorrentOptions, Session, Ses
 use std::{
     fs,
     path::{Path, PathBuf},
-    sync::mpsc::{self, Receiver, SyncSender, TryRecvError, TrySendError},
+    sync::mpsc::{self, Receiver, Sender, SyncSender, TryRecvError, TrySendError},
     sync::Arc,
     thread,
     time::Duration,
