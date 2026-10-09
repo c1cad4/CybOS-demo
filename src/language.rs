@@ -278,6 +278,30 @@ pub(crate) fn tr(language: Language, key: &str) -> &'static str {
             Language::Russian => "◎ ЧЕЛОВЕЧЕСТВО",
             Language::Hindi => "◎ मानवता",
         },
+        (_, "pulse_population") => match language {
+            Language::English => "estimated world population · 2025",
+            Language::Chinese => "全球人口估算 · 2025 年",
+            Language::Russian => "оценка населения мира · 2025",
+            Language::Hindi => "विश्व जनसंख्या का अनुमान · 2025",
+        },
+        (_, "pulse_births") => match language {
+            Language::English => "BORN IN 2025",
+            Language::Chinese => "2025 年出生",
+            Language::Russian => "РОДИЛОСЬ В 2025",
+            Language::Hindi => "2025 में जन्म",
+        },
+        (_, "pulse_deaths") => match language {
+            Language::English => "DIED IN 2025",
+            Language::Chinese => "2025 年死亡",
+            Language::Russian => "УМЕРЛО В 2025",
+            Language::Hindi => "2025 में मृत्यु",
+        },
+        (_, "pulse_demographic_period") => match language {
+            Language::English => "UN World Population Prospects 2024 · annual estimates/projections, not live counts",
+            Language::Chinese => "联合国《世界人口展望 2024》· 年度估算/预测，非实时计数",
+            Language::Russian => "ООН World Population Prospects 2024 · годовые оценки/прогнозы, не live-счётчик",
+            Language::Hindi => "UN World Population Prospects 2024 · वार्षिक अनुमान/पूर्वानुमान, लाइव गिनती नहीं",
+        },
         (_, "pulse_births_deaths") => match language {
             Language::English => "BIRTHS & DEATHS",
             Language::Chinese => "出生与死亡",
@@ -605,6 +629,10 @@ mod tests {
             "pulse_wildlife",
             "pulse_air",
             "pulse_humanity",
+            "pulse_population",
+            "pulse_births",
+            "pulse_deaths",
+            "pulse_demographic_period",
             "pulse_next_integration",
             "pulse_integrity",
         ];
