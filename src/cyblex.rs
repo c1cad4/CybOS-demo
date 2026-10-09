@@ -507,26 +507,3 @@ mod tests {
         fs::remove_dir_all(&dir).unwrap();
     }
 }
-    use super::{validate_source, MAX_SOURCE_LEN};
-
-    #[test]
-    fn accepts_magnet_sources() {
-        assert!(validate_source("magnet:?xt=urn:btih:abc").is_ok());
-    }
-
-    #[test]
-    fn accepts_torrent_urls() {
-        assert!(validate_source("https://example.com/file.torrent").is_ok());
-        assert!(validate_source("http://127.0.0.1/file.torrent").is_ok());
-    }
-
-    #[test]
-    fn rejects_unknown_source_schemes() {
-        assert!(validate_source("ftp://example.com/file.torrent").is_err());
-    }
-
-    #[test]
-    fn rejects_oversized_sources() {
-        assert!(validate_source(&"m".repeat(MAX_SOURCE_LEN + 1)).is_err());
-    }
-}
