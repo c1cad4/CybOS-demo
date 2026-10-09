@@ -180,14 +180,14 @@ impl CybOs {
             .show(ui, |ui| {
                 ui.horizontal_centered(|ui| {
                     let bus = [
-                        ("LIVE NODE", Page::Dashboard),
-                        ("QWEN", Page::Brain),
-                        ("MEMORY", Page::Brain),
-                        ("GRAPH", Page::Graph),
-                        ("FARM", Page::Farm),
-                        ("ENERGY", Page::System),
-                        ("NETWORK", Page::Network),
-                        ("CHAT", Page::Chat),
+                        (crate::language::tr(self.language, "live_node"), Page::Dashboard),
+                        (crate::language::tr(self.language, "qwen"), Page::Brain),
+                        (crate::language::tr(self.language, "memory"), Page::Brain),
+                        (crate::language::page_title(self.language, Page::Graph), Page::Graph),
+                        (crate::language::page_title(self.language, Page::Farm), Page::Farm),
+                        (crate::language::tr(self.language, "energy"), Page::System),
+                        (crate::language::page_title(self.language, Page::Network), Page::Network),
+                        (crate::language::page_title(self.language, Page::Chat), Page::Chat),
                     ];
                     for (name, page) in bus {
                         let active = self.page == page;
