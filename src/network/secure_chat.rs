@@ -138,6 +138,12 @@ fn spawn_listener_bind(
                     if active.load(Ordering::Acquire) >= MAX_ACTIVE {
                         continue;
                     }
+                    // Accepted sockets can inherit nonblocking behavior differently across
+                    // platforms. Session framing uses read_exact, so normalize each accepted
+                    // connection to blocking mode before applying bounded I/O timeouts.
+                    if stream.set_nonblocking(false).is_err() {
+                        continue;
+                    }
                     let _ = stream.set_read_timeout(Some(TIMEOUT));
                     let _ = stream.set_write_timeout(Some(TIMEOUT));
                     active.fetch_add(1, Ordering::AcqRel);
