@@ -20,7 +20,9 @@ impl Store {
         let conn = Connection::open(&path).expect("cannot open cybOS database");
         restrict_permissions(&path, 0o600);
         let _ = conn.busy_timeout(Duration::from_secs(3));
-        let _ = conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;");
+        // FULL sync gives identity/trust writes a stronger durability boundary.
+        // The app-data directory is owner-only, protecting SQLite WAL/SHM sidecars too.
+        let _ = conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;");
         conn.execute_batch(
             r#"
             CREATE TABLE IF NOT EXISTS events(
@@ -86,6 +88,10 @@ impl Store {
             "#,
         )
         .expect("cannot initialize database");
+        // SQLite creates WAL/SHM lazily; tighten permissions whenever they exist.
+        restrict_permissions(&path, 0o600);
+        restrict_permissions(&PathBuf::from(format!("{}-wal", path.display())), 0o600);
+        restrict_permissions(&PathBuf::from(format!("{}-shm", path.display())), 0o600);
         Self { path, conn }
     }
     pub(crate) fn get(&self, key: &str) -> Option<String> {
