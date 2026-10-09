@@ -584,11 +584,11 @@ mod tests {
             (Rejected, Running), (Rejected, Cancelled),
         ];
 
-        for from in states {
-            for to in states {
-                let expected = allowed.iter().any(|(source, target)| *source == from && *target == to);
+        for from in &states {
+            for to in &states {
+                let expected = allowed.iter().any(|(source, target)| source == from && target == to);
                 assert_eq!(
-                    from.can_transition_to(&to),
+                    from.can_transition_to(to),
                     expected,
                     "unexpected workflow transition: {} -> {}",
                     from.as_str(),
