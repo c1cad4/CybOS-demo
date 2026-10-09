@@ -55,7 +55,7 @@ impl TelemetrySampler {
             .reduce(f32::max);
         let disk_total_bytes = disks.list().iter().map(|disk| disk.total_space()).sum();
         let disk_available_bytes = disks.list().iter().map(|disk| disk.available_space()).sum();
-        let network_received_bytes = networks.list().iter().map(|(_, data)| data.received()).sum();
+        let network_received_bytes = networks.iter().map(|(_, data)| data.received()).sum();
         let network_transmitted_bytes = networks.list().iter().map(|(_, data)| data.transmitted()).sum();
         let current = TelemetrySample {
             timestamp: chrono::Local::now().to_rfc3339(),
@@ -77,6 +77,10 @@ impl TelemetrySampler {
             top_processes: Vec::new(),
             sensor_count: components.list().len(),
         }
+    }
+
+    pub(crate) fn system_cpu_count(&self) -> usize {
+        self.system.cpus().len()
     }
 
     /// Samples at most once every two seconds to keep monitoring overhead low.
