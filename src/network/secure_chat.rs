@@ -112,6 +112,7 @@ fn load_or_create_keychain_key(store: &crate::store::Store) -> Result<Vec<u8>, S
     let entry = keyring::Entry::new(SERVICE, ACCOUNT)
         .map_err(|error| format!("cannot access macOS Keychain entry: {error}"))?;
     let legacy = store.get(LEGACY_KEY);
+    let had_legacy = legacy.is_some();
 
     match entry.get_password() {
         Ok(encoded) => {
@@ -143,7 +144,7 @@ fn load_or_create_keychain_key(store: &crate::store::Store) -> Result<Vec<u8>, S
             if verified != encoded {
                 return Err("macOS Keychain read-back mismatch; preserving legacy data and refusing to start".into());
             }
-            if legacy.is_some() {
+            if had_legacy {
                 store.try_delete_and_compact(LEGACY_KEY)?;
             }
             Ok(key)
