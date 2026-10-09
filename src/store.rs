@@ -489,6 +489,77 @@ impl Store {
             .collect()
     }
 
+    /// Register a declared capability. This stores metadata only; it never invokes the tool.
+    pub(crate) fn save_capability(&self, capability: &CapabilitySpec) -> Result<(), String> {
+        capability.validate()?;
+        let payload = serde_json::to_string(capability)
+            .map_err(|error| format!("cannot serialize capability: {error}"))?;
+        self.conn.execute(
+            "INSERT INTO agent_capabilities(id,risk,requires_approval,payload)
+             VALUES(?1,?2,?3,?4)
+             ON CONFLICT(id) DO UPDATE SET risk=excluded.risk,
+                 requires_approval=excluded.requires_approval, payload=excluded.payload",
+            params![capability.id, capability.risk.as_str(), capability.requires_approval as i64, payload],
+        ).map_err(|error| format!("cannot save capability: {error}"))?;
+        Ok(())
+    }
+
+    pub(crate) fn capabilities(&self) -> Vec<CapabilitySpec> {
+        let mut st = match self.conn.prepare("SELECT payload FROM agent_capabilities ORDER BY id ASC") {
+            Ok(st) => st, Err(_) => return Vec::new(),
+        };
+        st.query_map([], |row| row.get::<_, String>(0))
+            .ok().into_iter().flatten().filter_map(Result::ok)
+            .filter_map(|payload| serde_json::from_str::<CapabilitySpec>(&payload).ok()).collect()
+    }
+
+    pub(crate) fn save_workflow_run(&self, run: &WorkflowRun) -> Result<(), String> {
+        run.validate()?;
+        let payload = serde_json::to_string(run)
+            .map_err(|error| format!("cannot serialize workflow run: {error}"))?;
+        self.conn.execute(
+            "INSERT INTO workflow_runs(id,workflow_name,status,updated_at,payload)
+             VALUES(?1,?2,?3,?4,?5)
+             ON CONFLICT(id) DO UPDATE SET workflow_name=excluded.workflow_name,
+                 status=excluded.status, updated_at=excluded.updated_at, payload=excluded.payload",
+            params![run.id, run.workflow_name, run.status.as_str(), run.updated_at, payload],
+        ).map_err(|error| format!("cannot save workflow run: {error}"))?;
+        Ok(())
+    }
+
+    pub(crate) fn workflow_runs(&self) -> Vec<WorkflowRun> {
+        let mut st = match self.conn.prepare("SELECT payload FROM workflow_runs ORDER BY updated_at DESC LIMIT 500") {
+            Ok(st) => st, Err(_) => return Vec::new(),
+        };
+        st.query_map([], |row| row.get::<_, String>(0))
+            .ok().into_iter().flatten().filter_map(Result::ok)
+            .filter_map(|payload| serde_json::from_str::<WorkflowRun>(&payload).ok()).collect()
+    }
+
+    /// Checkpoints are append-only records; callers save the parent run first.
+    pub(crate) fn append_workflow_checkpoint(&self, checkpoint: &WorkflowCheckpoint) -> Result<(), String> {
+        checkpoint.validate()?;
+        let payload = serde_json::to_string(checkpoint)
+            .map_err(|error| format!("cannot serialize workflow checkpoint: {error}"))?;
+        self.conn.execute(
+            "INSERT INTO workflow_checkpoints(id,run_id,step,created_at,payload)
+             VALUES(?1,?2,?3,?4,?5)",
+            params![checkpoint.id, checkpoint.run_id, checkpoint.step, checkpoint.created_at, payload],
+        ).map_err(|error| format!("cannot append workflow checkpoint: {error}"))?;
+        Ok(())
+    }
+
+    pub(crate) fn workflow_checkpoints(&self, run_id: &str) -> Vec<WorkflowCheckpoint> {
+        let mut st = match self.conn.prepare(
+            "SELECT payload FROM workflow_checkpoints WHERE run_id=?1 ORDER BY step ASC, rowid ASC"
+        ) {
+            Ok(st) => st, Err(_) => return Vec::new(),
+        };
+        st.query_map([run_id], |row| row.get::<_, String>(0))
+            .ok().into_iter().flatten().filter_map(Result::ok)
+            .filter_map(|payload| serde_json::from_str::<WorkflowCheckpoint>(&payload).ok()).collect()
+    }
+
     pub(crate) fn database_integrity(&self) -> String {
         self.conn
             .query_row("PRAGMA integrity_check(1)", [], |row| row.get::<_, String>(0))
