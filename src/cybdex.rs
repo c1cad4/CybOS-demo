@@ -437,7 +437,10 @@ fn parse_pair(value: &serde_json::Value) -> Option<CybDexPair> {
 }
 
 fn number(value: &serde_json::Value) -> Option<f64> {
-    value.as_f64().or_else(|| value.as_str()?.parse::<f64>().ok())
+    value
+        .as_f64()
+        .or_else(|| value.as_str()?.parse::<f64>().ok())
+        .filter(|number| number.is_finite())
 }
 
 fn looks_like_solana_address(value: &str) -> bool {
@@ -504,6 +507,13 @@ mod tests {
     #[test]
     fn percent_encodes_search() {
         assert_eq!(percent_encode("SOL/USDC"), "SOL%2FUSDC");
+    }
+
+    #[test]
+    fn rejects_non_finite_market_numbers() {
+        assert_eq!(super::number(&serde_json::json!("NaN")), None);
+        assert_eq!(super::number(&serde_json::json!("inf")), None);
+        assert_eq!(super::number(&serde_json::json!("12.5")), Some(12.5));
     }
 
     #[test]
