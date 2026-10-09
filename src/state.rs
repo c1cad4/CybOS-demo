@@ -454,43 +454,24 @@ impl CybOs {
                     public_key,
                     reply,
                 } => {
-                    let trust_key = format!("noise_peer_key:{}", node_id);
-                    let stored = self.store.get(&trust_key).and_then(|value| {
-                        if value.len() % 2 != 0 {
-                            return None;
-                        }
-                        (0..value.len())
-                            .step_by(2)
-                            .map(|i| u8::from_str_radix(&value[i..i + 2], 16).ok())
-                            .collect::<Option<Vec<u8>>>()
-                    });
-
-                    let trusted = match stored {
-                        Some(known) if known == public_key => true,
-                        Some(_) => {
+                    let trusted = match self.store.pin_secure_peer_key(&node_id, &public_key) {
+                        Ok(trusted) => trusted,
+                        Err(reason) => {
                             self.secure_status =
-                                format!("SECURE CHAT · IDENTITY CHANGED · {}", node_id);
+                                format!("SECURE CHAT · IDENTITY PIN REJECTED · {}", node_id);
                             self.runtime.set_status("CYBCHAT", "ERROR");
                             let _ = reply.send(crate::network::secure_chat::SecureReply::Reject(
-                                "Noise identity key changed".into(),
+                                reason.clone(),
                             ));
                             self.add_event(
                                 "SECURITY",
                                 format!(
-                                    "Rejected secure message from {}: Noise identity key changed",
-                                    node_id
+                                    "Rejected secure message from {}: peer identity pin failed: {}",
+                                    node_id, reason
                                 ),
                             );
-                            self.notify("SECURE IDENTITY CHANGE REJECTED");
+                            self.notify("SECURE PEER IDENTITY PIN FAILED");
                             continue;
-                        }
-                        None => {
-                            let encoded = public_key
-                                .iter()
-                                .map(|b| format!("{b:02x}"))
-                                .collect::<String>();
-                            self.store.set(&trust_key, &encoded);
-                            false
                         }
                     };
 
