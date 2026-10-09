@@ -1,0 +1,263 @@
+//! Small, dependency-free interface localization for cybOS.
+//! English remains the fallback for untranslated module-specific content.
+
+use crate::navigation::Page;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Language {
+    English,
+    Chinese,
+    Russian,
+    Hindi,
+}
+
+impl Language {
+    pub(crate) const ALL: [Language; 4] = [
+        Language::English,
+        Language::Chinese,
+        Language::Russian,
+        Language::Hindi,
+    ];
+
+    pub(crate) fn from_code(code: &str) -> Self {
+        match code {
+            "zh" => Self::Chinese,
+            "ru" => Self::Russian,
+            "hi" => Self::Hindi,
+            _ => Self::English,
+        }
+    }
+
+    pub(crate) fn code(self) -> &'static str {
+        match self {
+            Self::English => "en",
+            Self::Chinese => "zh",
+            Self::Russian => "ru",
+            Self::Hindi => "hi",
+        }
+    }
+
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            Self::English => "English",
+            Self::Chinese => "中文",
+            Self::Russian => "Русский",
+            Self::Hindi => "हिन्दी",
+        }
+    }
+}
+
+pub(crate) fn tr(language: Language, key: &str) -> &'static str {
+    match (language, key) {
+        (_, "language") => match language {
+            Language::English => "LANGUAGE",
+            Language::Chinese => "语言",
+            Language::Russian => "ЯЗЫК",
+            Language::Hindi => "भाषा",
+        },
+        (_, "quick_guide") => match language {
+            Language::English => "QUICK GUIDE",
+            Language::Chinese => "快速指南",
+            Language::Russian => "КРАТКОЕ РУКОВОДСТВО",
+            Language::Hindi => "त्वरित मार्गदर्शिका",
+        },
+        (_, "how_to_use") => match language {
+            Language::English => "HOW TO USE",
+            Language::Chinese => "使用方法",
+            Language::Russian => "КАК ИСПОЛЬЗОВАТЬ",
+            Language::Hindi => "कैसे उपयोग करें",
+        },
+        (_, "start_here") => match language {
+            Language::English => "START HERE",
+            Language::Chinese => "从这里开始",
+            Language::Russian => "НАЧНИТЕ ЗДЕСЬ",
+            Language::Hindi => "यहाँ से शुरू करें",
+        },
+        (_, "good_to_know") => match language {
+            Language::English => "GOOD TO KNOW",
+            Language::Chinese => "须知",
+            Language::Russian => "ВАЖНО ЗНАТЬ",
+            Language::Hindi => "जानना ज़रूरी है",
+        },
+        (_, "search_hint") => match language {
+            Language::English => "⌘K  search pages, tokens, cameras…",
+            Language::Chinese => "⌘K  搜索页面、代币、摄像头…",
+            Language::Russian => "⌘K  поиск разделов, токенов, камер…",
+            Language::Hindi => "⌘K  पेज, टोकन, कैमरे खोजें…",
+        },
+        (_, "go") => match language {
+            Language::English => "GO",
+            Language::Chinese => "前往",
+            Language::Russian => "ОТКРЫТЬ",
+            Language::Hindi => "खोलें",
+        },
+        (_, "event") => match language {
+            Language::English => "+ EVENT",
+            Language::Chinese => "+ 事件",
+            Language::Russian => "+ СОБЫТИЕ",
+            Language::Hindi => "+ घटना",
+        },
+        (_, "tip") => match language {
+            Language::English => "TIP: use ⌘K to find a page; hover over icons and buttons for hints.",
+            Language::Chinese => "提示：使用 ⌘K 查找页面；将鼠标悬停在图标和按钮上查看说明。",
+            Language::Russian => "Совет: нажмите ⌘K для поиска раздела; наведите курсор на значки и кнопки для подсказок.",
+            Language::Hindi => "सुझाव: पेज खोजने के लिए ⌘K दबाएँ; संकेतों के लिए आइकन और बटन पर कर्सर रखें।",
+        },
+        (_, "dashboard") => match language {
+            Language::English => "CENTRAL CYBOS DASHBOARD",
+            Language::Chinese => "cybOS 控制面板",
+            Language::Russian => "ГЛАВНАЯ ПАНЕЛЬ CYBOS",
+            Language::Hindi => "cybOS मुख्य डैशबोर्ड",
+        },
+        (_, "graph") => match language {
+            Language::English => "CYBOS GRAPH",
+            Language::Chinese => "cybOS 知识图谱",
+            Language::Russian => "ГРАФ CYBOS",
+            Language::Hindi => "cybOS ग्राफ",
+        },
+        (_, "network") => match language {
+            Language::English => "NETWORK MATRIX",
+            Language::Chinese => "网络矩阵",
+            Language::Russian => "СЕТЕВАЯ МАТРИЦА",
+            Language::Hindi => "नेटवर्क मैट्रिक्स",
+        },
+        (_, "radar") => match language {
+            Language::English => "CYB RADAR",
+            Language::Chinese => "CYB 雷达",
+            Language::Russian => "РАДАР CYB",
+            Language::Hindi => "CYB रडार",
+        },
+        (_, "brain") => match language {
+            Language::English => "CYBOS BRAIN",
+            Language::Chinese => "cybOS 智能核心",
+            Language::Russian => "МОЗГ CYBOS",
+            Language::Hindi => "cybOS मस्तिष्क",
+        },
+        (_, "farm") => match language {
+            Language::English => "CICADAFARM",
+            Language::Chinese => "CICADAFARM 农场",
+            Language::Russian => "ФЕРМА CICADAFARM",
+            Language::Hindi => "CICADAFARM फ़ार्म",
+        },
+        (_, "robot") => match language {
+            Language::English => "ROBOTCYB",
+            Language::Chinese => "ROBOTCYB 机器人",
+            Language::Russian => "ROBOTCYB",
+            Language::Hindi => "ROBOTCYB रोबोट",
+        },
+        (_, "system") => match language {
+            Language::English => "SYSTEM CORE",
+            Language::Chinese => "系统核心",
+            Language::Russian => "ЯДРО СИСТЕМЫ",
+            Language::Hindi => "सिस्टम कोर",
+        },
+        (_, "chat") => match language {
+            Language::English => "CYBCHAT",
+            Language::Chinese => "CYBCHAT 聊天",
+            Language::Russian => "CYBCHAT",
+            Language::Hindi => "CYBCHAT चैट",
+        },
+        (_, "assets") => match language {
+            Language::English => "ASSETS",
+            Language::Chinese => "资产",
+            Language::Russian => "АКТИВЫ",
+            Language::Hindi => "एसेट",
+        },
+        (_, "cameras") => match language {
+            Language::English => "FARM CAMERAS",
+            Language::Chinese => "农场摄像头",
+            Language::Russian => "КАМЕРЫ ФЕРМЫ",
+            Language::Hindi => "फ़ार्म कैमरे",
+        },
+        (_, "cyblex") => match language {
+            Language::English => "CYBLEX",
+            Language::Chinese => "CYBLEX 文件",
+            Language::Russian => "CYBLEX",
+            Language::Hindi => "CYBLEX फ़ाइलें",
+        },
+        (_, "cybdex") => match language {
+            Language::English => "CYBDEX · MARKET",
+            Language::Chinese => "CYBDEX · 市场",
+            Language::Russian => "CYBDEX · РЫНОК",
+            Language::Hindi => "CYBDEX · बाज़ार",
+        },
+        (_, "browser") => match language {
+            Language::English => "CYBBROWSER",
+            Language::Chinese => "CYBBROWSER 浏览器",
+            Language::Russian => "CYBBROWSER",
+            Language::Hindi => "CYBBROWSER ब्राउज़र",
+        },
+        _ => "",
+    }
+}
+
+pub(crate) fn page_title(language: Language, page: Page) -> &'static str {
+    let key = match page {
+        Page::Dashboard => "dashboard",
+        Page::Graph => "graph",
+        Page::Network => "network",
+        Page::Radar => "radar",
+        Page::Brain => "brain",
+        Page::Farm => "farm",
+        Page::Robot => "robot",
+        Page::System => "system",
+        Page::Chat => "chat",
+        Page::Assets => "assets",
+        Page::Cameras => "cameras",
+        Page::CybLex => "cyblex",
+        Page::CybDex => "cybdex",
+        Page::Browser => "browser",
+    };
+    tr(language, key)
+}
+
+pub(crate) fn page_guidance(language: Language, page: Page) -> (&'static str, &'static str, &'static str) {
+    if language == Language::English {
+        return page.guidance();
+    }
+    match (language, page) {
+        (Language::Chinese, Page::Dashboard) => ("查看 cybOS 模块、本机节点状态和近期活动。", "选择地图中的模块，或使用左侧导航栏。", "状态卡片反映应用的本地状态；演示数据不一定来自实时传感器。"),
+        (Language::Chinese, Page::Robot) => ("向 RobotCYB 提问，并定义可验证结果的任务。", "输入请求，然后创建包含验收标准的任务提案。", "任务预算只是记账限制；工作流检查不授权付款或物理操作。"),
+        (Language::Chinese, Page::Farm) => ("集中记录 CicadaFarm 的动物、植物、观察和农场活动。", "选择农场区域，记录观察或查看农场状态。", "只有明确连接并报告的数据才应视为实时测量。"),
+        (Language::Chinese, Page::Chat) => ("在本地与 RobotCYB 通信，或在安全通道可用时联系已发现的节点。", "先尝试本地对话；使用节点聊天前请核实对方身份。", "首次发现的节点并未自动验证，请与对方核对指纹。"),
+        (Language::Chinese, Page::Graph) => ("探索本地知识图谱中的节点和关系。", "选择节点查看详情，并缩放或平移图谱。", "图谱中的关系只是已存储的数据，并不证明其真实性。"),
+        (Language::Chinese, Page::Brain) => ("查看本地记忆、图谱知识和本地 AI 模型状态。", "先检查 Qwen 状态；若离线，请按照本页的首次设置说明操作。", "没有 Qwen 也可启动 cybOS，但 AI 请求可能无法完成。"),
+        (Language::Chinese, Page::Network) => ("查看本地网络发现和节点连接状态。", "扫描并选择节点，发送前检查其状态。", "发现节点并不代表已建立信任。"),
+        (Language::Chinese, Page::Radar) => ("查看通过支持的局域网或蓝牙机制发现的附近节点。", "仅在需要被发现时开启可见性，然后刷新发现列表。", "可见性可能暴露节点附近存在；不需要时请关闭。"),
+        (Language::Chinese, Page::Assets) => ("查看已配置的代币和钱包信息。", "复制或分享前请检查地址和余额。", "市场或余额数据可能延迟；切勿向 cybOS 输入助记词或私钥。"),
+        (Language::Chinese, Page::Cameras) => ("查看已配置农场摄像头的来源和连接状态。", "选择摄像头区域并检查状态。", "已配置的来源不一定已连接。"),
+        (Language::Chinese, Page::CybLex) => ("管理已授权的文件下载、共享和种子任务。", "选择磁力链接或种子网址，核实来源并选择保存目录。", "仅共享你拥有或获准分发的内容。"),
+        (Language::Chinese, Page::CybDex) => ("以只读方式查看 Solana 交易对、流动性、成交量和价格历史。", "搜索代币符号或 mint，选择交易对和图表周期。", "行情可能延迟；本页不会签名或执行兑换。"),
+        (Language::Chinese, Page::Browser) => ("查看网页和支持的去中心化协议地址中的文本。", "输入完整网址，例如 https://example.com，然后点击打开。", "此处不会执行远程 JavaScript；请将页面内容和链接视为不可信。"),
+        (Language::Chinese, Page::System) => ("检查本地运行状态、数据库和系统组件。", "查看 ERROR 或 OFFLINE 状态，并打开相关模块。", "READY 仅表示本地组件报告就绪，不保证外部服务可访问。"),
+        (Language::Russian, Page::Dashboard) => ("Обзор модулей cybOS, состояния локального узла и недавних событий.", "Выберите модуль на карте или воспользуйтесь левой панелью навигации.", "Карточки показывают локальное состояние; демонстрационные значения могут не быть показаниями датчиков."),
+        (Language::Russian, Page::Robot) => ("Общайтесь с RobotCYB и задавайте задачи с проверяемым результатом.", "Введите запрос и создайте предложение задачи с критериями приёмки.", "Бюджет задачи — только учётное ограничение; проверки не разрешают платежи или физические действия."),
+        (Language::Russian, Page::Farm) => ("Записывайте наблюдения, животных, растения и события CicadaFarm.", "Выберите раздел фермы и внесите наблюдение или проверьте состояние.", "Считайте данными датчиков только явно подключённые и переданные измерения."),
+        (Language::Russian, Page::Chat) => ("Общайтесь локально с RobotCYB или с обнаруженными узлами при наличии защищённого канала.", "Начните с локального чата; перед общением с узлом проверьте его личность.", "Новый узел не считается проверенным: сравните отпечаток с собеседником."),
+        (Language::Russian, Page::Graph) => ("Изучайте узлы и связи локального графа знаний.", "Выберите узел, чтобы увидеть сведения; масштабируйте и перемещайте граф.", "Связь в графе — сохранённые данные, а не доказательство факта."),
+        (Language::Russian, Page::Brain) => ("Просматривайте локальную память, знания графа и доступность модели ИИ.", "Сначала проверьте статус Qwen; если он отключён, следуйте инструкции настройки на этой странице.", "cybOS работает и без Qwen, но запросы к ИИ могут не выполниться."),
+        (Language::Russian, Page::Network) => ("Проверяйте обнаружение устройств и соединения локальной сети.", "Запустите сканирование, выберите узел и проверьте статус перед отправкой.", "Обнаружение устройства само по себе не означает доверия."),
+        (Language::Russian, Page::Radar) => ("Просматривайте ближайшие узлы, обнаруженные через LAN или Bluetooth.", "Включайте видимость только когда хотите, чтобы узел находили, затем обновите поиск.", "Видимость может раскрывать присутствие узла поблизости; отключайте её при необходимости."),
+        (Language::Russian, Page::Assets) => ("Просматривайте настроенные токены и сведения о кошельке.", "Проверьте адрес и балансы перед копированием или передачей.", "Данные рынка и баланса могут запаздывать. Не вводите seed-фразу или приватный ключ."),
+        (Language::Russian, Page::Cameras) => ("Проверяйте источники и подключение камер фермы.", "Выберите зону камеры и проверьте её состояние.", "Настроенный источник не обязательно передаёт видео."),
+        (Language::Russian, Page::CybLex) => ("Управляйте разрешёнными загрузками, раздачами и торрент-задачами.", "Укажите magnet-ссылку или URL торрента, проверьте источник и папку сохранения.", "Распространяйте только контент, которым вы владеете или имеете право делиться."),
+        (Language::Russian, Page::CybDex) => ("Просматривайте пары Solana, ликвидность, объём и историю цен в режиме чтения.", "Найдите токен по символу или mint, выберите пару и период графика.", "Рыночные данные могут запаздывать; обмены здесь не подписываются и не выполняются."),
+        (Language::Russian, Page::Browser) => ("Просматривайте текст веб-страниц и поддерживаемых децентрализованных адресов.", "Введите полный URL, например https://example.com, и нажмите «Открыть».", "Удалённый JavaScript не выполняется; считайте содержимое и ссылки недоверенными."),
+        (Language::Russian, Page::System) => ("Проверяйте состояние локального процесса, базы данных и компонентов системы.", "Обратите внимание на ERROR или OFFLINE и откройте соответствующий модуль.", "READY означает готовность локального компонента, но не гарантирует доступность внешних сервисов."),
+        (Language::Hindi, Page::Dashboard) => ("cybOS मॉड्यूल, स्थानीय नोड स्थिति और हाल की गतिविधि का अवलोकन।", "मानचित्र में मॉड्यूल चुनें या बाएँ नेविगेशन का उपयोग करें।", "स्थिति कार्ड स्थानीय स्थिति दिखाते हैं; डेमो मान लाइव सेंसर रीडिंग नहीं भी हो सकते।"),
+        (Language::Hindi, Page::Robot) => ("RobotCYB से बात करें और जाँचने योग्य परिणाम वाले कार्य बनाएँ।", "अनुरोध दर्ज करें और स्वीकृति मानदंडों वाला कार्य प्रस्ताव बनाएँ।", "कार्य बजट केवल लेखांकन सीमा है; वर्कफ़्लो जाँच भुगतान या भौतिक कार्रवाई की अनुमति नहीं देती।"),
+        (Language::Hindi, Page::Farm) => ("CicadaFarm के जानवरों, पौधों, अवलोकनों और गतिविधियों का रिकॉर्ड रखें।", "फ़ार्म अनुभाग चुनें और अवलोकन दर्ज करें या स्थिति देखें।", "केवल स्पष्ट रूप से जुड़े और रिपोर्ट किए गए माप को लाइव डेटा मानें।"),
+        (Language::Hindi, Page::Chat) => ("स्थानीय रूप से RobotCYB से बात करें या सुरक्षित चैनल उपलब्ध होने पर नोड से संपर्क करें।", "पहले स्थानीय चैट आज़माएँ; पीयर चैट से पहले पहचान सत्यापित करें।", "पहली बार मिला नोड सत्यापित नहीं है; दूसरे व्यक्ति के साथ फ़िंगरप्रिंट जाँचें।"),
+        (Language::Hindi, Page::Graph) => ("स्थानीय ज्ञान ग्राफ़ के नोड और संबंध देखें।", "विवरण देखने के लिए नोड चुनें; ग्राफ़ को ज़ूम या पैन करें।", "ग्राफ़ का संबंध संग्रहीत डेटा है, सत्य का प्रमाण नहीं।"),
+        (Language::Hindi, Page::Brain) => ("स्थानीय मेमोरी, ग्राफ़ ज्ञान और स्थानीय AI मॉडल की उपलब्धता देखें।", "पहले Qwen स्थिति जाँचें; ऑफ़लाइन होने पर इस पेज के सेटअप निर्देश देखें।", "Qwen के बिना भी cybOS खुलता है, लेकिन AI अनुरोध पूरे नहीं हो सकते।"),
+        (Language::Hindi, Page::Network) => ("स्थानीय नेटवर्क खोज और पीयर कनेक्टिविटी देखें।", "स्कैन करें, पीयर चुनें और संदेश भेजने से पहले उसकी स्थिति जाँचें।", "डिस्कवरी अपने आप भरोसा स्थापित नहीं करती।"),
+        (Language::Hindi, Page::Radar) => ("LAN या Bluetooth से खोजे गए नज़दीकी नोड देखें।", "केवल खोजे जाने की इच्छा होने पर दृश्यता चालू करें, फिर खोज रीफ़्रेश करें।", "दृश्यता से पास में आपके नोड की मौजूदगी पता चल सकती है।"),
+        (Language::Hindi, Page::Assets) => ("कॉन्फ़िगर किए गए टोकन और वॉलेट जानकारी देखें।", "कॉपी या साझा करने से पहले पता और बैलेंस जाँचें।", "बाज़ार डेटा देर से आ सकता है। cybOS में seed phrase या निजी कुंजी न डालें।"),
+        (Language::Hindi, Page::Cameras) => ("फ़ार्म कैमरा स्रोत और कनेक्शन स्थिति देखें।", "कैमरा क्षेत्र चुनें और स्थिति जाँचें।", "कॉन्फ़िगर किया गया स्रोत ज़रूरी नहीं कि लाइव हो।"),
+        (Language::Hindi, Page::CybLex) => ("अनुमत फ़ाइल डाउनलोड, शेयरिंग और टोरेंट कार्य प्रबंधित करें।", "मैग्नेट लिंक या टोरेंट URL चुनें, स्रोत जाँचें और फ़ोल्डर चुनें।", "केवल वही सामग्री साझा करें जिसे साझा करने का अधिकार है।"),
+        (Language::Hindi, Page::CybDex) => ("Solana जोड़े, लिक्विडिटी, वॉल्यूम और कीमत इतिहास को केवल पढ़ने के मोड में देखें।", "टोकन प्रतीक या mint खोजें, जोड़ा और चार्ट अवधि चुनें।", "बाज़ार डेटा देर से आ सकता है; यहाँ स्वैप साइन या निष्पादित नहीं होते।"),
+        (Language::Hindi, Page::Browser) => ("वेब और समर्थित विकेंद्रीकृत पते की टेक्स्ट सामग्री देखें।", "पूरा URL डालें, जैसे https://example.com, और Open दबाएँ।", "दूरस्थ JavaScript नहीं चलता; पेज सामग्री और लिंक को अविश्वसनीय मानें।"),
+        (Language::Hindi, Page::System) => ("स्थानीय रनटाइम, डेटाबेस और सिस्टम घटकों की स्थिति देखें।", "ERROR या OFFLINE स्थिति देखें और संबंधित मॉड्यूल खोलें।", "READY स्थानीय घटक की रिपोर्ट है; बाहरी सेवाओं की उपलब्धता की गारंटी नहीं।"),
+        _ => page.guidance(),
+    }
+}
