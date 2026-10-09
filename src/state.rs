@@ -151,7 +151,7 @@ impl Default for CybOs {
                     // ephemeral identity and never advertise secure chat as READY.
                     store.add_event(
                         "SECURITY",
-                        format!("Secure chat disabled because identity initialization failed: {error}"),
+                        &format!("Secure chat disabled because identity initialization failed: {error}"),
                     );
                     (
                         Vec::new(),
