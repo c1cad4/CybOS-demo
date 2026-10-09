@@ -2,7 +2,7 @@ name: cybOS CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, fix/secure-chat-key-persistence]
   pull_request:
     branches: [main]
 
@@ -59,10 +59,10 @@ jobs:
         run: cargo build --release --target x86_64-apple-darwin
 
       - name: Compile CoreBluetooth advertiser ARM64
-        run: swiftc -arch arm64 macos/CybOSBLEAdvertiser.swift -o /tmp/cybOS-ble-arm64 -framework CoreBluetooth
+        run: swiftc -target arm64-apple-macosx13.0 macos/CybOSBLEAdvertiser.swift -o /tmp/cybOS-ble-arm64 -framework CoreBluetooth
 
       - name: Compile CoreBluetooth advertiser Intel
-        run: swiftc -arch x86_64 macos/CybOSBLEAdvertiser.swift -o /tmp/cybOS-ble-x86_64 -framework CoreBluetooth
+        run: swiftc -target x86_64-apple-macosx13.0 macos/CybOSBLEAdvertiser.swift -o /tmp/cybOS-ble-x86_64 -framework CoreBluetooth
 
       - name: Verify universal packaging
         run: |
