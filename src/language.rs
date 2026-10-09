@@ -436,3 +436,34 @@ pub(crate) fn page_guidance(language: Language, page: Page) -> (&'static str, &'
         _ => page.guidance(),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn language_codes_round_trip() {
+        for language in Language::ALL {
+            assert_eq!(Language::from_code(language.code()), language);
+        }
+        assert_eq!(Language::from_code("unknown"), Language::English);
+    }
+
+    #[test]
+    fn core_controls_have_translations_for_all_languages() {
+        let keys = [
+            "language",
+            "quick_guide",
+            "chat_subtitle",
+            "network_subtitle",
+            "brain_subtitle",
+            "public_identifiers",
+            "system_subtitle",
+        ];
+        for language in Language::ALL {
+            for key in keys {
+                assert!(!tr(language, key).is_empty(), "missing {key} for {}", language.code());
+            }
+        }
+    }
+}
