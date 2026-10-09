@@ -77,22 +77,93 @@ impl Drop for Listener {
 }
 
 pub(crate) fn load_or_create_static_key(store: &crate::store::Store) -> Result<Vec<u8>, String> {
+    #[cfg(target_os = "macos")]
+    {
+        load_or_create_keychain_key(store)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        load_or_create_sqlite_key(store)
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn load_or_create_sqlite_key(store: &crate::store::Store) -> Result<Vec<u8>, String> {
     if let Some(encoded) = store.get("noise_static_private_hex") {
         return decode_static_private_key(&encoded);
     }
 
-    let params = PATTERN.parse().map_err(|e| format!("noise params: {e}"))?;
-    let keypair = Builder::new(params)
-        .generate_keypair()
-        .map_err(|e| format!("noise key generation: {e}"))?;
-    let encoded = keypair.private.iter().map(|b| format!("{b:02x}")).collect::<String>();
-    // Cryptographic identity must survive restart. Do not start with an
-    // ephemeral key if durable storage fails, and verify the write by reading it back.
+    let private_key = generate_static_private_key()?;
+    let encoded = encode_static_private_key(&private_key);
+    // Do not start with an ephemeral key if durable storage fails.
     store.try_set("noise_static_private_hex", &encoded)?;
     if store.get("noise_static_private_hex").as_deref() != Some(encoded.as_str()) {
         return Err("could not verify persisted Noise identity key; refusing to start".into());
     }
-    Ok(keypair.private)
+    Ok(private_key)
+}
+
+#[cfg(target_os = "macos")]
+fn load_or_create_keychain_key(store: &crate::store::Store) -> Result<Vec<u8>, String> {
+    const SERVICE: &str = "to.cicada.cybos";
+    const ACCOUNT: &str = "noise-static-private-key";
+    const LEGACY_KEY: &str = "noise_static_private_hex";
+
+    let entry = keyring::Entry::new(SERVICE, ACCOUNT)
+        .map_err(|error| format!("cannot access macOS Keychain entry: {error}"))?;
+    let legacy = store.get(LEGACY_KEY);
+
+    match entry.get_password() {
+        Ok(encoded) => {
+            let key = decode_static_private_key(&encoded)
+                .map_err(|error| format!("macOS Keychain Noise identity is invalid: {error}"))?;
+            if let Some(legacy_encoded) = legacy {
+                let legacy_key = decode_static_private_key(&legacy_encoded)
+                    .map_err(|error| format!("legacy SQLite Noise identity is invalid; preserving both copies: {error}"))?;
+                if legacy_key != key {
+                    return Err("macOS Keychain and SQLite Noise identities differ; refusing to rotate identity or delete either copy".into());
+                }
+                store.try_delete(LEGACY_KEY)?;
+            }
+            Ok(key)
+        }
+        Err(keyring::Error::NoEntry) => {
+            let key = if let Some(legacy_encoded) = legacy {
+                // Migration preserves the established public identity.
+                decode_static_private_key(&legacy_encoded)
+                    .map_err(|error| format!("legacy SQLite Noise identity is invalid; migration stopped: {error}"))?
+            } else {
+                generate_static_private_key()?
+            };
+            let encoded = encode_static_private_key(&key);
+            entry.set_password(&encoded)
+                .map_err(|error| format!("cannot write Noise identity to macOS Keychain: {error}"))?;
+            let verified = entry.get_password()
+                .map_err(|error| format!("cannot verify Noise identity in macOS Keychain: {error}"))?;
+            if verified != encoded {
+                return Err("macOS Keychain read-back mismatch; preserving legacy data and refusing to start".into());
+            }
+            if legacy.is_some() {
+                store.try_delete(LEGACY_KEY)?;
+            }
+            Ok(key)
+        }
+        Err(error) => Err(format!(
+            "macOS Keychain is unavailable or access was denied; refusing to fall back to SQLite or rotate identity: {error}"
+        )),
+    }
+}
+
+fn generate_static_private_key() -> Result<Vec<u8>, String> {
+    let params = PATTERN.parse().map_err(|e| format!("noise params: {e}"))?;
+    Builder::new(params)
+        .generate_keypair()
+        .map(|keypair| keypair.private)
+        .map_err(|e| format!("noise key generation: {e}"))
+}
+
+fn encode_static_private_key(key: &[u8]) -> String {
+    key.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
 fn decode_static_private_key(encoded: &str) -> Result<Vec<u8>, String> {
