@@ -17,14 +17,18 @@ Core desktop scope currently implemented:
 - native CybLex P2P archive powered by embedded librqbit 9.0.1.
 
 ## Public macOS beta
-Estimated readiness: **90–95%**.
+**Not yet cleared for public release.** The previous 90–95% estimate should not be treated as a security sign-off.
 
-Remaining blockers are mostly productization and real-device validation:
-- signed/notarized distribution;
-- two-Mac interoperability test of RADAR + Secure CYBChat + TOFU;
+In addition to productization and real-device validation, local secret/data protection is still incomplete: the Noise private key and peer trust pins are persisted in SQLite, and chat history is stored locally. Noise protects transport; it does not by itself encrypt the local database. See [Security Review](docs/SECURITY_REVIEW.md).
+
+Release blockers:
+- OS-backed storage for the Noise private key and a tested migration from legacy storage;
+- an explicit local chat-history protection policy;
+- two-Mac interoperability tests for RADAR + Secure CYBChat + TOFU;
 - upgrade/reinstall and recovery testing;
 - complete real-device interoperability validation;
-- verify CybLex two-node download/seed interoperability with authorized test content.
+- CybLex two-node download/seed testing with authorized content;
+- signed/notarized distribution.
 
 ## CybDEX
 The first market-data phase is implemented as a read-only native terminal. Swap routing, wallet signing and an own on-chain AMM remain separate future layers.
