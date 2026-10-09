@@ -31,5 +31,10 @@ async fn trusted_node_permissions_are_default_deny_and_revocable() {
         "SELECT EXISTS (SELECT 1 FROM trusted_nodes n JOIN node_event_permissions p USING(author_key) WHERE n.author_key=$1 AND n.enabled AND p.kind=$2)"
     ).bind(&key).bind(kind).fetch_one(&mut *tx).await.unwrap();
     assert!(!permitted, "revoked node must be denied");
+    let other_kind = "test.integration.denied";
+    let denied: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM trusted_nodes n JOIN node_event_permissions p USING(author_key) WHERE n.author_key=$1 AND n.enabled AND p.kind=$2)"
+    ).bind(&key).bind(other_kind).fetch_one(&mut *tx).await.unwrap();
+    assert!(!denied, "grant for one event kind must not grant another");
     tx.rollback().await.unwrap();
 }
