@@ -30,6 +30,48 @@ impl CybOs {
 
             ui.add_space(14.0);
 
+            if !self.pending_secure_trust.is_empty() {
+                let pending = self.pending_secure_trust.clone();
+                egui::Frame::NONE
+                    .fill(Color32::from_rgb(32, 22, 8))
+                    .stroke(egui::Stroke::new(1.0, Color32::from_rgb(235, 165, 60)))
+                    .corner_radius(egui::CornerRadius::same(10))
+                    .inner_margin(12.0)
+                    .show(ui, |ui| {
+                        ui.label(
+                            RichText::new("⚠  VERIFY NEW SECURE PEER")
+                                .size(12.0)
+                                .strong()
+                                .color(Color32::from_rgb(255, 190, 70)),
+                        );
+                        ui.label(
+                            RichText::new("Messages from a first-seen key are held. Compare the full SHA-256 fingerprint with the peer over a separate trusted channel before approving. Noise encryption alone does not verify who is on the other end.")
+                                .size(9.0)
+                                .color(Color32::from_rgb(240, 220, 185)),
+                        );
+                        ui.add_space(6.0);
+                        for (index, item) in pending.iter().enumerate() {
+                            ui.separator();
+                            ui.label(RichText::new(format!("PEER · {}", item.node_id)).size(10.0).strong().color(neon));
+                            ui.label(RichText::new(format!("SHA-256 · {}", item.fingerprint)).size(8.0).color(Color32::from_rgb(240, 220, 185)));
+                            ui.horizontal(|ui| {
+                                let trust = ui.button(RichText::new("TRUST KEY").strong().color(neon))
+                                    .on_hover_text("Persist this exact public key and release the held message only after you have verified the fingerprint out of band.")
+                                    .clicked();
+                                let reject = ui.button(RichText::new("REJECT").strong().color(Color32::from_rgb(255, 110, 110)))
+                                    .on_hover_text("Reject this message without trusting or persisting the new peer key.")
+                                    .clicked();
+                                if trust {
+                                    self.approve_pending_secure_peer(index);
+                                } else if reject {
+                                    self.reject_pending_secure_peer(index);
+                                }
+                            });
+                        }
+                    });
+                ui.add_space(10.0);
+            }
+
             ui.horizontal(|ui| {
                 egui::Frame::NONE
                     .fill(panel)
