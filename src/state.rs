@@ -147,12 +147,26 @@ impl Default for CybOs {
         let language = crate::language::Language::from_code(&store.get("language").unwrap_or_else(|| "en".into()));
         let radar_visibility = Arc::new(AtomicBool::new(radar_visible));
         let lan_events = crate::network::lan::spawn_listener(node_id.clone(), radar_visibility.clone());
-        let noise_private_key = crate::network::secure_chat::load_or_create_static_key(&store)
-            .unwrap_or_default();
-        let secure_listener = crate::network::secure_chat::spawn_listener(
-            node_id.clone(),
-            noise_private_key.clone(),
-        );
+        let (noise_private_key, secure_listener, secure_status) =
+            match crate::network::secure_chat::load_or_create_static_key(&store) {
+                Ok(key) => {
+                    let listener = crate::network::secure_chat::spawn_listener(
+                        node_id.clone(),
+                        key.clone(),
+                    );
+                    let status = listener
+                        .startup_error
+                        .as_ref()
+                        .map(|error| format!("SECURE CHAT · LISTENER ERROR · {}", error))
+                        .unwrap_or_else(|| "SECURE CHAT · READY".into());
+                    (key, listener, status)
+                }
+                Err(error) => (
+                    Vec::new(),
+                    crate::network::secure_chat::Listener::failed(format!("secure identity unavailable: {}", error)),
+                    format!("SECURE CHAT · IDENTITY ERROR · {}", error),
+                ),
+            };
 
         let mut app = Self {
             store,
@@ -243,7 +257,7 @@ impl Default for CybOs {
             secure_listener,
             secure_send_task: None,
             secure_send_contract: None,
-            secure_status: "SECURE CHAT · READY".into(),
+            secure_status,
             pending_secure_trust: Vec::new(),
 
             remember_note: String::new(),
@@ -448,7 +462,11 @@ impl CybOs {
                 Ok(event) => event,
                 Err(std::sync::mpsc::TryRecvError::Empty) => break,
                 Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                    self.secure_status = "SECURE CHAT · LISTENER STOPPED".into();
+                    if let Some(error) = self.secure_listener.startup_error.as_deref() {
+                        self.secure_status = format!("SECURE CHAT · UNAVAILABLE · {}", error);
+                    } else {
+                        self.secure_status = "SECURE CHAT · LISTENER STOPPED".into();
+                    }
                     self.runtime.set_status("CYBCHAT", "ERROR");
                     break;
                 }

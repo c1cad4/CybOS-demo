@@ -52,6 +52,7 @@ struct Envelope {
 
 pub(crate) struct Listener {
     pub(crate) events: Receiver<SecureEvent>,
+    pub(crate) startup_error: Option<String>,
     stop: Arc<AtomicBool>,
 }
 
@@ -64,6 +65,16 @@ impl Listener {
         let (_tx, events) = mpsc::channel();
         Self {
             events,
+            startup_error: None,
+            stop: Arc::new(AtomicBool::new(true)),
+        }
+    }
+
+    pub(crate) fn failed(reason: String) -> Self {
+        let (_tx, events) = mpsc::channel();
+        Self {
+            events,
+            startup_error: Some(reason),
             stop: Arc::new(AtomicBool::new(true)),
         }
     }
@@ -176,8 +187,13 @@ fn spawn_listener_bind(
     });
     // Do not return until the listener is bound, so callers and tests never race startup.
     match ready_rx.recv_timeout(Duration::from_secs(3)) {
-        Ok(Ok(())) => Listener { events: rx, stop },
-        Ok(Err(_)) | Err(_) => Listener { events: rx, stop }
+        Ok(Ok(())) => Listener { events: rx, stop, startup_error: None },
+        Ok(Err(error)) => Listener { events: rx, stop, startup_error: Some(error) },
+        Err(error) => Listener {
+            events: rx,
+            stop,
+            startup_error: Some(format!("secure listener startup timed out: {error}")),
+        },
     }
 }
 
@@ -448,8 +464,24 @@ fn fingerprint_sha256(bytes: &[u8]) -> String {
 mod tests {
     use super::{decode_hex, decode_static_key, encode_hex, fingerprint_sha256, spawn_listener_at, send_on_port, SecureSendStatus, SecureEvent, SecureReply, PATTERN};
     use snow::{params::NoiseParams, Builder};
+    use std::net::TcpListener as StdTcpListener;
     use std::thread;
     use std::time::{Duration, Instant};
+
+    #[test]
+    fn listener_reports_bind_failure_instead_of_appearing_ready() {
+        let occupied = StdTcpListener::bind(("127.0.0.1", 0)).expect("reserve test port");
+        let port = occupied.local_addr().expect("reserved address").port();
+        let params: NoiseParams = PATTERN.parse().expect("noise params");
+        let keypair = Builder::new(params).generate_keypair().expect("test keypair");
+
+        let listener = spawn_listener_at("node-bind-failure".into(), keypair.private, port);
+        let error = listener.startup_error.as_deref().expect("startup failure is visible");
+        assert!(error.contains("secure listener bind failed"), "unexpected error: {error}");
+
+        drop(listener);
+        drop(occupied);
+    }
 
     #[test]
     fn stored_identity_key_requires_exactly_32_bytes_of_hex() {
