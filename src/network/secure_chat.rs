@@ -77,13 +77,16 @@ impl Drop for Listener {
 
 pub(crate) fn load_or_create_static_key(store: &crate::store::Store) -> Result<Vec<u8>, String> {
     if let Some(encoded) = store.get("noise_static_private_hex") {
-        if encoded.len() == 64 && encoded.chars().all(|c| c.is_ascii_hexdigit()) {
-            let mut key = Vec::with_capacity(32);
-            for i in (0..encoded.len()).step_by(2) {
-                key.push(u8::from_str_radix(&encoded[i..i + 2], 16).map_err(|e| e.to_string())?);
-            }
-            return Ok(key);
+        if encoded.len() != 64 || !encoded.chars().all(|c| c.is_ascii_hexdigit()) {
+            return Err(
+                "stored Noise identity key is malformed; refusing to silently rotate peer identity".into(),
+            );
         }
+        let mut key = Vec::with_capacity(32);
+        for i in (0..encoded.len()).step_by(2) {
+            key.push(u8::from_str_radix(&encoded[i..i + 2], 16).map_err(|e| e.to_string())?);
+        }
+        return Ok(key);
     }
 
     let params = PATTERN.parse().map_err(|e| format!("noise params: {e}"))?;
@@ -91,7 +94,12 @@ pub(crate) fn load_or_create_static_key(store: &crate::store::Store) -> Result<V
         .generate_keypair()
         .map_err(|e| format!("noise key generation: {e}"))?;
     let encoded = keypair.private.iter().map(|b| format!("{b:02x}")).collect::<String>();
-    store.set("noise_static_private_hex", &encoded);
+    // Cryptographic identity must survive restart. Do not start with an
+    // ephemeral key if durable storage fails, and verify the write by reading it back.
+    store.try_set("noise_static_private_hex", &encoded)?;
+    if store.get("noise_static_private_hex").as_deref() != Some(encoded.as_str()) {
+        return Err("could not verify persisted Noise identity key; refusing to start".into());
+    }
     Ok(keypair.private)
 }
 
