@@ -87,7 +87,7 @@ impl CybOs {
                             .color(neon),
                     );
 
-                    if ui.button("COPY ID").clicked() {
+                    if ui.button("COPY ID").on_hover_text("Copy this node’s public identifier so another person can identify the peer.").clicked() {
                         ui.ctx().copy_text(self.node_id.clone());
                         self.notify("NODE ID COPIED");
                     }
@@ -101,7 +101,7 @@ impl CybOs {
                     };
 
                     if ui
-                        .add_enabled(!scanning, egui::Button::new(scan_label))
+                        .add_enabled(!scanning, egui::Button::new(scan_label)).on_hover_text("Discover peers on the local network. Discovery does not verify identity or trust.")
                         .clicked()
                     {
                         self.start_lan_scan();
@@ -110,7 +110,7 @@ impl CybOs {
 
                     let ble_scanning = self.ble_scan.is_some();
                     if ui
-                        .add_enabled(!ble_scanning, egui::Button::new(if ble_scanning { "BLE SCANNING…" } else { "SCAN BLE" }))
+                        .add_enabled(!ble_scanning, egui::Button::new(if ble_scanning { "BLE SCANNING…" } else { "SCAN BLE" })).on_hover_text("Scan for nearby Bluetooth Low Energy peers. Bluetooth availability depends on the host system.")
                         .clicked()
                     {
                         self.ble_scan = Some(crate::network::ble::start_scan());
