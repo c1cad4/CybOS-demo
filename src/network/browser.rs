@@ -352,6 +352,7 @@ fn fetch_text(url: &str, budget: Duration) -> Result<String, String> {
     let mut bytes = Vec::new();
     response
         .into_body()
+        .into_reader()
         .take((MAX_BODY_BYTES + 1) as u64)
         .read_to_end(&mut bytes)
         .map_err(|e| format!("Browser body read failed: {e}"))?;
