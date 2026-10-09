@@ -200,7 +200,7 @@ impl Store {
             .ok_or_else(|| "cannot verify persisted secure peer identity".to_string())?;
         let decoded = decode_exact_hex_key(&stored)
             .ok_or_else(|| "stored secure peer identity pin is malformed".to_string())?;
-        if decoded != public_key {
+        if decoded.as_slice() != public_key {
             return Err("Noise peer identity key changed".into());
         }
         Ok(inserted == 0)
