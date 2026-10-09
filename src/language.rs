@@ -103,6 +103,43 @@ pub(crate) fn tr(language: Language, key: &str) -> &'static str {
             Language::Russian => "Совет: нажмите ⌘K для поиска раздела; наведите курсор на значки и кнопки для подсказок.",
             Language::Hindi => "सुझाव: पेज खोजने के लिए ⌘K दबाएँ; संकेतों के लिए आइकन और बटन पर कर्सर रखें।",
         },
+        (_, "live_node") => match language {
+            Language::English => "LIVE NODE",
+            Language::Chinese => "实时节点",
+            Language::Russian => "УЗЕЛ",
+            Language::Hindi => "लाइव नोड",
+        },
+        (_, "qwen") => "QWEN",
+        (_, "memory") => match language {
+            Language::English => "MEMORY",
+            Language::Chinese => "记忆",
+            Language::Russian => "ПАМЯТЬ",
+            Language::Hindi => "मेमोरी",
+        },
+        (_, "energy") => match language {
+            Language::English => "ENERGY",
+            Language::Chinese => "能源",
+            Language::Russian => "ЭНЕРГИЯ",
+            Language::Hindi => "ऊर्जा",
+        },
+        (_, "environment") => match language {
+            Language::English => "ENVIRONMENT",
+            Language::Chinese => "环境",
+            Language::Russian => "СРЕДА",
+            Language::Hindi => "पर्यावरण",
+        },
+        (_, "activity") => match language {
+            Language::English => "ACTIVITY",
+            Language::Chinese => "活动",
+            Language::Russian => "АКТИВНОСТЬ",
+            Language::Hindi => "गतिविधि",
+        },
+        (_, "tokens") => match language {
+            Language::English => "TOKENS",
+            Language::Chinese => "代币",
+            Language::Russian => "ТОКЕНЫ",
+            Language::Hindi => "टोकन",
+        },
         (_, "dashboard") => match language {
             Language::English => "CENTRAL CYBOS DASHBOARD",
             Language::Chinese => "cybOS 控制面板",
