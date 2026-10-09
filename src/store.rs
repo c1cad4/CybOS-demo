@@ -266,6 +266,7 @@ impl Store {
 
     /// Claims a secure message id exactly once, retaining the latest 1024 ids.
     pub(crate) fn claim_secure_message_id(&self, message_id: &str, sender: &str) -> bool {
+        if immunocybchain::validate_message_identity(message_id, sender).is_err() { return false; }
         let inserted = self
             .conn
             .execute(
@@ -344,6 +345,9 @@ impl Store {
     }
 }
 fn dirs_fallback() -> PathBuf {
+    if let Some(path) = std::env::var_os("CYBOS_DATA_DIR").filter(|path| !path.is_empty()) {
+        return PathBuf::from(path);
+    }
     if let Ok(p) = std::env::var("HOME") {
         PathBuf::from(p).join("Library/Application Support/cybOS")
     } else {

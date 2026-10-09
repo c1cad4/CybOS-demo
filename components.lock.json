@@ -1,0 +1,44 @@
+{
+  "repositories": [
+    {
+      "name": "robotcyb-core",
+      "commit": "8d88584b886f1f97d81a033e79703398cc6ec650"
+    },
+    {
+      "name": "cybnet",
+      "commit": "08e19dce9339ad3ae062c46c2105550084075945"
+    },
+    {
+      "name": "cybguard",
+      "commit": "0035db4a7b07ed5936de95889ec46881b973082c"
+    },
+    {
+      "name": "cybbee",
+      "commit": "f038465c532a6e6a7bbbfb0ccab1bd20f2f6d3ad"
+    },
+    {
+      "name": "cybchain",
+      "commit": "d4172db0fa7e9d27b0c4a90979f82d2242bf25fb"
+    },
+    {
+      "name": "cybweb",
+      "commit": "13efba785ee8eb1b54ebfe4deccc3477dbfc058e"
+    },
+    {
+      "name": "soul",
+      "commit": "5a19bfc0912f8c51d80722684debbad0668e3f17"
+    },
+    {
+      "name": "immunocybchain",
+      "commit": "3963f9e300d9f1a0979ac4287b91e35a9ac2b0af"
+    },
+    {
+      "name": "CybBrowser",
+      "commit": "b807057623c48127e7e75bbdca0528f7743d250e"
+    },
+    {
+      "name": "cybdex",
+      "commit": "fd55bfc8ecaa9687f9fd8d71bd3f4fc9492d44c9"
+    }
+  ]
+}

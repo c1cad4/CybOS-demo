@@ -471,7 +471,6 @@ mod tests {
                     thread::sleep(Duration::from_millis(20));
                 }
                 Err(error) => panic!("secure listener did not receive message: {error:?}"),
-                _ => panic!("secure listener timed out"),
             }
         };
 
@@ -529,7 +528,6 @@ mod tests {
                     thread::sleep(Duration::from_millis(20));
                 }
                 Err(error) => panic!("secure listener did not receive message: {error:?}"),
-                _ => panic!("secure listener timed out"),
             }
         };
 

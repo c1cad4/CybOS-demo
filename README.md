@@ -196,3 +196,13 @@ The current native stack is organized as bounded local-first cells:
 - **Bounded execution:** discovery and secure transport use explicit time windows, I/O deadlines and connection limits.
 
 A peer is not considered geographically located merely because BLE RSSI is available.
+
+
+## Экосистема cybOS
+
+[Роль проекта, команды и границы](docs/ECOSYSTEM.md) · [Карта всех компонентов](https://github.com/c1cad4/cybOS).
+
+### Pinned component setup
+
+Run `python3 scripts/bootstrap_components.py` before Cargo commands after a fresh clone.
+The ten sibling libraries are pinned in `components.lock.json`; existing checkouts are preserved.

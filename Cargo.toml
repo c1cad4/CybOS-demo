@@ -10,6 +10,16 @@ hardware-rpi = ["dep:rppal", "dep:embedded-hal"]
 oracle-switchboard = ["dep:switchboard-on-demand"]
 
 [dependencies]
+immunocybchain = { path = "../immunocybchain" }
+robotcyb-core = { path = "../robotcyb-core" }
+cyb-net = { path = "../cybnet" }
+cyb-guard = { path = "../cybguard" }
+cyb-bee = { path = "../cybbee" }
+cyb-chain = { path = "../cybchain" }
+cyb-web = { path = "../cybweb" }
+cyb-browser = { path = "../CybBrowser" }
+cyb-dex = { path = "../cybdex" }
+cyb-soul = { path = "../soul" }
 eframe = "0.36.2"
 egui = "0.36.2"
 serde = { version = "1", features = ["derive"] }

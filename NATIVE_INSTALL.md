@@ -27,6 +27,16 @@ The current `main` branch contains universal ARM64 + Intel packaging, replay pro
 
 ## Build locally
 
+First restore the pinned sibling libraries with `python3 scripts/bootstrap_components.py`.
+The script clones missing components beside this checkout and preserves existing directories.
+Use `--verify` to check their revisions against `components.lock.json`.
+
+For Linux development, run `cargo build --locked` and `cargo test --locked`.
+Set `CYBOS_DATA_DIR` to choose where the SQLite database and local identity are
+stored, for example `/workspace/.onboarding/cybos-data` in a cloud environment.
+The desktop requires an X11 or Wayland display; model weights and hardware are
+optional.
+
 From the repository root:
 
 ~~~bash

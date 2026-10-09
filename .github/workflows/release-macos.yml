@@ -16,8 +16,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Restore pinned ecosystem components
+        run: python3 scripts/bootstrap_components.py
+
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1.99.0
 
       - name: Package macOS app
         run: bash ./scripts/package_macos.sh

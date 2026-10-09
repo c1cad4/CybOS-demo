@@ -50,6 +50,13 @@ impl CybOs {
 
         let executable = home.join("cybAI/.venv/bin/mlx_lm.server");
 
+        if !executable.is_file() {
+            self.qwen_status = "QWEN · OFFLINE · LOCAL SERVER NOT CONFIGURED".into();
+            self.status = "LOCAL-FIRST · READY · QWEN OFFLINE".into();
+            self.qwen_retry_after = Instant::now() + Duration::from_secs(5);
+            return;
+        }
+
         match Command::new(&executable)
             .args([
                 "--model",
