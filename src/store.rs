@@ -477,6 +477,46 @@ mod tests {
     }
 
     #[test]
+    fn agent_work_and_ledger_round_trip() {
+        use crate::agent_economy::{AgentTask, AgentTaskStatus, LedgerEntry, LedgerKind};
+
+        let conn = Connection::open_in_memory().expect("in-memory sqlite");
+        conn.execute_batch(
+            "CREATE TABLE agent_tasks(
+                id TEXT PRIMARY KEY, status TEXT NOT NULL, title TEXT NOT NULL,
+                updated_at TEXT NOT NULL, payload TEXT NOT NULL
+             );
+             CREATE TABLE agent_ledger(
+                id TEXT PRIMARY KEY, timestamp TEXT NOT NULL, kind TEXT NOT NULL,
+                amount REAL NOT NULL, currency TEXT NOT NULL, task_id TEXT, payload TEXT NOT NULL
+             );",
+        ).expect("agent schema");
+        let store = Store {
+            path: std::path::PathBuf::from(":memory:"),
+            conn,
+        };
+
+        let mut task = AgentTask::proposal(
+            "Farm report", "Summarize weekly sensor readings",
+            "Report includes sources and missing-data notes", 20.0, 3.5,
+        ).expect("valid task");
+        task.transition(AgentTaskStatus::Ready).expect("ready");
+        store.save_agent_task(&task).expect("save task");
+        assert_eq!(store.agent_tasks().len(), 1);
+        assert_eq!(store.agent_tasks()[0].title, "Farm report");
+
+        let entry = LedgerEntry::new(
+            LedgerKind::Income, 12.0, "USD", Some(task.id.clone()),
+            "Customer accepted report",
+        ).expect("valid ledger entry");
+        store.append_agent_ledger(&entry).expect("append ledger");
+        let ledger = store.agent_ledger();
+        assert_eq!(ledger.len(), 1);
+        assert_eq!(ledger[0].amount, 12.0);
+        assert_eq!(ledger[0].currency, "USD");
+    }
+
+    #[test]
     fn database_integrity_check_reports_ok() {
         let conn = Connection::open_in_memory().expect("in-memory sqlite");
         let store = Store {
