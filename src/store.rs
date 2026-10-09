@@ -721,6 +721,38 @@ mod tests {
     }
 
     #[test]
+    fn workflow_and_capability_records_round_trip() {
+        use crate::agent_runtime::{CapabilityRisk, CapabilitySpec, WorkflowCheckpoint, WorkflowRun, WorkflowStatus};
+
+        let conn = Connection::open_in_memory().expect("in-memory sqlite");
+        conn.execute_batch(
+            "CREATE TABLE agent_capabilities(id TEXT PRIMARY KEY, risk TEXT NOT NULL, requires_approval INTEGER NOT NULL, payload TEXT NOT NULL);
+             CREATE TABLE workflow_runs(id TEXT PRIMARY KEY, workflow_name TEXT NOT NULL, status TEXT NOT NULL, updated_at TEXT NOT NULL, payload TEXT NOT NULL);
+             CREATE TABLE workflow_checkpoints(id TEXT PRIMARY KEY, run_id TEXT NOT NULL, step INTEGER NOT NULL, created_at TEXT NOT NULL, payload TEXT NOT NULL);"
+        ).expect("workflow schema");
+        let store = Store { path: std::path::PathBuf::from(":memory:"), conn };
+
+        let capability = CapabilitySpec::new(
+            "farm.read_observations", "Read local farm observations", CapabilityRisk::ReadOnly, false, 4096
+        ).expect("valid capability");
+        store.save_capability(&capability).expect("save capability");
+        assert_eq!(store.capabilities().len(), 1);
+        assert_eq!(store.capabilities()[0].id, "farm.read_observations");
+
+        let mut run = WorkflowRun::new("farm_report", Some("task-1".into()), serde_json::json!({"zone":"north"}))
+            .expect("valid run");
+        run.transition(WorkflowStatus::Running).expect("start");
+        store.save_workflow_run(&run).expect("save run");
+        let checkpoint = WorkflowCheckpoint::new(
+            run.id.clone(), 1, "collect", "observations collected", serde_json::json!({"count":4})
+        ).expect("valid checkpoint");
+        store.append_workflow_checkpoint(&checkpoint).expect("append checkpoint");
+        assert_eq!(store.workflow_runs().len(), 1);
+        assert_eq!(store.workflow_runs()[0].workflow_name, "farm_report");
+        assert_eq!(store.workflow_checkpoints(&run.id).len(), 1);
+    }
+
+    #[test]
     fn database_integrity_check_reports_ok() {
         let conn = Connection::open_in_memory().expect("in-memory sqlite");
         let store = Store {
