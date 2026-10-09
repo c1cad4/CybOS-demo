@@ -29,6 +29,8 @@ impl CybOs {
                     ui.add_space(8.0);
                     ui.label(RichText::new(crate::language::tr(self.language, "pulse_wildlife_period")).size(9.0).color(dim));
                     ui.label(RichText::new(crate::language::tr(self.language, "pulse_wildlife_coverage")).size(9.0).color(dim));
+                    ui.add(egui::ProgressBar::new(0.27).text(crate::language::tr(self.language, "pulse_index_baseline")));
+                    ui.add_space(4.0);
                     ui.separator();
                     ui.label(RichText::new(crate::language::tr(self.language, "pulse_wildlife_caveat")).size(9.0).color(Color32::LIGHT_GRAY));
                     if ui.button(crate::language::tr(self.language, "pulse_open_lpi")).clicked() {
