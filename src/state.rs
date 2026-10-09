@@ -137,12 +137,29 @@ impl Default for CybOs {
         let database_integrity = store.database_integrity();
         let radar_visibility = Arc::new(AtomicBool::new(radar_visible));
         let lan_events = crate::network::lan::spawn_listener(node_id.clone(), radar_visibility.clone());
-        let noise_private_key = crate::network::secure_chat::load_or_create_static_key(&store)
-            .unwrap_or_default();
-        let secure_listener = crate::network::secure_chat::spawn_listener(
-            node_id.clone(),
-            noise_private_key.clone(),
-        );
+        let (noise_private_key, secure_listener, secure_status) =
+            match crate::network::secure_chat::load_or_create_static_key(&store) {
+                Ok(key) => {
+                    let listener = crate::network::secure_chat::spawn_listener(
+                        node_id.clone(),
+                        key.clone(),
+                    );
+                    (key, listener, "SECURE CHAT · READY".to_string())
+                }
+                Err(error) => {
+                    // Fail closed: never start the secure listener with an empty or
+                    // ephemeral identity and never advertise secure chat as READY.
+                    store.add_event(
+                        "SECURITY",
+                        format!("Secure chat disabled because identity initialization failed: {error}"),
+                    );
+                    (
+                        Vec::new(),
+                        crate::network::secure_chat::Listener::empty(),
+                        format!("SECURE CHAT · DISABLED · {error}"),
+                    )
+                }
+            };
 
         let mut app = Self {
             store,
@@ -232,7 +249,7 @@ impl Default for CybOs {
             secure_listener,
             secure_send_task: None,
             secure_send_contract: None,
-            secure_status: "SECURE CHAT · READY".into(),
+            secure_status,
 
             remember_note: String::new(),
         };
@@ -486,7 +503,20 @@ impl CybOs {
                                 .iter()
                                 .map(|b| format!("{b:02x}"))
                                 .collect::<String>();
-                            self.store.set(&trust_key, &encoded);
+                            if let Err(error) = self.store.try_set(&trust_key, &encoded) {
+                                self.secure_status =
+                                    format!("SECURE CHAT · TRUST STORAGE ERROR · {error}");
+                                let _ = reply.send(
+                                    crate::network::secure_chat::SecureReply::Reject(
+                                        "could not persist peer trust".into(),
+                                    ),
+                                );
+                                self.add_event(
+                                    "SECURITY",
+                                    format!("Could not persist first-contact trust for {node_id}: {error}"),
+                                );
+                                continue;
+                            }
                             false
                         }
                     };
@@ -540,6 +570,12 @@ impl CybOs {
 
         let message = message.trim().to_string();
         if message.is_empty() {
+            return;
+        }
+        if self.noise_private_key.len() != 32 {
+            self.secure_status =
+                "SECURE CHAT · DISABLED · PERSISTENT IDENTITY UNAVAILABLE".into();
+            self.notify("SECURE CHAT IDENTITY UNAVAILABLE");
             return;
         }
 
