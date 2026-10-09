@@ -6,7 +6,6 @@
 //! renderer without changing the protocol router.
 
 use std::{
-    io::Read,
     sync::mpsc::{self, Receiver, Sender},
     thread,
     time::Duration,
