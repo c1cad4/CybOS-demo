@@ -59,7 +59,7 @@ impl CybOs {
                     ui.label(RichText::new("RADAR VISIBILITY").size(11.0).strong().color(neon));
                     let label = if self.radar_visible { "VISIBLE" } else { "HIDDEN" };
                     let button = egui::Button::new(RichText::new(label).strong().color(neon));
-                    if ui.add(button).clicked() {
+                    if ui.add(button).on_hover_text("Toggle local discovery visibility. When visible, cybOS advertises a short node ID over supported LAN/Bluetooth discovery.").clicked() {
                         self.radar_visible = !self.radar_visible;
                         self.radar_visibility.store(self.radar_visible, std::sync::atomic::Ordering::Relaxed);
                         self.store.set("radar_visible", if self.radar_visible { "true" } else { "false" });
@@ -220,6 +220,7 @@ impl CybOs {
                                     )
                                     .min_size(Vec2::new(64.0, 24.0)),
                                 )
+                                .on_hover_text("Choose this discovered peer as the current target. Selection alone does not verify the peer’s identity.")
                                 .clicked()
                             {
                                 self.lan_target = Some(peer.node_id.clone());
