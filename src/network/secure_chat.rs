@@ -142,18 +142,24 @@ fn spawn_listener_bind(
         while !stop_thread.load(Ordering::Relaxed) {
             match listener.accept() {
                 Ok((mut stream, _addr)) => {
-                    if active.load(Ordering::Acquire) >= MAX_ACTIVE {
-                        continue;
-                    }
                     // Accepted sockets can inherit nonblocking behavior differently across
                     // platforms. Session framing uses read_exact, so normalize each accepted
-                    // connection to blocking mode before applying bounded I/O timeouts.
+                    // connection to blocking mode before reserving a bounded worker slot.
                     if stream.set_nonblocking(false).is_err() {
+                        continue;
+                    }
+                    // Reserve capacity atomically: a load-then-increment sequence lets several
+                    // accept-loop iterations observe the same free slot and exceed MAX_ACTIVE.
+                    let reserved = active
+                        .fetch_update(Ordering::AcqRel, Ordering::Acquire, |count| {
+                            (count < MAX_ACTIVE).then_some(count + 1)
+                        })
+                        .is_ok();
+                    if !reserved {
                         continue;
                     }
                     let _ = stream.set_read_timeout(Some(TIMEOUT));
                     let _ = stream.set_write_timeout(Some(TIMEOUT));
-                    active.fetch_add(1, Ordering::AcqRel);
                     let tx = tx.clone();
                     let node_id = node_id.clone();
                     let key = private_key.clone();
@@ -462,6 +468,25 @@ mod tests {
     fn hex_roundtrip() {
         let data = [0, 1, 2, 15, 16, 255];
         assert_eq!(decode_hex(&encode_hex(&data)).unwrap(), data);
+    }
+
+    #[test]
+    fn read_frame_rejects_oversized_length_before_reading_payload() {
+        use std::io::Write;
+        use std::net::{TcpListener, TcpStream};
+
+        let listener = TcpListener::bind(("127.0.0.1", 0)).expect("bind test listener");
+        let address = listener.local_addr().expect("listener address");
+        let client = thread::spawn(move || {
+            let mut stream = TcpStream::connect(address).expect("connect test client");
+            let too_large = (super::MAX_FRAME + 4097) as u32;
+            stream.write_all(&too_large.to_be_bytes()).expect("write frame length");
+        });
+        let (mut server, _) = listener.accept().expect("accept test client");
+        let mut buffer = vec![0_u8; 65535];
+        let error = super::read_frame(&mut server, &mut buffer).expect_err("oversized frame must fail");
+        assert!(error.contains("frame exceeds receive limit"));
+        client.join().expect("client thread");
     }
 
     #[test]
