@@ -104,6 +104,7 @@ impl CybOs {
                                             )
                                             .min_size(Vec2::new(58.0, 24.0)),
                                         )
+                                        .on_hover_text("Select this discovered node as the direct-message target. Verify its identity fingerprint out of band before trusting it.")
                                         .clicked()
                                     {
                                         self.lan_target = Some(peer.node_id.clone());
