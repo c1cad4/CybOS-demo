@@ -15,6 +15,10 @@ Every screen must answer three questions without requiring prior knowledge:
 - The page title and status remain visible above the content.
 - The Quick Guide is shown consistently on every page; expand **HOW TO USE** for the first step and the key limitation.
 
+## Interface language
+
+The top bar has a persistent language selector with **English**, **中文** (Chinese), **Русский** (Russian), and **हिन्दी** (Hindi). The choice is saved in the local cybOS settings database and restored on the next launch. Page titles, navigation tooltips, the Quick Guide, its first-step and limitation text, search placeholder, and core header actions are localized. Some module-specific labels and technical status messages remain in English while translation coverage is expanded; language selection does not translate user-generated content or remote data.
+
 ## Screen-by-screen first steps
 
 | Screen | First step | Important limitation |
