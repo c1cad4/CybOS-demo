@@ -558,7 +558,7 @@ mod tests {
     #[test]
     fn capability_input_is_bounded() {
         let capability = CapabilitySpec::new(
-            "read_note", "Read one note", CapabilityRisk::ReadOnly, false, 8
+            "read_note", "Read one note", CapabilityRisk::ReadOnly, false, 16
         ).expect("valid capability");
         assert!(capability.validate_input(&serde_json::json!({"q":"ok"})).is_ok());
         assert!(capability.validate_input(&serde_json::json!({"q":"this is too long"})).is_err());
