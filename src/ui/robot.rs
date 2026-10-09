@@ -268,6 +268,24 @@ impl CybOs {
                             task.status.as_str(), task.budget_limit, task.estimated_cost
                         )).size(9.0).color(dim));
                         ui.label(RichText::new(&task.acceptance_criteria).size(10.0).color(Color32::from_rgb(145, 190, 165)));
+                        if ui.small_button("＋ NEW WORKFLOW RUN").clicked() {
+                            let input = serde_json::json!({
+                                "task_id": task.id,
+                                "title": task.title,
+                                "description": task.description,
+                                "acceptance_criteria": task.acceptance_criteria
+                            });
+                            match crate::agent_runtime::WorkflowRun::new("robotcyb_task_workflow", Some(task.id.clone()), input) {
+                                Ok(run) => match self.store.save_workflow_run(&run) {
+                                    Ok(()) => {
+                                        self.add_event("AGENT_WORKFLOW", &format!("Created workflow run for '{}'", task.title));
+                                        self.notify("WORKFLOW RUN SAVED");
+                                    }
+                                    Err(error) => self.notify(format!("WORKFLOW SAVE FAILED: {error}")),
+                                },
+                                Err(error) => self.notify(format!("WORKFLOW NOT CREATED: {error}")),
+                            }
+                        }
                         ui.horizontal_wrapped(|ui| {
                             use crate::agent_economy::AgentTaskStatus as Status;
                             let next = match &task.status {
@@ -303,6 +321,85 @@ impl CybOs {
                                 self.notify(format!("TASK STATUS: {}", task.status.as_str().to_uppercase()));
                             }
                             Err(error) => self.notify(format!("TASK UPDATE FAILED: {error}")),
+                        }
+                    }
+
+                    ui.add_space(14.0);
+                    ui.label(RichText::new("WORKFLOW RUN TIMELINE").size(11.0).strong().color(neon));
+                    ui.label(RichText::new("Runs are persisted and advanced manually. No arbitrary tools or external side effects are executed.").size(9.0).color(dim));
+                    let runs = self.store.workflow_runs();
+                    if runs.is_empty() {
+                        ui.label(RichText::new("Create a run from any persisted task above.").size(10.0).color(dim));
+                    }
+                    let mut run_update: Option<crate::agent_runtime::WorkflowRun> = None;
+                    let mut new_checkpoint: Option<crate::agent_runtime::WorkflowCheckpoint> = None;
+                    for run in runs.iter().take(15) {
+                        ui.separator();
+                        ui.label(RichText::new(format!("{} · {}", run.workflow_name, run.id.chars().take(8).collect::<String>())).strong().color(Color32::from_rgb(180, 235, 205)));
+                        ui.label(RichText::new(format!("{} · step {} · updated {}", run.status.as_str(), run.step, run.updated_at)).size(9.0).color(dim));
+                        ui.horizontal_wrapped(|ui| {
+                            use crate::agent_runtime::WorkflowStatus as Status;
+                            let next = match &run.status {
+                                Status::Planned => Some((Status::Running, "START RUN")),
+                                Status::Running => Some((Status::Validating, "BEGIN VALIDATION")),
+                                Status::Checkpointed => Some((Status::Running, "RESUME")),
+                                Status::Validating => Some((Status::Submitted, "SUBMIT RESULT")),
+                                Status::Submitted => Some((Status::Accepted, "ACCEPT RESULT")),
+                                Status::Rejected => Some((Status::Running, "RETRY RUN")),
+                                _ => None,
+                            };
+                            if let Some((status, label)) = next {
+                                if ui.small_button(label).clicked() {
+                                    let mut changed = run.clone();
+                                    if changed.transition(status).is_ok() {
+                                        run_update = Some(changed);
+                                    }
+                                }
+                            }
+                            if matches!(&run.status, Status::Running | Status::Checkpointed) && ui.small_button("CHECKPOINT").clicked() {
+                                let mut changed = run.clone();
+                                let data = serde_json::json!({
+                                    "step_before_checkpoint": run.step,
+                                    "note": "Manual checkpoint from RobotCYB UI; no tool was executed."
+                                });
+                                if changed.checkpoint(data.clone()).is_ok() {
+                                    let checkpoint = crate::agent_runtime::WorkflowCheckpoint::new(
+                                        run.id.clone(), changed.step, "manual_checkpoint",
+                                        "User-triggered checkpoint", data
+                                    );
+                                    match checkpoint {
+                                        Ok(checkpoint) => {
+                                            run_update = Some(changed);
+                                            new_checkpoint = Some(checkpoint);
+                                        }
+                                        Err(error) => self.notify(format!("CHECKPOINT REJECTED: {error}")),
+                                    }
+                                }
+                            }
+                            if matches!(&run.status, Status::Planned | Status::Running | Status::Checkpointed | Status::Validating | Status::Rejected)
+                                && ui.small_button("CANCEL RUN").clicked()
+                            {
+                                let mut changed = run.clone();
+                                if changed.transition(Status::Cancelled).is_ok() {
+                                    run_update = Some(changed);
+                                }
+                            }
+                        });
+                        let checkpoints = self.store.workflow_checkpoints(&run.id);
+                        ui.label(RichText::new(format!("{} checkpoint(s)", checkpoints.len())).size(9.0).color(dim));
+                    }
+                    if let Some(run) = run_update {
+                        match self.store.save_workflow_run(&run) {
+                            Ok(()) => {
+                                if let Some(checkpoint) = new_checkpoint {
+                                    if let Err(error) = self.store.append_workflow_checkpoint(&checkpoint) {
+                                        self.notify(format!("CHECKPOINT LOG FAILED: {error}"));
+                                    }
+                                }
+                                self.add_event("AGENT_WORKFLOW", &format!("Workflow {} moved to {}", &run.id[..8.min(run.id.len())], run.status.as_str()));
+                                self.notify(format!("WORKFLOW STATUS: {}", run.status.as_str().to_uppercase()));
+                            }
+                            Err(error) => self.notify(format!("WORKFLOW UPDATE FAILED: {error}")),
                         }
                     }
                 });
