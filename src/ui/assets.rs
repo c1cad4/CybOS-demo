@@ -12,13 +12,13 @@ impl CybOs {
         ui.add_space(10.0);
 
         ui.heading(
-            RichText::new("◇ PUBLIC IDENTIFIERS")
+            RichText::new(crate::language::tr(self.language, "public_identifiers"))
                 .strong()
                 .color(Self::green()),
         );
 
-        self.asset(ui, "$CICADAFARM", CICADAFARM_MINT, "PHYSICAL WORLD");
-        self.asset(ui, "$ROBOTCYB", ROBOTCYB_MINT, "DIGITAL WORLD");
+        self.asset(ui, "$CICADAFARM", CICADAFARM_MINT, crate::language::tr(self.language, "physical_world"));
+        self.asset(ui, "$ROBOTCYB", ROBOTCYB_MINT, crate::language::tr(self.language, "digital_world"));
     }
 
     pub(crate) fn asset(&mut self, ui: &mut egui::Ui, name: &str, mint: &str, desc: &str) {
@@ -32,7 +32,7 @@ impl CybOs {
                 ui.label(desc);
                 ui.horizontal_wrapped(|ui| {
                     ui.label(RichText::new(mint).small().color(Color32::GRAY));
-                    if ui.button("COPY").clicked() {
+                    if ui.button(crate::language::tr(self.language, "copy")).clicked() {
                         ui.ctx().copy_text(mint.into());
                         self.notify(format!("{} MINT COPIED", name));
                     }

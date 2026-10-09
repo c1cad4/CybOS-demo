@@ -6,8 +6,7 @@
 //! renderer without changing the protocol router.
 
 use std::{
-    io::Read,
-    sync::mpsc::{self, Receiver, Sender, TryRecvError},
+    sync::mpsc::{self, Receiver, Sender},
     thread,
     time::Duration,
 };
@@ -151,7 +150,7 @@ fn run_worker(command_rx: Receiver<BrowserCommand>, event_tx: Sender<BrowserEven
                     }
                 }
             }
-            Ok(BrowserCommand::Shutdown) | Err(TryRecvError::Disconnected) => break,
+            Ok(BrowserCommand::Shutdown) | Err(_) => break,
         }
     }
 }
@@ -329,7 +328,7 @@ fn fetch_text(url: &str, budget: Duration) -> Result<String, String> {
         return Err("Browser request budget expired".into());
     }
 
-    let agent = ureq::Agent::config_builder()
+    let agent: ureq::Agent = ureq::Agent::config_builder()
         .timeout_global(Some(timeout))
         .build()
         .into();
@@ -340,11 +339,12 @@ fn fetch_text(url: &str, budget: Duration) -> Result<String, String> {
         .call()
         .map_err(|e| format!("Browser fetch failed: {e}"))?;
 
-    let mut bytes = Vec::new();
-    response
-        .into_body()
-        .take((MAX_BODY_BYTES + 1) as u64)
-        .read_to_end(&mut bytes)
+    let mut response = response;
+    let bytes = response
+        .body_mut()
+        .with_config()
+        .limit((MAX_BODY_BYTES + 1) as u64)
+        .read_to_vec()
         .map_err(|e| format!("Browser body read failed: {e}"))?;
 
     if bytes.len() > MAX_BODY_BYTES {
@@ -498,7 +498,7 @@ mod tests {
 
     #[test]
     fn resolves_cyb_ipfs() {
-        let resolved = resolve("cyb://ipfs/bafybeigdyrzt5example");
+        let resolved = resolve("cyb://ipfs/bafybeigdyrzt5example").unwrap();
         assert_eq!(resolved.route, BrowserRoute::IpfsLocal);
         assert!(resolved.resolved_url.contains("/ipfs/"));
         assert!(resolved.fallback_url.is_some());
@@ -506,7 +506,7 @@ mod tests {
 
     #[test]
     fn resolves_arweave() {
-        let resolved = resolve("ar://AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+        let resolved = resolve("ar://AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA").unwrap();
         assert_eq!(resolved.route, BrowserRoute::ArweaveGateway);
         assert!(resolved.resolved_url.contains("arweave.net"));
     }

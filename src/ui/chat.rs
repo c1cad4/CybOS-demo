@@ -23,7 +23,7 @@ impl CybOs {
             ui.label(RichText::new("∴  CYBCHAT").size(24.0).strong().color(neon));
 
             ui.label(
-                RichText::new("MATHEMATICAL CHANNEL · LOCAL-FIRST · DIRECT PEERS · LAN · P2P · NOSTR")
+                RichText::new(crate::language::tr(self.language, "chat_subtitle"))
                     .size(11.0)
                     .color(dim),
             );
@@ -38,7 +38,7 @@ impl CybOs {
                     .show(ui, |ui| {
                         ui.set_min_width(300.0);
 
-                        ui.label(RichText::new("∴ PEERS").size(11.0).strong().color(neon));
+                        ui.label(RichText::new(crate::language::tr(self.language, "peers")).size(11.0).strong().color(neon));
                         ui.add_space(8.0);
 
                         for (symbol, name, status) in [
@@ -63,7 +63,7 @@ impl CybOs {
 
                         if self.lan_peers.is_empty() {
                             ui.label(
-                                RichText::new("No direct LAN peers discovered.")
+                                RichText::new(crate::language::tr(self.language, "no_peers"))
                                     .size(9.0)
                                     .color(dim),
                             );
@@ -93,7 +93,7 @@ impl CybOs {
                                         );
                                     });
 
-                                    let label = if selected { "TARGET" } else { "SELECT" };
+                                    let label = if selected { crate::language::tr(self.language, "target") } else { crate::language::tr(self.language, "select") };
                                     if ui
                                         .add(
                                             egui::Button::new(
@@ -104,6 +104,7 @@ impl CybOs {
                                             )
                                             .min_size(Vec2::new(58.0, 24.0)),
                                         )
+                                        .on_hover_text("Select this discovered node as the direct-message target. Verify its identity fingerprint out of band before trusting it.")
                                         .clicked()
                                     {
                                         self.lan_target = Some(peer.node_id.clone());

@@ -111,17 +111,23 @@ fn spawn_listener_bind(
     port: u16,
 ) -> Listener {
     let (tx, rx) = mpsc::channel();
+    let (ready_tx, ready_rx) = mpsc::sync_channel::<Result<(), String>>(1);
     let stop = Arc::new(AtomicBool::new(false));
     let stop_thread = Arc::clone(&stop);
 
     thread::spawn(move || {
         let listener = match TcpListener::bind((host, port)) {
             Ok(v) => v,
-            Err(_) => return,
+            Err(error) => {
+                let _ = ready_tx.send(Err(format!("secure listener bind failed: {error}")));
+                return;
+            }
         };
-        if listener.set_nonblocking(true).is_err() {
+        if let Err(error) = listener.set_nonblocking(true) {
+            let _ = ready_tx.send(Err(format!("secure listener setup failed: {error}")));
             return;
         }
+        let _ = ready_tx.send(Ok(()));
 
         const MAX_ACTIVE: usize = 8;
         let active = Arc::new(AtomicUsize::new(0));
@@ -130,6 +136,12 @@ fn spawn_listener_bind(
             match listener.accept() {
                 Ok((mut stream, _addr)) => {
                     if active.load(Ordering::Acquire) >= MAX_ACTIVE {
+                        continue;
+                    }
+                    // Accepted sockets can inherit nonblocking behavior differently across
+                    // platforms. Session framing uses read_exact, so normalize each accepted
+                    // connection to blocking mode before applying bounded I/O timeouts.
+                    if stream.set_nonblocking(false).is_err() {
                         continue;
                     }
                     let _ = stream.set_read_timeout(Some(TIMEOUT));
@@ -141,7 +153,10 @@ fn spawn_listener_bind(
                     let active = Arc::clone(&active);
                     thread::spawn(move || {
                         let deadline = Instant::now() + SESSION_BUDGET;
-                        let _ = receive_one(&mut stream, &node_id, &key, deadline, &tx);
+                        if let Err(error) = receive_one(&mut stream, &node_id, &key, deadline, &tx) {
+                            #[cfg(test)]
+                            eprintln!("secure listener session failed: {error}");
+                        }
                         active.fetch_sub(1, Ordering::AcqRel);
                     });
                 }
@@ -152,7 +167,11 @@ fn spawn_listener_bind(
             }
         }
     });
-    Listener { events: rx, stop }
+    // Do not return until the listener is bound, so callers and tests never race startup.
+    match ready_rx.recv_timeout(Duration::from_secs(3)) {
+        Ok(Ok(())) => Listener { events: rx, stop },
+        Ok(Err(_)) | Err(_) => Listener { events: rx, stop }
+    }
 }
 
 pub(crate) fn send(

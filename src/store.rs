@@ -3,6 +3,8 @@ use rusqlite::{params, Connection};
 use std::{fs, path::PathBuf, time::Duration};
 use uuid::Uuid;
 
+use crate::agent_economy::{AgentManifest, AgentTask, KnowledgeRecord, LedgerEntry};
+use crate::agent_runtime::{CapabilitySpec, WorkflowArtifact, WorkflowCheckpoint, WorkflowRun};
 use crate::models::{Event, GraphLink, GraphNode, Memory};
 
 pub(crate) struct Store {
@@ -79,6 +81,68 @@ impl Store {
 
             CREATE INDEX IF NOT EXISTS idx_secure_message_ids_time
                 ON secure_message_ids(time);
+
+            CREATE TABLE IF NOT EXISTS agent_tasks(
+                id TEXT PRIMARY KEY,
+                status TEXT NOT NULL,
+                title TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                payload TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_agent_tasks_status
+                ON agent_tasks(status);
+
+            CREATE TABLE IF NOT EXISTS agent_ledger(
+                id TEXT PRIMARY KEY,
+                timestamp TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                amount REAL NOT NULL,
+                currency TEXT NOT NULL,
+                task_id TEXT,
+                payload TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_agent_ledger_timestamp
+                ON agent_ledger(timestamp);
+
+            CREATE TABLE IF NOT EXISTS agent_manifests(
+                id TEXT PRIMARY KEY,
+                display_name TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                payload TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS knowledge_records(
+                id TEXT PRIMARY KEY,
+                title TEXT NOT NULL,
+                source_uri TEXT NOT NULL,
+                collected_at TEXT NOT NULL,
+                payload TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_knowledge_records_source
+                ON knowledge_records(source_uri);
+
+            CREATE TABLE IF NOT EXISTS agent_capabilities(
+                id TEXT PRIMARY KEY, risk TEXT NOT NULL,
+                requires_approval INTEGER NOT NULL, payload TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS workflow_runs(
+                id TEXT PRIMARY KEY, workflow_name TEXT NOT NULL,
+                status TEXT NOT NULL, updated_at TEXT NOT NULL, payload TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_workflow_runs_status ON workflow_runs(status);
+            CREATE TABLE IF NOT EXISTS workflow_checkpoints(
+                id TEXT PRIMARY KEY, run_id TEXT NOT NULL, step INTEGER NOT NULL,
+                created_at TEXT NOT NULL, payload TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_workflow_checkpoints_run_step ON workflow_checkpoints(run_id, step);
+            CREATE TABLE IF NOT EXISTS workflow_artifacts(
+                id TEXT PRIMARY KEY, run_id TEXT NOT NULL, name TEXT NOT NULL,
+                media_type TEXT NOT NULL, created_at TEXT NOT NULL, payload TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_workflow_artifacts_run ON workflow_artifacts(run_id, created_at);
             "#,
         )
         .expect("cannot initialize database");
@@ -296,6 +360,245 @@ impl Store {
         inserted
     }
 
+    pub(crate) fn save_agent_manifest(&self, manifest: &AgentManifest) -> Result<(), String> {
+        manifest.validate()?;
+        let payload = serde_json::to_string(manifest)
+            .map_err(|error| format!("cannot serialize agent manifest: {error}"))?;
+        self.conn.execute(
+            "INSERT INTO agent_manifests(id,display_name,created_at,payload)
+             VALUES(?1,?2,?3,?4)
+             ON CONFLICT(id) DO UPDATE SET
+                 display_name=excluded.display_name,
+                 payload=excluded.payload",
+            params![manifest.id, manifest.display_name, manifest.created_at, payload],
+        ).map_err(|error| format!("cannot save agent manifest: {error}"))?;
+        Ok(())
+    }
+
+    pub(crate) fn agent_manifests(&self) -> Vec<AgentManifest> {
+        let mut st = match self.conn.prepare(
+            "SELECT payload FROM agent_manifests ORDER BY created_at DESC LIMIT 500"
+        ) {
+            Ok(st) => st,
+            Err(_) => return Vec::new(),
+        };
+        st.query_map([], |row| row.get::<_, String>(0))
+            .ok()
+            .into_iter()
+            .flatten()
+            .filter_map(Result::ok)
+            .filter_map(|payload| serde_json::from_str::<AgentManifest>(&payload).ok())
+            .collect()
+    }
+
+    pub(crate) fn save_knowledge_record(&self, record: &KnowledgeRecord) -> Result<(), String> {
+        record.validate()?;
+        let payload = serde_json::to_string(record)
+            .map_err(|error| format!("cannot serialize knowledge record: {error}"))?;
+        self.conn.execute(
+            "INSERT INTO knowledge_records(id,title,source_uri,collected_at,payload)
+             VALUES(?1,?2,?3,?4,?5)
+             ON CONFLICT(id) DO UPDATE SET
+                 title=excluded.title,
+                 source_uri=excluded.source_uri,
+                 payload=excluded.payload",
+            params![record.id, record.title, record.source_uri, record.collected_at, payload],
+        ).map_err(|error| format!("cannot save knowledge record: {error}"))?;
+        Ok(())
+    }
+
+    pub(crate) fn knowledge_records(&self) -> Vec<KnowledgeRecord> {
+        let mut st = match self.conn.prepare(
+            "SELECT payload FROM knowledge_records ORDER BY collected_at DESC LIMIT 2000"
+        ) {
+            Ok(st) => st,
+            Err(_) => return Vec::new(),
+        };
+        st.query_map([], |row| row.get::<_, String>(0))
+            .ok()
+            .into_iter()
+            .flatten()
+            .filter_map(Result::ok)
+            .filter_map(|payload| serde_json::from_str::<KnowledgeRecord>(&payload).ok())
+            .collect()
+    }
+
+    /// Persist a validated task contract. No work is executed by this method.
+    pub(crate) fn save_agent_task(&self, task: &AgentTask) -> Result<(), String> {
+        task.validate()?;
+        let payload = serde_json::to_string(task)
+            .map_err(|error| format!("cannot serialize agent task: {error}"))?;
+        self.conn.execute(
+            "INSERT INTO agent_tasks(id,status,title,updated_at,payload)
+             VALUES(?1,?2,?3,?4,?5)
+             ON CONFLICT(id) DO UPDATE SET
+                 status=excluded.status,
+                 title=excluded.title,
+                 updated_at=excluded.updated_at,
+                 payload=excluded.payload",
+            params![task.id, task.status.as_str(), task.title, task.updated_at, payload],
+        ).map_err(|error| format!("cannot save agent task: {error}"))?;
+        Ok(())
+    }
+
+    pub(crate) fn agent_tasks(&self) -> Vec<AgentTask> {
+        let mut st = match self.conn.prepare(
+            "SELECT payload FROM agent_tasks ORDER BY updated_at DESC LIMIT 500"
+        ) {
+            Ok(st) => st,
+            Err(_) => return Vec::new(),
+        };
+        st.query_map([], |row| row.get::<_, String>(0))
+            .ok()
+            .into_iter()
+            .flatten()
+            .filter_map(Result::ok)
+            .filter_map(|payload| serde_json::from_str::<AgentTask>(&payload).ok())
+            .collect()
+    }
+
+    /// Append an accounting record. It does not send money or assert settlement.
+    pub(crate) fn append_agent_ledger(&self, entry: &LedgerEntry) -> Result<(), String> {
+        entry.validate()?;
+        let payload = serde_json::to_string(entry)
+            .map_err(|error| format!("cannot serialize ledger entry: {error}"))?;
+        self.conn.execute(
+            "INSERT INTO agent_ledger(id,timestamp,kind,amount,currency,task_id,payload)
+             VALUES(?1,?2,?3,?4,?5,?6,?7)",
+            params![
+                entry.id,
+                entry.timestamp,
+                entry.kind.as_str(),
+                entry.amount,
+                entry.currency,
+                entry.task_id,
+                payload
+            ],
+        ).map_err(|error| format!("cannot append ledger entry: {error}"))?;
+        Ok(())
+    }
+
+    pub(crate) fn agent_ledger(&self) -> Vec<LedgerEntry> {
+        let mut st = match self.conn.prepare(
+            "SELECT payload FROM agent_ledger ORDER BY timestamp DESC, rowid DESC LIMIT 1000"
+        ) {
+            Ok(st) => st,
+            Err(_) => return Vec::new(),
+        };
+        st.query_map([], |row| row.get::<_, String>(0))
+            .ok()
+            .into_iter()
+            .flatten()
+            .filter_map(Result::ok)
+            .filter_map(|payload| serde_json::from_str::<LedgerEntry>(&payload).ok())
+            .collect()
+    }
+
+    /// Register a declared capability. This stores metadata only; it never invokes the tool.
+    pub(crate) fn save_capability(&self, capability: &CapabilitySpec) -> Result<(), String> {
+        capability.validate()?;
+        let payload = serde_json::to_string(capability)
+            .map_err(|error| format!("cannot serialize capability: {error}"))?;
+        self.conn.execute(
+            "INSERT INTO agent_capabilities(id,risk,requires_approval,payload)
+             VALUES(?1,?2,?3,?4)
+             ON CONFLICT(id) DO UPDATE SET risk=excluded.risk,
+                 requires_approval=excluded.requires_approval, payload=excluded.payload",
+            params![capability.id, capability.risk.as_str(), capability.requires_approval as i64, payload],
+        ).map_err(|error| format!("cannot save capability: {error}"))?;
+        Ok(())
+    }
+
+    pub(crate) fn capabilities(&self) -> Vec<CapabilitySpec> {
+        let mut st = match self.conn.prepare("SELECT payload FROM agent_capabilities ORDER BY id ASC") {
+            Ok(st) => st, Err(_) => return Vec::new(),
+        };
+        st.query_map([], |row| row.get::<_, String>(0))
+            .ok().into_iter().flatten().filter_map(Result::ok)
+            .filter_map(|payload| serde_json::from_str::<CapabilitySpec>(&payload).ok()).collect()
+    }
+
+    pub(crate) fn save_workflow_run(&self, run: &WorkflowRun) -> Result<(), String> {
+        run.validate()?;
+        let payload = serde_json::to_string(run)
+            .map_err(|error| format!("cannot serialize workflow run: {error}"))?;
+        self.conn.execute(
+            "INSERT INTO workflow_runs(id,workflow_name,status,updated_at,payload)
+             VALUES(?1,?2,?3,?4,?5)
+             ON CONFLICT(id) DO UPDATE SET workflow_name=excluded.workflow_name,
+                 status=excluded.status, updated_at=excluded.updated_at, payload=excluded.payload",
+            params![run.id, run.workflow_name, run.status.as_str(), run.updated_at, payload],
+        ).map_err(|error| format!("cannot save workflow run: {error}"))?;
+        Ok(())
+    }
+
+    pub(crate) fn workflow_runs(&self) -> Vec<WorkflowRun> {
+        let mut st = match self.conn.prepare("SELECT payload FROM workflow_runs ORDER BY updated_at DESC LIMIT 500") {
+            Ok(st) => st, Err(_) => return Vec::new(),
+        };
+        st.query_map([], |row| row.get::<_, String>(0))
+            .ok().into_iter().flatten().filter_map(Result::ok)
+            .filter_map(|payload| serde_json::from_str::<WorkflowRun>(&payload).ok()).collect()
+    }
+
+    /// Checkpoints are append-only records; callers save the parent run first.
+    pub(crate) fn append_workflow_checkpoint(&self, checkpoint: &WorkflowCheckpoint) -> Result<(), String> {
+        checkpoint.validate()?;
+        let payload = serde_json::to_string(checkpoint)
+            .map_err(|error| format!("cannot serialize workflow checkpoint: {error}"))?;
+        self.conn.execute(
+            "INSERT INTO workflow_checkpoints(id,run_id,step,created_at,payload)
+             VALUES(?1,?2,?3,?4,?5)",
+            params![checkpoint.id, checkpoint.run_id, checkpoint.step, checkpoint.created_at, payload],
+        ).map_err(|error| format!("cannot append workflow checkpoint: {error}"))?;
+        Ok(())
+    }
+
+    pub(crate) fn workflow_checkpoints(&self, run_id: &str) -> Vec<WorkflowCheckpoint> {
+        let mut st = match self.conn.prepare(
+            "SELECT payload FROM workflow_checkpoints WHERE run_id=?1 ORDER BY step ASC, rowid ASC"
+        ) {
+            Ok(st) => st, Err(_) => return Vec::new(),
+        };
+        st.query_map([run_id], |row| row.get::<_, String>(0))
+            .ok().into_iter().flatten().filter_map(Result::ok)
+            .filter_map(|payload| serde_json::from_str::<WorkflowCheckpoint>(&payload).ok()).collect()
+    }
+
+    /// Save a bounded artifact only when its parent workflow run exists.
+    /// Artifacts are append-only; duplicate IDs fail rather than overwrite provenance.
+    pub(crate) fn append_workflow_artifact(&self, artifact: &WorkflowArtifact) -> Result<(), String> {
+        artifact.validate()?;
+        let run_exists = self.conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM workflow_runs WHERE id=?1)",
+            [&artifact.run_id],
+            |row| row.get::<_, bool>(0),
+        ).map_err(|error| format!("cannot verify artifact workflow: {error}"))?;
+        if !run_exists {
+            return Err("cannot save artifact: parent workflow run does not exist".into());
+        }
+        let payload = serde_json::to_string(artifact)
+            .map_err(|error| format!("cannot serialize workflow artifact: {error}"))?;
+        self.conn.execute(
+            "INSERT INTO workflow_artifacts(id,run_id,name,media_type,created_at,payload)
+             VALUES(?1,?2,?3,?4,?5,?6)",
+            params![artifact.id, artifact.run_id, artifact.name, artifact.media_type, artifact.created_at, payload],
+        ).map_err(|error| format!("cannot append workflow artifact: {error}"))?;
+        Ok(())
+    }
+
+    pub(crate) fn workflow_artifacts(&self, run_id: &str) -> Vec<WorkflowArtifact> {
+        let mut st = match self.conn.prepare(
+            "SELECT payload FROM workflow_artifacts WHERE run_id=?1 ORDER BY created_at ASC, rowid ASC"
+        ) {
+            Ok(st) => st, Err(_) => return Vec::new(),
+        };
+        st.query_map([run_id], |row| row.get::<_, String>(0))
+            .ok().into_iter().flatten().filter_map(Result::ok)
+            .filter_map(|payload| serde_json::from_str::<WorkflowArtifact>(&payload).ok())
+            .collect()
+    }
+
     pub(crate) fn database_integrity(&self) -> String {
         self.conn
             .query_row("PRAGMA integrity_check(1)", [], |row| row.get::<_, String>(0))
@@ -378,6 +681,125 @@ mod tests {
         assert!(store.claim_secure_message_id("message-1", "node-a"));
         assert!(!store.claim_secure_message_id("message-1", "node-a"));
         assert!(store.claim_secure_message_id("message-2", "node-a"));
+    }
+
+    #[test]
+    fn agent_work_and_ledger_round_trip() {
+        use crate::agent_economy::{AgentTask, AgentTaskStatus, LedgerEntry, LedgerKind};
+
+        let conn = Connection::open_in_memory().expect("in-memory sqlite");
+        conn.execute_batch(
+            "CREATE TABLE agent_tasks(
+                id TEXT PRIMARY KEY, status TEXT NOT NULL, title TEXT NOT NULL,
+                updated_at TEXT NOT NULL, payload TEXT NOT NULL
+             );
+             CREATE TABLE agent_ledger(
+                id TEXT PRIMARY KEY, timestamp TEXT NOT NULL, kind TEXT NOT NULL,
+                amount REAL NOT NULL, currency TEXT NOT NULL, task_id TEXT, payload TEXT NOT NULL
+             );",
+        ).expect("agent schema");
+        let store = Store {
+            path: std::path::PathBuf::from(":memory:"),
+            conn,
+        };
+
+        let mut task = AgentTask::proposal(
+            "Farm report", "Summarize weekly sensor readings",
+            "Report includes sources and missing-data notes", 20.0, 3.5,
+        ).expect("valid task");
+        task.transition(AgentTaskStatus::Ready).expect("ready");
+        store.save_agent_task(&task).expect("save task");
+        assert_eq!(store.agent_tasks().len(), 1);
+        assert_eq!(store.agent_tasks()[0].title, "Farm report");
+
+        let entry = LedgerEntry::new(
+            LedgerKind::Income, 12.0, "USD", Some(task.id.clone()),
+            "Customer accepted report",
+        ).expect("valid ledger entry");
+        store.append_agent_ledger(&entry).expect("append ledger");
+        let ledger = store.agent_ledger();
+        assert_eq!(ledger.len(), 1);
+        assert_eq!(ledger[0].amount, 12.0);
+        assert_eq!(ledger[0].currency, "USD");
+    }
+
+    #[test]
+    fn agent_manifest_and_knowledge_provenance_round_trip() {
+        use crate::agent_economy::{AgentManifest, KnowledgeRecord};
+
+        let conn = Connection::open_in_memory().expect("in-memory sqlite");
+        conn.execute_batch(
+            "CREATE TABLE agent_manifests(
+                id TEXT PRIMARY KEY, display_name TEXT NOT NULL, created_at TEXT NOT NULL, payload TEXT NOT NULL
+             );
+             CREATE TABLE knowledge_records(
+                id TEXT PRIMARY KEY, title TEXT NOT NULL, source_uri TEXT NOT NULL,
+                collected_at TEXT NOT NULL, payload TEXT NOT NULL
+             );",
+        ).expect("schema");
+        let store = Store {
+            path: std::path::PathBuf::from(":memory:"),
+            conn,
+        };
+
+        let manifest = AgentManifest::new(
+            "RobotCYB", "Generate farm reports", vec!["read_observations".into()],
+            vec!["observe".into(), "create".into()], 100, false,
+        ).expect("manifest");
+        store.save_agent_manifest(&manifest).expect("save manifest");
+        assert_eq!(store.agent_manifests()[0].display_name, "RobotCYB");
+
+        let record = KnowledgeRecord::new(
+            "Soil sensor observation", "cicadafarm://soil/zone-a", "sensor",
+            "owner-provided", 0.9, "", "Local observation",
+        ).expect("knowledge record");
+        store.save_knowledge_record(&record).expect("save knowledge");
+        let loaded = store.knowledge_records();
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded[0].source_uri, "cicadafarm://soil/zone-a");
+    }
+
+    #[test]
+    fn workflow_and_capability_records_round_trip() {
+        use crate::agent_runtime::{CapabilityRisk, CapabilitySpec, WorkflowArtifact, WorkflowCheckpoint, WorkflowRun, WorkflowStatus};
+
+        let conn = Connection::open_in_memory().expect("in-memory sqlite");
+        conn.execute_batch(
+            "CREATE TABLE agent_capabilities(id TEXT PRIMARY KEY, risk TEXT NOT NULL, requires_approval INTEGER NOT NULL, payload TEXT NOT NULL);
+             CREATE TABLE workflow_runs(id TEXT PRIMARY KEY, workflow_name TEXT NOT NULL, status TEXT NOT NULL, updated_at TEXT NOT NULL, payload TEXT NOT NULL);
+             CREATE TABLE workflow_checkpoints(id TEXT PRIMARY KEY, run_id TEXT NOT NULL, step INTEGER NOT NULL, created_at TEXT NOT NULL, payload TEXT NOT NULL); CREATE TABLE workflow_artifacts(id TEXT PRIMARY KEY, run_id TEXT NOT NULL, name TEXT NOT NULL, media_type TEXT NOT NULL, created_at TEXT NOT NULL, payload TEXT NOT NULL);"
+        ).expect("workflow schema");
+        let store = Store { path: std::path::PathBuf::from(":memory:"), conn };
+
+        let capability = CapabilitySpec::new(
+            "farm.read_observations", "Read local farm observations", CapabilityRisk::ReadOnly, false, 4096
+        ).expect("valid capability");
+        store.save_capability(&capability).expect("save capability");
+        assert_eq!(store.capabilities().len(), 1);
+        assert_eq!(store.capabilities()[0].id, "farm.read_observations");
+
+        let mut run = WorkflowRun::new("farm_report", Some("task-1".into()), serde_json::json!({"zone":"north"}))
+            .expect("valid run");
+        run.transition(WorkflowStatus::Running).expect("start");
+        store.save_workflow_run(&run).expect("save run");
+        let checkpoint = WorkflowCheckpoint::new(
+            run.id.clone(), 1, "collect", "observations collected", serde_json::json!({"count":4})
+        ).expect("valid checkpoint");
+        store.append_workflow_checkpoint(&checkpoint).expect("append checkpoint");
+        assert_eq!(store.workflow_runs().len(), 1);
+        assert_eq!(store.workflow_runs()[0].workflow_name, "farm_report");
+        assert_eq!(store.workflow_checkpoints(&run.id).len(), 1);
+        let artifact = WorkflowArtifact::new(
+            run.id.clone(), "contract-check.json", "application/json",
+            serde_json::json!({"valid": true}).to_string(),
+        ).expect("valid artifact");
+        store.append_workflow_artifact(&artifact).expect("append artifact");
+        let artifacts = store.workflow_artifacts(&run.id);
+        assert_eq!(artifacts.len(), 1);
+        assert_eq!(artifacts[0].name, "contract-check.json");
+        assert!(store.append_workflow_artifact(&WorkflowArtifact::new(
+            "missing-run", "orphan.txt", "text/plain", "not allowed"
+        ).expect("well-formed artifact")).is_err());
     }
 
     #[test]

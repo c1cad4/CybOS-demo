@@ -24,7 +24,7 @@ pub(crate) struct StackDescriptor {
 pub(crate) const STACKS: &[StackDescriptor] = &[
     StackDescriptor { id: "CYBLEX_RQBIT", owner_cell: "CYBLEX", transport: "embedded Rust library + isolated Tokio worker", purpose: "BitTorrent download, seeding, DHT/trackers, magnet/.torrent archive distribution", status: StackStatus::Active },
     StackDescriptor { id: "CYBDEX_SOLANA_DATA", owner_cell: "CYBDEX", transport: "bounded HTTP + Solana RPC", purpose: "read-only Solana market and asset data plane", status: StackStatus::Active },
-    StackDescriptor { id: "FARM_MODBUS", owner_cell: "CICADAFARM", transport: "future tokio-modbus adapter", purpose: "industrial sensors, meters and controllers over Modbus TCP/RTU", status: StackStatus::AdapterReady },
+    StackDescriptor { id: "FARM_MODBUS", owner_cell: "CICADAFARM", transport: "planned tokio-modbus adapter", purpose: "industrial sensors, meters and controllers over Modbus TCP/RTU", status: StackStatus::Planned },
     StackDescriptor { id: "ROBOT_KLIPPER", owner_cell: "ROBOTCYB", transport: "future Klipper API adapter", purpose: "robot/3D-printer telemetry and bounded machine-control integration", status: StackStatus::Planned },
     StackDescriptor { id: "MEMORY_QDRANT", owner_cell: "MEMORY", transport: "future local HTTP/gRPC adapter", purpose: "vector retrieval for semantic memory and knowledge", status: StackStatus::Planned },
     StackDescriptor { id: "KNOWLEDGE_PARADEDB", owner_cell: "CYBERGRAPH", transport: "future PostgreSQL adapter", purpose: "BM25/full-text/hybrid search over large knowledge corpora", status: StackStatus::Planned },
@@ -46,6 +46,27 @@ mod tests {
     fn stack_ids_are_unique() {
         for (index, left) in STACKS.iter().enumerate() {
             assert!(STACKS[index + 1..].iter().all(|right| right.id != left.id));
+        }
+    }
+
+    #[test]
+    fn every_stack_has_complete_metadata() {
+        assert!(!STACKS.is_empty());
+        for stack in STACKS {
+            assert!(!stack.id.trim().is_empty(), "stack id must be present");
+            assert!(!stack.owner_cell.trim().is_empty(), "{} has no owner cell", stack.id);
+            assert!(!stack.transport.trim().is_empty(), "{} has no transport boundary", stack.id);
+            assert!(!stack.purpose.trim().is_empty(), "{} has no declared purpose", stack.id);
+        }
+    }
+
+    #[test]
+    fn adapter_ready_means_a_real_adapter_not_a_future_plan() {
+        for stack in STACKS.iter().filter(|stack| matches!(stack.status, StackStatus::AdapterReady)) {
+            assert!(!stack.transport.to_ascii_lowercase().contains("future"),
+                "{} is marked adapter-ready but only describes a future adapter", stack.id);
+            assert!(!stack.transport.to_ascii_lowercase().contains("planned"),
+                "{} is marked adapter-ready but only describes a planned adapter", stack.id);
         }
     }
 

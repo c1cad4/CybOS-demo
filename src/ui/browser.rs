@@ -43,7 +43,7 @@ impl CybOs {
                             RichText::new("◈ OPEN")
                                 .strong()
                                 .color(neon),
-                        ))
+                        )).on_hover_text("Load a bounded text view for the address above. Remote JavaScript is not executed.")
                         .clicked();
 
                     if (response.lost_focus()

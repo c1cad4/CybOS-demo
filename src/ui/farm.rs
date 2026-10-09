@@ -38,11 +38,11 @@ impl CybOs {
 
             // FARM STATUS
             ui.horizontal(|ui| {
-                for (symbol, title, value) in [
-                    ("∿", "CHICKENS", "60+"),
-                    ("∆", "GOATS", "2"),
-                    ("∞", "HIVES", "4"),
-                    ("◉", "LAKES", "3"),
+                for (symbol, title, value, explanation) in [
+                    ("∿", "CHICKENS", "LOCAL LOG", "No live chicken counter is connected; this is not a current headcount."),
+                    ("∆", "GOATS", "2 KIDS", "Reference label for the two goat kids; update farm records if the herd changes."),
+                    ("∞", "HIVES", "3 PROTO", "Reference label for the hive prototypes; this is not a live apiary sensor count."),
+                    ("◉", "LAKES", "1 + PLAN", "One existing lake and a planned second pond; not three completed lakes."),
                 ] {
                     egui::Frame::NONE
                         .fill(panel)
@@ -69,7 +69,7 @@ impl CybOs {
                                     .size(17.0)
                                     .strong()
                                     .color(soft),
-                            );
+                            ).on_hover_text(explanation);
                         });
                 }
             });
@@ -291,6 +291,7 @@ impl CybOs {
                                 )
                                 .min_size(Vec2::new(250.0, 36.0)),
                             )
+                            .on_hover_text("Create a payment request for 50 eggs for pickup only. Verify the wallet and amount in your own wallet before approving any transaction.")
                             .clicked()
                         {
                             self.payment_uri = format!(

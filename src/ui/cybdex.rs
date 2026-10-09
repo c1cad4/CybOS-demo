@@ -33,7 +33,7 @@ impl CybOs {
                     let enter = response.lost_focus()
                         && ui.input(|i| i.key_pressed(egui::Key::Enter));
                     let clicked = ui
-                        .add_enabled(!self.cybdex.is_busy(), egui::Button::new("FIND PAIRS"))
+                        .add_enabled(!self.cybdex.is_busy(), egui::Button::new("FIND PAIRS")).on_hover_text("Search market data for token pairs matching the symbol, name, or mint above.")
                         .clicked();
 
                     if enter || clicked {
@@ -47,7 +47,7 @@ impl CybOs {
                     }
 
                     if ui
-                        .add_enabled(!self.cybdex.is_busy(), egui::Button::new("REFRESH"))
+                        .add_enabled(!self.cybdex.is_busy(), egui::Button::new("REFRESH")).on_hover_text("Fetch the latest available data for the selected pair.")
                         .clicked()
                     {
                         self.refresh_cybdex_pair();

@@ -42,7 +42,7 @@ impl CybOs {
         let dim = Color32::from_rgb(55, 145, 105);
 
         ui.label(
-            RichText::new("ONE NODE IDENTITY · DISCOVERY · DIRECT DELIVERY · NO FAKE CONNECTIONS")
+            RichText::new(crate::language::tr(self.language, "network_subtitle"))
                 .size(11.0)
                 .color(dim),
         );
@@ -56,10 +56,10 @@ impl CybOs {
             .inner_margin(egui::Margin::same(12))
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new("RADAR VISIBILITY").size(11.0).strong().color(neon));
-                    let label = if self.radar_visible { "VISIBLE" } else { "HIDDEN" };
+                    ui.label(RichText::new(crate::language::tr(self.language, "radar_visibility")).size(11.0).strong().color(neon));
+                    let label = if self.radar_visible { crate::language::tr(self.language, "visible") } else { crate::language::tr(self.language, "hidden") };
                     let button = egui::Button::new(RichText::new(label).strong().color(neon));
-                    if ui.add(button).clicked() {
+                    if ui.add(button).on_hover_text("Toggle local discovery visibility. When visible, cybOS advertises a short node ID over supported LAN/Bluetooth discovery.").clicked() {
                         self.radar_visible = !self.radar_visible;
                         self.radar_visibility.store(self.radar_visible, std::sync::atomic::Ordering::Relaxed);
                         self.store.set("radar_visible", if self.radar_visible { "true" } else { "false" });
@@ -87,7 +87,7 @@ impl CybOs {
                             .color(neon),
                     );
 
-                    if ui.button("COPY ID").clicked() {
+                    if ui.button("COPY ID").on_hover_text("Copy this node’s public identifier so another person can identify the peer.").clicked() {
                         ui.ctx().copy_text(self.node_id.clone());
                         self.notify("NODE ID COPIED");
                     }
@@ -101,7 +101,7 @@ impl CybOs {
                     };
 
                     if ui
-                        .add_enabled(!scanning, egui::Button::new(scan_label))
+                        .add_enabled(!scanning, egui::Button::new(scan_label)).on_hover_text("Discover peers on the local network. Discovery does not verify identity or trust.")
                         .clicked()
                     {
                         self.start_lan_scan();
@@ -110,7 +110,7 @@ impl CybOs {
 
                     let ble_scanning = self.ble_scan.is_some();
                     if ui
-                        .add_enabled(!ble_scanning, egui::Button::new(if ble_scanning { "BLE SCANNING…" } else { "SCAN BLE" }))
+                        .add_enabled(!ble_scanning, egui::Button::new(if ble_scanning { "BLE SCANNING…" } else { "SCAN BLE" })).on_hover_text("Scan for nearby Bluetooth Low Energy peers. Bluetooth availability depends on the host system.")
                         .clicked()
                     {
                         self.ble_scan = Some(crate::network::ble::start_scan());
@@ -220,6 +220,7 @@ impl CybOs {
                                     )
                                     .min_size(Vec2::new(64.0, 24.0)),
                                 )
+                                .on_hover_text("Choose this discovered peer as the current target. Selection alone does not verify the peer’s identity.")
                                 .clicked()
                             {
                                 self.lan_target = Some(peer.node_id.clone());

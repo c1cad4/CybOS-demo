@@ -2,6 +2,8 @@
 
 mod models;
 mod store;
+mod agent_economy;
+mod agent_runtime;
 
 mod actions;
 mod ai;
@@ -15,6 +17,7 @@ mod cybdex;
 mod graph;
 mod hardware;
 mod navigation;
+mod language;
 mod network;
 mod oracle;
 mod power;

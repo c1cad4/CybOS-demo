@@ -11,4 +11,6 @@ pub mod network;
 pub mod cameras;
 pub mod assets;
 pub mod system;
+pub mod planetary_pulse;
+pub mod offline_atlas;
 pub mod shell;

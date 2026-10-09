@@ -65,7 +65,7 @@ impl CybOs {
                     let search = ui.add_sized(
                         [280.0, 30.0],
                         egui::TextEdit::singleline(&mut self.search)
-                            .hint_text("⌘K  search pages, tokens, cameras…")
+                            .hint_text(crate::language::tr(self.language, "search_hint"))
                             .id(egui::Id::new("cybos_search")),
                     );
                     if self.search_focus {
@@ -74,7 +74,8 @@ impl CybOs {
                     }
                     if (search.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)))
                         || ui
-                            .add(egui::Button::new(RichText::new("GO").strong().color(neon)))
+                            .add(egui::Button::new(RichText::new(crate::language::tr(self.language, "go")).strong().color(neon)))
+                            .on_hover_text("Open the best matching page for the search text. Try a page name or keyword.")
                             .clicked()
                     {
                         self.apply_search();
@@ -85,12 +86,28 @@ impl CybOs {
                     Self::paint_icon(ui.painter(), plus_icon.center(), Icon::Plus, neon, 16.0);
                     if plus_resp.on_hover_text("Write a local event").clicked()
                         || ui
-                            .add(egui::Button::new(RichText::new("+ EVENT").strong().color(neon)))
+                            .add(egui::Button::new(RichText::new(crate::language::tr(self.language, "event")).strong().color(neon)))
                             .on_hover_text("Write a local event")
                             .clicked()
                     {
                         self.add_event("USER", "Manual event created from cybOS");
                         self.notify("EVENT WRITTEN");
+                    }
+
+                    let mut selected_language = self.language;
+                    egui::ComboBox::from_id_salt("cybos_language")
+                        .selected_text(selected_language.label())
+                        .width(105.0)
+                        .show_ui(ui, |ui| {
+                            ui.label(RichText::new(crate::language::tr(selected_language, "language")).size(9.0));
+                            for language in crate::language::Language::ALL {
+                                ui.selectable_value(&mut selected_language, language, language.label());
+                            }
+                        });
+                    if selected_language != self.language {
+                        self.language = selected_language;
+                        self.store.set("language", self.language.code());
+                        self.notify(format!("LANGUAGE SET: {}", self.language.label()));
                     }
 
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -110,20 +127,22 @@ impl CybOs {
                 ui.vertical_centered(|ui| {
                     ui.add_space(10.0);
                     let items = [
-                        (Page::Dashboard, "DASHBOARD"),
-                        (Page::Graph, "GRAPH"),
-                        (Page::Network, "NETWORK"),
-                        (Page::Radar, "RADAR"),
-                        (Page::Brain, "BRAIN"),
-                        (Page::Farm, "FARM"),
-                        (Page::Robot, "ROBOT"),
-                        (Page::Cameras, "CAMERAS"),
-                        (Page::System, "SYSTEM"),
-                        (Page::Assets, "TOKENS"),
-                        (Page::Chat, "CYBCHAT"),
-                        (Page::CybLex, "CYBLEX"),
-                        (Page::CybDex, "CYBDEX"),
-                        (Page::Browser, "CYBBROWSER"),
+                        (Page::Dashboard, crate::language::page_title(self.language, Page::Dashboard)),
+                        (Page::Graph, crate::language::page_title(self.language, Page::Graph)),
+                        (Page::Network, crate::language::page_title(self.language, Page::Network)),
+                        (Page::Radar, crate::language::page_title(self.language, Page::Radar)),
+                        (Page::Brain, crate::language::page_title(self.language, Page::Brain)),
+                        (Page::Farm, crate::language::page_title(self.language, Page::Farm)),
+                        (Page::Robot, crate::language::page_title(self.language, Page::Robot)),
+                        (Page::Cameras, crate::language::page_title(self.language, Page::Cameras)),
+                        (Page::System, crate::language::page_title(self.language, Page::System)),
+                        (Page::Assets, crate::language::page_title(self.language, Page::Assets)),
+                        (Page::Chat, crate::language::page_title(self.language, Page::Chat)),
+                        (Page::CybLex, crate::language::page_title(self.language, Page::CybLex)),
+                        (Page::CybDex, crate::language::page_title(self.language, Page::CybDex)),
+                        (Page::PlanetaryPulse, crate::language::page_title(self.language, Page::PlanetaryPulse)),
+                        (Page::OfflineAtlas, crate::language::page_title(self.language, Page::OfflineAtlas)),
+                        (Page::Browser, crate::language::page_title(self.language, Page::Browser)),
                     ];
                     for (page, tooltip) in items {
                         if self.rail_icon(ui, page.icon(), tooltip, self.page == page) {
@@ -143,7 +162,7 @@ impl CybOs {
                         (Icon::Node, "LIVE NODE", Page::Dashboard),
                         (Icon::Assets, "TOKENS", Page::Assets),
                         (Icon::Energy, "ENERGY", Page::System),
-                        (Icon::Environment, "ENVIRONMENT", Page::Farm),
+                        (Icon::Environment, "PLANET PULSE", Page::PlanetaryPulse),
                         (Icon::Activity, "ACTIVITY", Page::Dashboard),
                     ];
                     for (icon, tooltip, page) in actions {
@@ -163,14 +182,14 @@ impl CybOs {
             .show(ui, |ui| {
                 ui.horizontal_centered(|ui| {
                     let bus = [
-                        ("LIVE NODE", Page::Dashboard),
-                        ("QWEN", Page::Brain),
-                        ("MEMORY", Page::Brain),
-                        ("GRAPH", Page::Graph),
-                        ("FARM", Page::Farm),
-                        ("ENERGY", Page::System),
-                        ("NETWORK", Page::Network),
-                        ("CHAT", Page::Chat),
+                        (crate::language::tr(self.language, "live_node"), Page::Dashboard),
+                        (crate::language::tr(self.language, "qwen"), Page::Brain),
+                        (crate::language::tr(self.language, "memory"), Page::Brain),
+                        (crate::language::page_title(self.language, Page::Graph), Page::Graph),
+                        (crate::language::page_title(self.language, Page::Farm), Page::Farm),
+                        (crate::language::tr(self.language, "energy"), Page::System),
+                        (crate::language::page_title(self.language, Page::Network), Page::Network),
+                        (crate::language::page_title(self.language, Page::Chat), Page::Chat),
                     ];
                     for (name, page) in bus {
                         let active = self.page == page;
@@ -179,7 +198,7 @@ impl CybOs {
                         } else {
                             dim
                         });
-                        if ui.add(egui::Button::new(text).frame(false)).clicked() {
+                        if ui.add(egui::Button::new(text).frame(false)).on_hover_text(page.guidance().0).clicked() {
                             self.go(page);
                         }
                         ui.label(RichText::new("·").size(12.0).color(dim));
@@ -205,7 +224,7 @@ impl CybOs {
                             ui.allocate_exact_size(Vec2::splat(28.0), egui::Sense::hover());
                         Self::paint_icon(ui.painter(), icon_rect.center(), self.page.icon(), neon, 18.0);
                         ui.label(
-                            RichText::new(self.page.title())
+                            RichText::new(crate::language::page_title(self.language, self.page))
                                 .size(18.0)
                                 .strong()
                                 .color(neon),
@@ -220,7 +239,33 @@ impl CybOs {
                     });
                     ui.add_space(8.0);
                     ui.separator();
-                    ui.add_space(8.0);
+                    ui.add_space(6.0);
+
+                    // Consistent, beginner-friendly orientation on every screen.
+                    let (purpose, first_step, limitation) = crate::language::page_guidance(self.language, self.page);
+                    egui::Frame::new()
+                        .fill(Color32::from_rgb(5, 20, 13))
+                        .stroke(Stroke::new(1.0, Color32::from_rgb(20, 75, 48)))
+                        .corner_radius(8.0)
+                        .inner_margin(egui::Margin::symmetric(10, 7))
+                        .show(ui, |ui| {
+                            ui.horizontal_wrapped(|ui| {
+                                ui.label(RichText::new(crate::language::tr(self.language, "quick_guide")).size(9.0).strong().color(neon));
+                                ui.label(RichText::new(purpose).size(10.0).color(Color32::from_rgb(175, 215, 190)));
+                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                    ui.collapsing(RichText::new(crate::language::tr(self.language, "how_to_use")).size(9.0).strong().color(neon), |ui| {
+                                        ui.label(RichText::new(crate::language::tr(self.language, "start_here")).size(9.0).strong().color(neon));
+                                        ui.label(RichText::new(first_step).size(10.0).color(Color32::from_rgb(195, 225, 205)));
+                                        ui.add_space(4.0);
+                                        ui.label(RichText::new(crate::language::tr(self.language, "good_to_know")).size(9.0).strong().color(neon));
+                                        ui.label(RichText::new(limitation).size(10.0).color(Color32::from_rgb(195, 225, 205)));
+                                        ui.add_space(4.0);
+                                        ui.label(RichText::new(crate::language::tr(self.language, "tip")).size(9.0).color(Color32::GRAY));
+                                    });
+                                });
+                            });
+                        });
+                    ui.add_space(6.0);
                     match self.page {
                         Page::Graph => self.graph(ui),
                         Page::Dashboard => {
@@ -277,6 +322,16 @@ impl CybOs {
                             egui::ScrollArea::vertical()
                                 .auto_shrink([false, false])
                                 .show(ui, |ui| self.cybdex_page(ui));
+                        }
+                        Page::PlanetaryPulse => {
+                            egui::ScrollArea::vertical()
+                                .auto_shrink([false, false])
+                                .show(ui, |ui| self.planetary_pulse(ui));
+                        }
+                        Page::OfflineAtlas => {
+                            egui::ScrollArea::vertical()
+                                .auto_shrink([false, false])
+                                .show(ui, |ui| self.offline_atlas(ui));
                         }
                         Page::Browser => {
                             egui::ScrollArea::vertical()

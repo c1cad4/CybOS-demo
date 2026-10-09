@@ -767,6 +767,7 @@ dependencies = [
  "chrono",
  "eframe",
  "egui",
+ "image",
  "rusqlite",
  "serde",
  "serde_json",
@@ -1652,6 +1653,8 @@ dependencies = [
  "num-traits",
  "png",
  "tiff",
+ "zune-core",
+ "zune-jpeg",
 ]
 
 [[package]]

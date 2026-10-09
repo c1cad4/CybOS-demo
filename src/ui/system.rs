@@ -9,7 +9,7 @@ impl CybOs {
     pub(crate) fn system(&mut self, ui: &mut egui::Ui) {
         let neon = Self::neon();
         let dim = Color32::from_rgb(55, 145, 105);
-        ui.label(RichText::new("NATIVE DESKTOP RUNTIME · NO BROWSER SHELL").size(11.0).color(dim));
+        ui.label(RichText::new(crate::language::tr(self.language, "system_subtitle")).size(11.0).color(dim));
         ui.add_space(10.0);
         egui::Grid::new("sys").num_columns(3).spacing([10.0, 8.0]).show(ui, |ui| {
             self.card(ui, "VERSION", APP_VERSION);
@@ -19,6 +19,7 @@ impl CybOs {
         });
         ui.add_space(12.0);
         for (k, v) in [
+            ("LANGUAGE", self.language.label()),
             ("NODE", self.node_id.as_str()),
             ("DATABASE", self.store.path.to_str().unwrap_or("—")),
             ("RENDERER", "egui / eframe"),
@@ -73,12 +74,12 @@ impl CybOs {
                     }),
             );
 
-            if ui.button("CHECK DATABASE").clicked() {
+            if ui.button(crate::language::tr(self.language, "check_database")).clicked() {
                 self.database_integrity = self.store.database_integrity();
                 self.notify(format!("DATABASE CHECK: {}", self.database_integrity));
             }
 
-            if ui.button("EXPORT STATE").clicked() {
+            if ui.button(crate::language::tr(self.language, "export_state")).clicked() {
                 let timestamp = chrono::Local::now().format("%Y%m%d-%H%M%S");
                 let path = dirs_fallback_for_export()
                     .join(format!("cybOS-state-{timestamp}.json"));
@@ -114,17 +115,17 @@ impl CybOs {
                 }
             }
 
-            if ui.button("COPY NODE ID").clicked() {
+            if ui.button(crate::language::tr(self.language, "copy_node_id")).clicked() {
                 ui.ctx().copy_text(self.node_id.clone());
                 self.notify("NODE ID COPIED");
             }
-            if ui.button("OPEN DATA FOLDER").clicked() {
+            if ui.button(crate::language::tr(self.language, "open_data_folder")).clicked() {
                 if let Some(parent) = self.store.path.parent() {
                     let _ = Command::new("open").arg(parent).spawn();
                     self.notify("OPENED LOCAL DATA FOLDER");
                 }
             }
-            if ui.button("WRITE SYSTEM EVENT").clicked() {
+            if ui.button(crate::language::tr(self.language, "write_system_event")).clicked() {
                 self.add_event("SYSTEM", "Manual system pulse from cybOS");
                 self.notify("SYSTEM EVENT WRITTEN");
             }
