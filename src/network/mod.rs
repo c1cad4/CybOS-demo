@@ -20,3 +20,4 @@ pub mod ble;
 pub mod mesh;
 pub mod vpn;
 pub mod browser;
+pub mod cyb_event;
