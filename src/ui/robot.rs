@@ -351,7 +351,10 @@ impl CybOs {
                                         spec,
                                         std::sync::Arc::new(crate::agent_runtime::TaskContractValidator),
                                     ));
-                                    match registration.and_then(|()| crate::agent_runtime::WorkflowRunner::new(&registry, 8)) {
+                                    if let Err(error) = registration {
+                                        self.notify(format!("VALIDATOR SETUP FAILED: {error}"));
+                                    } else {
+                                        match crate::agent_runtime::WorkflowRunner::new(&registry, 8) {
                                         Ok(runner) => {
                                             let plan = crate::agent_runtime::WorkflowPlan {
                                                 name: "task_contract_validation".into(),
@@ -384,6 +387,7 @@ impl CybOs {
                                             }
                                         }
                                         Err(error) => self.notify(format!("VALIDATOR SETUP FAILED: {error}")),
+                                        }
                                     }
                                 }
                             }
