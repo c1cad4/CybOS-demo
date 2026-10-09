@@ -18,6 +18,7 @@ pub(crate) type RobotJobResult = Result<String, String>;
 
 pub(crate) struct CybOs {
     pub(crate) store: Store,
+    pub(crate) language: crate::language::Language,
     pub(crate) page: Page,
     pub(crate) search: String,
     pub(crate) robot_input: String,
@@ -135,6 +136,7 @@ impl Default for CybOs {
 
         let radar_visible = store.get("radar_visible").map(|v| v == "true").unwrap_or(false);
         let database_integrity = store.database_integrity();
+        let language = crate::language::Language::from_code(&store.get("language").unwrap_or_else(|| "en".into()));
         let radar_visibility = Arc::new(AtomicBool::new(radar_visible));
         let lan_events = crate::network::lan::spawn_listener(node_id.clone(), radar_visibility.clone());
         let noise_private_key = crate::network::secure_chat::load_or_create_static_key(&store)
@@ -146,6 +148,7 @@ impl Default for CybOs {
 
         let mut app = Self {
             store,
+            language,
             page: Page::Dashboard,
             search: String::new(),
             robot_input: String::new(),
