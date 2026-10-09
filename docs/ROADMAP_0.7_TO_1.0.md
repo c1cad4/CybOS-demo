@@ -41,6 +41,7 @@ This roadmap separates implemented code from validated behavior. A UI control or
 - [ ] Test magnet and torrent-URL downloads, local file/folder seeding, pause/resume, restart recovery and two-node transfer.
 - [ ] Compare displayed progress/state/upload counters against the engine's actual state.
 - [ ] Keep “forget task” separate from “delete payload”; never remove user files as a side effect of forgetting.
+- [x] Bound pending CybLex commands (32) and return explicit backpressure/worker-stopped errors.
 - [ ] Bound metadata and path handling; report disk-full, permission and tracker errors.
 - [ ] Add upload/download bandwidth limits and clear NAT/firewall status.
 - [ ] Publish magnet URI and torrent sidecar only after successful creation.
@@ -59,13 +60,15 @@ This roadmap separates implemented code from validated behavior. A UI control or
 ## P1 — Runtime cells and workflow engine
 - [ ] Every cell declares versioned inputs/outputs, budget, owner and failure policy.
 - [ ] Heartbeats originate from the actual worker, not the UI/scheduler.
-- [ ] Add cancellation propagation, queue backpressure, shutdown deadlines and orphan-worker diagnostics.
+- [x] Add bounded queues and explicit backpressure for CybLex and CybBrowser command submission.
+- [ ] Add cancellation propagation, shutdown deadlines and orphan-worker diagnostics.
 - [ ] Enforce capability allow-lists at execution time.
 - [ ] Test all workflow transitions, terminal states, timeout, cancellation, late worker return and queue saturation.
 - [ ] Bound workflow artifacts and redact secrets from exported traces.
 
 ## P1 — CybBrowser and external networking
 - [ ] Keep remote JavaScript disabled until sandboxing and permissions are implemented.
+- [x] Bound pending navigation commands (16); a full queue returns an actionable error without blocking the UI.
 - [ ] Test response-size limits, deadlines, redirects, malformed URLs, relative links and gateway fallback.
 - [ ] Make external gateway fallback visible; do not label a gateway response as a local-node response.
 - [ ] Test malformed/adversarial HTML and local/private-network access policy.
