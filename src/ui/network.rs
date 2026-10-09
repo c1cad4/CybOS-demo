@@ -8,6 +8,25 @@ impl CybOs {
         self.refresh_proximity();
         self.poll_lan_send();
         self.sync_ble_advertiser();
+        // Non-blocking manual probe: receiver persists across UI frames.
+        use std::sync::{Mutex, OnceLock, mpsc};
+        static CORE_PROBE: OnceLock<Mutex<Option<mpsc::Receiver<crate::network::cybcore_client::CoreStatus>>>> = OnceLock::new();
+        static CORE_RESULT: OnceLock<Mutex<Option<crate::network::cybcore_client::CoreStatus>>> = OnceLock::new();
+        let probe = CORE_PROBE.get_or_init(|| Mutex::new(None));
+        let result = CORE_RESULT.get_or_init(|| Mutex::new(None));
+        if let Ok(mut pending) = probe.lock() {
+            if let Some(receiver) = pending.as_ref() {
+                match receiver.try_recv() {
+                    Ok(status) => {
+                        if let Ok(mut last) = result.lock() { *last = Some(status); }
+                        *pending = None;
+                    }
+                    Err(mpsc::TryRecvError::Disconnected) => { *pending = None; }
+                    Err(mpsc::TryRecvError::Empty) => { ui.ctx().request_repaint_after(std::time::Duration::from_millis(100)); }
+                }
+            }
+        }
+
 
         if let Some(contract) = self.ble_scan_contract.clone() {
             if contract.expired() {
@@ -46,6 +65,53 @@ impl CybOs {
                 .size(11.0)
                 .color(dim),
         );
+
+        ui.add_space(10.0);
+
+        egui::Frame::new()
+            .fill(Color32::from_rgb(4, 16, 11))
+            .stroke(Stroke::new(1.0, Color32::from_rgb(24, 90, 58)))
+            .corner_radius(10)
+            .inner_margin(egui::Margin::same(12))
+            .show(ui, |ui| {
+                ui.label(RichText::new("CYBCORE · OPTIONAL SERVER").strong().color(neon));
+                if ui.button("CREATE / VIEW NODE SIGNING ID").clicked() {
+                    match crate::network::cybcore_identity::load_or_create_key(&self.store) {
+                        Ok(key) => {
+                            ui.ctx().copy_text(hex::encode(key.verifying_key().to_bytes()));
+                            self.notify("CYBCORE PUBLIC SIGNING KEY COPIED");
+                        }
+                        Err(_) => self.notify("CYBCORE SIGNING ID UNAVAILABLE"),
+                    }
+                }
+                ui.label(RichText::new("Copies PUBLIC key only; never share the private seed.").size(9.0).color(dim));
+                let configured = std::env::var("CYBCORE_URL").ok().filter(|v| !v.trim().is_empty());
+                if configured.is_some() {
+                    ui.label(RichText::new("Configured · offline-first mode preserved").size(10.0).color(dim));
+                } else {
+                    ui.label(RichText::new("DISABLED · Set CYBCORE_URL to opt in").size(10.0).color(dim));
+                }
+                let checking = probe.lock().map(|p| p.is_some()).unwrap_or(true);
+                if ui.add_enabled(!checking && configured.is_some(), egui::Button::new(if checking { "CHECKING…" } else { "CHECK CYBCORE" })).clicked() {
+                    let (tx, rx) = mpsc::channel();
+                    if let Ok(mut pending) = probe.lock() {
+                        *pending = Some(rx);
+                        if let Ok(mut last) = result.lock() { *last = None; }
+                        let endpoint = configured.clone();
+                        std::thread::spawn(move || {
+                            let status = crate::network::cybcore_client::CybCoreClient::new(endpoint).status();
+                            let _ = tx.send(status);
+                        });
+                        ui.ctx().request_repaint_after(std::time::Duration::from_millis(100));
+                    }
+                }
+                if let Ok(last) = result.lock() {
+                    if let Some(status) = last.as_ref() {
+                        ui.label(RichText::new(format!("CYBCORE STATUS · {:?}", status)).size(10.0).color(neon));
+                    }
+                }
+                ui.label(RichText::new("Manual check only. No messages or private data uploaded.").size(9.0).color(dim));
+            });
 
         ui.add_space(10.0);
 
