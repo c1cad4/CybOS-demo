@@ -88,6 +88,16 @@ impl WorkerContract {
             *value = Instant::now();
         }
         self.runs.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        // Refresh the visible span while a worker is still running. Otherwise
+        // the dashboard would show a RUNNING task with a stale zero duration.
+        record_worker_trace(WorkerTrace {
+            id: self.task_id.clone(),
+            cell: self.cell.to_string(),
+            started_at: self.started_at.clone(),
+            elapsed_ms: self.started.elapsed().as_millis(),
+            budget_ms: self.budget.as_millis(),
+            status: self.status().to_string(),
+        });
     }
 
     pub(crate) fn expired(&self) -> bool {
@@ -286,6 +296,12 @@ mod tests {
         assert!(!worker.expired());
         assert!(worker.remaining() <= std::time::Duration::from_secs(1));
         assert!(worker.heartbeat_age_ms() < 1000);
+        worker.heartbeat();
+        let trace = super::recent_worker_traces().into_iter()
+            .find(|trace| trace.cell == "ROBOTCYB")
+            .expect("running worker should remain visible");
+        assert_eq!(trace.status, "RUNNING");
+        assert!(trace.budget_ms > 0);
     }
 
     #[test]
