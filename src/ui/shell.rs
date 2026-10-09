@@ -65,7 +65,7 @@ impl CybOs {
                     let search = ui.add_sized(
                         [280.0, 30.0],
                         egui::TextEdit::singleline(&mut self.search)
-                            .hint_text("⌘K  search pages, tokens, cameras…")
+                            .hint_text(crate::language::tr(self.language, "search_hint"))
                             .id(egui::Id::new("cybos_search")),
                     );
                     if self.search_focus {
@@ -74,7 +74,7 @@ impl CybOs {
                     }
                     if (search.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)))
                         || ui
-                            .add(egui::Button::new(RichText::new("GO").strong().color(neon)))
+                            .add(egui::Button::new(RichText::new(crate::language::tr(self.language, "go")).strong().color(neon)))
                             .on_hover_text("Open the best matching page for the search text. Try a page name or keyword.")
                             .clicked()
                     {
@@ -86,12 +86,28 @@ impl CybOs {
                     Self::paint_icon(ui.painter(), plus_icon.center(), Icon::Plus, neon, 16.0);
                     if plus_resp.on_hover_text("Write a local event").clicked()
                         || ui
-                            .add(egui::Button::new(RichText::new("+ EVENT").strong().color(neon)))
+                            .add(egui::Button::new(RichText::new(crate::language::tr(self.language, "event")).strong().color(neon)))
                             .on_hover_text("Write a local event")
                             .clicked()
                     {
                         self.add_event("USER", "Manual event created from cybOS");
                         self.notify("EVENT WRITTEN");
+                    }
+
+                    let mut selected_language = self.language;
+                    egui::ComboBox::from_id_salt("cybos_language")
+                        .selected_text(selected_language.label())
+                        .width(105.0)
+                        .show_ui(ui, |ui| {
+                            ui.label(RichText::new(crate::language::tr(selected_language, "language")).size(9.0));
+                            for language in crate::language::Language::ALL {
+                                ui.selectable_value(&mut selected_language, language, language.label());
+                            }
+                        });
+                    if selected_language != self.language {
+                        self.language = selected_language;
+                        self.store.set("language", self.language.code());
+                        self.notify(format!("LANGUAGE SET: {}", self.language.label()));
                     }
 
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -206,7 +222,7 @@ impl CybOs {
                             ui.allocate_exact_size(Vec2::splat(28.0), egui::Sense::hover());
                         Self::paint_icon(ui.painter(), icon_rect.center(), self.page.icon(), neon, 18.0);
                         ui.label(
-                            RichText::new(self.page.title())
+                            RichText::new(crate::language::page_title(self.language, self.page))
                                 .size(18.0)
                                 .strong()
                                 .color(neon),
@@ -224,7 +240,7 @@ impl CybOs {
                     ui.add_space(6.0);
 
                     // Consistent, beginner-friendly orientation on every screen.
-                    let (purpose, first_step, limitation) = self.page.guidance();
+                    let (purpose, first_step, limitation) = crate::language::page_guidance(self.language, self.page);
                     egui::Frame::new()
                         .fill(Color32::from_rgb(5, 20, 13))
                         .stroke(Stroke::new(1.0, Color32::from_rgb(20, 75, 48)))
@@ -232,17 +248,17 @@ impl CybOs {
                         .inner_margin(egui::Margin::symmetric(10, 7))
                         .show(ui, |ui| {
                             ui.horizontal_wrapped(|ui| {
-                                ui.label(RichText::new("QUICK GUIDE").size(9.0).strong().color(neon));
+                                ui.label(RichText::new(crate::language::tr(self.language, "quick_guide")).size(9.0).strong().color(neon));
                                 ui.label(RichText::new(purpose).size(10.0).color(Color32::from_rgb(175, 215, 190)));
                                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                    ui.collapsing(RichText::new("HOW TO USE").size(9.0).strong().color(neon), |ui| {
-                                        ui.label(RichText::new("START HERE").size(9.0).strong().color(neon));
+                                    ui.collapsing(RichText::new(crate::language::tr(self.language, "how_to_use")).size(9.0).strong().color(neon), |ui| {
+                                        ui.label(RichText::new(crate::language::tr(self.language, "start_here")).size(9.0).strong().color(neon));
                                         ui.label(RichText::new(first_step).size(10.0).color(Color32::from_rgb(195, 225, 205)));
                                         ui.add_space(4.0);
-                                        ui.label(RichText::new("GOOD TO KNOW").size(9.0).strong().color(neon));
+                                        ui.label(RichText::new(crate::language::tr(self.language, "good_to_know")).size(9.0).strong().color(neon));
                                         ui.label(RichText::new(limitation).size(10.0).color(Color32::from_rgb(195, 225, 205)));
                                         ui.add_space(4.0);
-                                        ui.label(RichText::new("TIP: use ⌘K to find a page; hover over icons and buttons for hints.").size(9.0).color(Color32::GRAY));
+                                        ui.label(RichText::new(crate::language::tr(self.language, "tip")).size(9.0).color(Color32::GRAY));
                                     });
                                 });
                             });
