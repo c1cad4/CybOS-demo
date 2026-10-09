@@ -8,6 +8,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      - name: Check formatting
+        working-directory: cybcore/server
+        run: cargo fmt --all -- --check
       - name: Check server
         working-directory: cybcore/server
         run: cargo check --all-targets
