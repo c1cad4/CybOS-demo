@@ -722,10 +722,8 @@ mod tests {
         assert!(!store.pin_secure_peer_key("node-a", &first).expect("first pin"));
         assert!(store.pin_secure_peer_key("node-a", &first).expect("same pin"));
         assert!(store.pin_secure_peer_key("node-a", &changed).is_err());
-        assert_eq!(
-            store.get("noise_peer_key:node-a").as_deref(),
-            Some("11".repeat(32).as_str())
-        );
+        let expected = "11".repeat(32);
+        assert_eq!(store.get("noise_peer_key:node-a").as_deref(), Some(expected.as_str()));
     }
 
     #[test]
