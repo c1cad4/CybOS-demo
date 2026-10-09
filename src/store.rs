@@ -110,6 +110,23 @@ impl Store {
             .map_err(|error| format!("cannot persist setting '{key}': {error}"))
     }
 
+    /// Remove a secret and compact SQLite storage after a successful external migration.
+    ///
+    /// SQLite cannot promise forensic erasure on flash storage, but checkpointing and
+    /// VACUUM avoid intentionally leaving the old value in live rows/free pages/WAL.
+    pub(crate) fn try_delete_and_compact(&self, key: &str) -> Result<(), String> {
+        self.conn
+            .execute("DELETE FROM kv WHERE key=?1", [key])
+            .map_err(|error| format!("cannot delete setting '{key}': {error}"))?;
+        self.conn
+            .execute_batch("PRAGMA wal_checkpoint(TRUNCATE); VACUUM;")
+            .map_err(|error| format!("cannot compact database after deleting '{key}': {error}"))?;
+        if self.get(key).is_some() {
+            return Err(format!("setting '{key}' remains after deletion"));
+        }
+        Ok(())
+    }
+
     /// Remove a setting while preserving SQLite errors for security-sensitive migrations.
     pub(crate) fn try_delete(&self, key: &str) -> Result<(), String> {
         self.conn
