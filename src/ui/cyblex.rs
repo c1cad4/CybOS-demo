@@ -57,7 +57,7 @@ impl CybOs {
                             .hint_text("magnet:?… or https://…/file.torrent"),
                     );
 
-                    if ui.button("START DOWNLOAD").clicked() {
+                    if ui.button("START DOWNLOAD").on_hover_text("Start downloading the selected authorized source to the destination folder shown below.").clicked() {
                         match self.cyblex.add_source(
                             self.cyblex_source.clone(),
                             self.cyblex_download_path.clone(),
@@ -75,7 +75,7 @@ impl CybOs {
                             .desired_width(560.0),
                     );
 
-                    if ui.button("DEFAULT").clicked() {
+                    if ui.button("DEFAULT").on_hover_text("Restore the recommended CybLex download folder.").clicked() {
                         self.cyblex_download_path = Self::cyblex_default_download_path();
                     }
                 });
@@ -104,7 +104,7 @@ impl CybOs {
                             .hint_text("~/path/to/file-or-folder"),
                     );
 
-                    if ui.button("CREATE + SEED").clicked() {
+                    if ui.button("CREATE + SEED").on_hover_text("Create a torrent from the selected local file or folder and begin seeding it. Share only content you are authorized to distribute.").clicked() {
                         match self.cyblex.seed_path(self.cyblex_seed_path.clone()) {
                             Ok(()) => self.notify("CYBLEX SEEDING QUEUED"),
                             Err(error) => self.notify(format!("CYBLEX: {error}")),
@@ -176,14 +176,14 @@ impl CybOs {
                         );
 
                         if torrent.paused {
-                            if ui.button("RESUME").clicked() {
+                            if ui.button("RESUME").on_hover_text("Continue this paused torrent job.").clicked() {
                                 let _ = self.cyblex.resume(torrent.id);
                             }
-                        } else if ui.button("PAUSE").clicked() {
+                        } else if ui.button("PAUSE").on_hover_text("Temporarily stop transfer activity for this torrent.").clicked() {
                             let _ = self.cyblex.pause(torrent.id);
                         }
 
-                        if ui.button("REMOVE").clicked() {
+                        if ui.button("REMOVE").on_hover_text("Remove this torrent from the current list; check the prompt and local files before confirming.").clicked() {
                             let _ = self.cyblex.forget(torrent.id, false);
                         }
                     });
@@ -211,7 +211,7 @@ impl CybOs {
                                 .color(dim),
                         );
 
-                        if ui.button("COPY MAGNET").clicked() {
+                        if ui.button("COPY MAGNET").on_hover_text("Copy this torrent’s shareable magnet URI to the clipboard.").clicked() {
                             ui.ctx().copy_text(torrent.magnet_uri.clone());
                             self.notify("CYBLEX MAGNET COPIED");
                         }
