@@ -108,14 +108,15 @@ impl CybOs {
         ui.label(RichText::new("RECENT WORKER TASKS").size(11.0).strong().color(neon));
         ui.label(RichText::new("Execution spans from worker contracts · bounded to 100 tasks · queue wait and per-task CPU attribution are not yet measured.").size(9.0).color(dim));
         let traces = crate::runtime::recent_worker_traces();
-        egui::Grid::new("telemetry_worker_traces").num_columns(5).striped(true).spacing([9.0, 5.0]).show(ui, |ui| {
-            for heading in ["CELL", "STATUS", "ELAPSED", "BUDGET", "TASK ID"] {
+        egui::Grid::new("telemetry_worker_traces").num_columns(6).striped(true).spacing([9.0, 5.0]).show(ui, |ui| {
+            for heading in ["CELL", "STATUS", "STARTED", "ELAPSED", "BUDGET", "TASK ID"] {
                 ui.label(RichText::new(heading).size(8.0).strong().color(dim));
             }
             ui.end_row();
             for trace in traces.iter().take(12) {
                 ui.label(RichText::new(&trace.cell).size(9.0).color(soft));
                 ui.label(RichText::new(&trace.status).size(9.0).color(if trace.status == "ERROR" || trace.status == "TIMEOUT" || trace.status == "OVER_BUDGET" { Color32::LIGHT_RED } else { soft }));
+                ui.label(RichText::new(trace.started_at.get(11..19).unwrap_or("—")).size(9.0).color(dim));
                 ui.label(RichText::new(format!("{} ms", trace.elapsed_ms)).size(9.0).color(soft));
                 ui.label(RichText::new(format!("{} ms", trace.budget_ms)).size(9.0).color(soft));
                 ui.label(RichText::new(trace.id.chars().take(8).collect::<String>()).size(8.0).color(dim));
