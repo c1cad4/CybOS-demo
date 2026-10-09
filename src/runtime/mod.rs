@@ -308,10 +308,13 @@ mod tests {
         assert!(!worker.expired());
         assert!(worker.remaining() <= std::time::Duration::from_secs(1));
         assert!(worker.heartbeat_age_ms() < 1000);
+        let id = super::recent_worker_traces().into_iter()
+            .find(|trace| trace.cell == "ROBOTCYB" && trace.status == "RUNNING")
+            .expect("running worker should be visible").id;
         worker.heartbeat();
         let trace = super::recent_worker_traces().into_iter()
-            .find(|trace| trace.cell == "ROBOTCYB")
-            .expect("running worker should remain visible");
+            .find(|trace| trace.id == id)
+            .expect("running worker trace should remain visible");
         assert_eq!(trace.status, "RUNNING");
         assert!(trace.budget_ms > 0);
     }
