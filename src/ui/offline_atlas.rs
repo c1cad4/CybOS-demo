@@ -87,7 +87,7 @@ impl CybOs {
                 let response = ui.add_sized([ui.available_width(), 34.0], egui::TextEdit::singleline(&mut path)
                     .hint_text("/path/to/region.mbtiles"));
                 if response.changed() {
-                    self.store.set("offline_atlas_path", path.clone());
+                    self.store.set("offline_atlas_path", &path);
                     self.store.set("offline_atlas_status", "NOT CHECKED");
                 }
                 ui.horizontal_wrapped(|ui| {
