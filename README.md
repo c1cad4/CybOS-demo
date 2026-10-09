@@ -160,29 +160,29 @@ CybOS-demo/
 
 See the repository license configuration.
 
-## User readiness
+## Readiness and platform support
 
-### Technical beta — READY
+### Native technical beta
 
-The native macOS application is usable now for a technically capable user who can build/package it locally. The core desktop runtime, local persistence, RobotCYB/Qwen path, CYB RADAR, unified LAN+BLE proximity, encrypted CYBChat, TOFU identity, Cybergraph and Assets services are implemented and covered by Linux/macOS CI.
+The native macOS application is available for technically capable users who can build or install the published package. RobotCYB's full local-model behavior requires a separately configured local Qwen server. The current repository and open pull requests must be checked together: features on an unmerged branch are not part of the published release.
 
-### Public download — READY
-
-| Area | Status |
+| Area | Current status |
 |---|---|
-| Native macOS app | READY |
-| Persistence / graph / chat | READY |
-| RobotCYB + local Qwen | READY WITH LOCAL QWEN SETUP |
-| LAN + BLE Radar | READY / OPT-IN |
-| Noise XX secure chat | READY |
-| Worker budgets / lifecycle | READY |
-| macOS packaging | READY |
-| GitHub release publication | v0.7.1 published; v0.7.2 hardening release pending final publication |
-| Developer ID signing / notarization | NOT CONFIGURED |
-| Hardware / camera integrations | FUTURE LAYER |
-| P2P / Nostr fallback | FUTURE LAYER |
+| Native macOS app | Published beta; first-launch Gatekeeper warning may occur until signing/notarization is configured |
+| Persistence / graph / chat | Implemented; upgrade and multi-device recovery still need field validation |
+| RobotCYB + local Qwen | Requires local Qwen setup; model weights are not bundled |
+| LAN + BLE Radar | Opt-in; BLE is macOS-specific and RSSI is not a distance measurement |
+| Noise XX secure chat | Implemented; review limitations and perform real multi-device testing before relying on it for high-risk communication |
+| Worker budgets / lifecycle | Implemented; keep CI and recovery tests green |
+| macOS packaging | Universal ARM64 + Intel package path |
+| GitHub release | v0.7.2 is the published macOS beta; verify release assets and checksum for each new build |
+| Developer ID signing / notarization | Optional path exists; credentials are not configured by default |
+| Linux | CI build/test target; no official end-user package documented yet |
+| Windows | Experimental CI build/test target; no official installer or full feature parity claim yet |
+| Farm hardware / live cameras | Future integration layer; unavailable devices must be reported honestly |
+| P2P / Nostr fallback | Future integration layer |
 
-For the current state, the honest estimate is **~95% for a technical/private beta** and **~90% for a public macOS beta**; the remaining work is primarily Apple signing/notarization and real two-Mac/recovery validation. The remaining gap is mainly Developer ID signing/notarization plus two-Mac and upgrade/recovery validation, not the core desktop architecture.
+There is no meaningful single percentage for product readiness: compilation, release packaging, security review, platform parity and real-world validation are separate gates. A published macOS beta should not be read as a claim that every platform or every optional subsystem is production-ready.
 
 ## Runtime stack status
 
