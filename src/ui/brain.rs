@@ -40,13 +40,13 @@ impl CybOs {
                     ui.label(RichText::new("Expected server: 127.0.0.1:8080").size(9.0).color(dim));
                     ui.label(RichText::new("Launcher path: ~/cybAI/.venv/bin/mlx_lm.server").size(9.0).color(dim));
                     ui.horizontal(|ui| {
-                        if ui.button("OPEN QWEN FOLDER").clicked() {
+                        if ui.button("OPEN QWEN FOLDER").on_hover_text("Open the local cybAI folder to inspect model files and the launcher. This does not start the model.").clicked() {
                             if let Ok(home) = std::env::var("HOME") {
                                 let path = std::path::PathBuf::from(home).join("cybAI");
                                 let _ = Command::new("open").arg(path).spawn();
                             }
                         }
-                        if ui.button("RETRY QWEN").clicked() {
+                        if ui.button("RETRY QWEN").on_hover_text("Ask cybOS to check the local Qwen service again; start the server separately if it is not running.").clicked() {
                             self.qwen_retry_after = std::time::Instant::now();
                             self.notify("QWEN RETRY REQUESTED");
                         }
@@ -66,11 +66,12 @@ impl CybOs {
                 ui.horizontal(|ui| {
                     ui.add(
                         egui::TextEdit::singleline(&mut self.remember_note)
-                            .hint_text("A fact cybOS should keep…")
+                            .hint_text("A fact cybOS should keep…").on_hover_text("Enter a short note to save in this device’s local memory.")
                             .desired_width(ui.available_width() - 130.0),
                     );
                     if ui
                         .add(egui::Button::new(RichText::new("STORE").strong().color(neon)).min_size(Vec2::new(110.0, 30.0)))
+                        .on_hover_text("Save this note to the local cybOS database. Empty notes are ignored.")
                         .clicked()
                     {
                         let note = self.remember_note.trim().to_string();
