@@ -207,10 +207,16 @@ mod tests {
     #[test]
     fn cell_heartbeat_changes_only_on_explicit_status_update() {
         let mut runtime = Runtime::new();
-        let initial_age = runtime.cell("CYBCHAT").unwrap().heartbeat_age_ms();
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        let before = runtime.cell("CYBCHAT").unwrap().heartbeat_age_ms();
+
         runtime.tick();
         std::thread::sleep(std::time::Duration::from_millis(5));
-        assert!(runtime.cell("CYBCHAT").unwrap().heartbeat_age_ms() >= initial_age);
+        let after = runtime.cell("CYBCHAT").unwrap().heartbeat_age_ms();
+        assert!(
+            after >= before + 4,
+            "scheduler tick must not refresh the cell heartbeat"
+        );
 
         runtime.set_status("CYBCHAT", "READY");
         assert!(runtime.cell("CYBCHAT").unwrap().heartbeat_age_ms() < 1000);
