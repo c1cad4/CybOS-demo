@@ -33,6 +33,25 @@ jobs:
       - name: Diff whitespace check
         run: git diff --check
 
+  windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cargo check
+        run: cargo check
+
+      - name: Cargo test
+        run: cargo test
+
+      - name: Windows release build
+        run: cargo build --release
+
   macos:
     runs-on: macos-latest
 

@@ -15,15 +15,25 @@ The current native runtime includes local SQLite state with WAL/busy-timeout har
 
 ## Download the macOS beta
 
-The previous v0.7.1 package remains available from the companion release repository; v0.7.2 is the hardened release line:
+The published macOS beta is v0.7.2:
 
-https://github.com/c1cad4/cybOS/releases/tag/v0.7.1
+https://github.com/c1cad4/cybOS/releases/tag/v0.7.2
 
 Download the ZIP, unpack it, and open `cybOS.app`.
 
 On a first launch, macOS may show a Gatekeeper warning because the current public binary is not Developer ID signed/notarized. Use Finder's **Open** action on the app, or in **System Settings → Privacy & Security** use the **Open Anyway** action for cybOS.
 
-The current `main` branch contains universal ARM64 + Intel packaging, replay protection, WAL persistence hardening, cached database diagnostics, bounded Qwen input, and optional Developer ID/notarization support.
+The current `main` branch contains universal macOS ARM64 + Intel packaging, replay protection, WAL persistence hardening, cached database diagnostics, bounded Qwen input, and optional Developer ID/notarization support.
+
+### Platform support status
+
+| Platform | Status |
+|---|---|
+| macOS Apple Silicon + Intel | Published beta; signing/notarization depends on configured Apple credentials |
+| Linux | CI compile/test target; no supported end-user package documented here |
+| Windows | Experimental CI compile/test target; no supported end-user installer yet |
+
+A successful cross-platform compile is not the same as feature parity or a supported release. Hardware access, key storage, packaging, upgrade behavior and native interaction still require platform-specific validation.
 
 ## Build locally
 
@@ -79,7 +89,7 @@ These are separate product layers, not prerequisites for the current desktop cor
 
 ## Public release path
 
-The current public beta is **v0.7.1**:
+The current published macOS beta is **v0.7.2**:
 
 [Open cybOS v0.7.2 release](https://github.com/c1cad4/cybOS/releases/tag/v0.7.2)
 

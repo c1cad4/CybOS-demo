@@ -155,8 +155,8 @@ impl CybDexRuntime {
         timeframe: CybDexTimeframe,
     ) -> Result<(), String> {
         let address = pair_address.trim();
-        if address.is_empty() || address.len() > MAX_QUERY {
-            return Err("Invalid pool address".into());
+        if !looks_like_solana_address(address) {
+            return Err("Invalid Solana pool address (expected a Base58 public key)".into());
         }
         self.tx
             .send(CybDexCommand::LoadPair {
@@ -377,8 +377,30 @@ fn load_ohlcv(
         })
         .collect::<Vec<_>>();
 
+    // Reject malformed provider rows before they reach chart scaling. A single
+    // NaN/negative value can otherwise distort the entire visible price axis.
+    candles.retain(valid_candle);
     candles.sort_by_key(|c| c.timestamp);
     Ok(candles)
+}
+
+fn valid_candle(candle: &CybDexCandle) -> bool {
+    let values = [
+        candle.open,
+        candle.high,
+        candle.low,
+        candle.close,
+        candle.volume,
+    ];
+    values.iter().all(|value| value.is_finite())
+        && candle.open > 0.0
+        && candle.high > 0.0
+        && candle.low > 0.0
+        && candle.close > 0.0
+        && candle.volume >= 0.0
+        && candle.high >= candle.low
+        && candle.high >= candle.open.max(candle.close)
+        && candle.low <= candle.open.min(candle.close)
 }
 
 fn parse_pair(value: &serde_json::Value) -> Option<CybDexPair> {
@@ -415,12 +437,17 @@ fn parse_pair(value: &serde_json::Value) -> Option<CybDexPair> {
 }
 
 fn number(value: &serde_json::Value) -> Option<f64> {
-    value.as_f64().or_else(|| value.as_str()?.parse::<f64>().ok())
+    value
+        .as_f64()
+        .or_else(|| value.as_str()?.parse::<f64>().ok())
+        .filter(|number| number.is_finite())
 }
 
 fn looks_like_solana_address(value: &str) -> bool {
-    let len = value.len();
-    (32..=44).contains(&len) && value.bytes().all(|b| b.is_ascii_alphanumeric())
+    // Solana public keys use the Bitcoin-style Base58 alphabet. In particular,
+    // 0, O, I and l are not valid characters; ASCII alphanumeric alone is too lax.
+    const BASE58: &str = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+    (32..=44).contains(&value.len()) && value.bytes().all(|byte| BASE58.as_bytes().contains(&byte))
 }
 
 fn percent_encode(value: &str) -> String {
@@ -440,7 +467,7 @@ fn short_address(value: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{looks_like_solana_address, parse_pair, percent_encode};
+    use super::{looks_like_solana_address, parse_pair, percent_encode, valid_candle, CybDexCandle};
 
     #[test]
     fn recognizes_solana_like_mints() {
@@ -449,8 +476,44 @@ mod tests {
     }
 
     #[test]
+    fn rejects_invalid_base58_characters_in_mints() {
+        assert!(!looks_like_solana_address("1111111111111111111111111111111O"));
+        assert!(!looks_like_solana_address("1111111111111111111111111111111l"));
+        assert!(!looks_like_solana_address("11111111111111111111111111111110"));
+    }
+
+    #[test]
+    fn rejects_malformed_ohlcv_rows() {
+        let valid = CybDexCandle {
+            timestamp: 1,
+            open: 10.0,
+            high: 12.0,
+            low: 9.0,
+            close: 11.0,
+            volume: 100.0,
+        };
+        assert!(valid_candle(&valid));
+
+        let invalid = CybDexCandle { high: 8.0, ..valid.clone() };
+        assert!(!valid_candle(&invalid));
+
+        let invalid = CybDexCandle { close: f64::NAN, ..valid.clone() };
+        assert!(!valid_candle(&invalid));
+
+        let invalid = CybDexCandle { volume: -1.0, ..valid };
+        assert!(!valid_candle(&invalid));
+    }
+
+    #[test]
     fn percent_encodes_search() {
         assert_eq!(percent_encode("SOL/USDC"), "SOL%2FUSDC");
+    }
+
+    #[test]
+    fn rejects_non_finite_market_numbers() {
+        assert_eq!(super::number(&serde_json::json!("NaN")), None);
+        assert_eq!(super::number(&serde_json::json!("inf")), None);
+        assert_eq!(super::number(&serde_json::json!("12.5")), Some(12.5));
     }
 
     #[test]
