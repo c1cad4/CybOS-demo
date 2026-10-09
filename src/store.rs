@@ -7,6 +7,16 @@ use crate::agent_economy::{AgentManifest, AgentTask, KnowledgeRecord, LedgerEntr
 use crate::agent_runtime::{CapabilitySpec, WorkflowArtifact, WorkflowCheckpoint, WorkflowRun};
 use crate::models::{Event, GraphLink, GraphNode, Memory};
 
+fn decode_exact_hex_key(value: &str) -> Option<Vec<u8>> {
+    if value.len() != 64 || !value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return None;
+    }
+    (0..value.len())
+        .step_by(2)
+        .map(|index| u8::from_str_radix(&value[index..index + 2], 16).ok())
+        .collect()
+}
+
 pub(crate) struct Store {
     pub(crate) path: PathBuf,
     conn: Connection,
@@ -168,6 +178,32 @@ impl Store {
     /// Best-effort preference write. Use the fallible method for security state.
     pub(crate) fn set(&self, key: &str, value: &str) {
         let _ = self.try_set(key, value);
+    }
+    /// Atomically pin a Noise peer key on first contact and reject later key changes.
+    /// Returns true when the exact key was already pinned, false when this call pinned it.
+    pub(crate) fn pin_secure_peer_key(&self, node_id: &str, public_key: &[u8]) -> Result<bool, String> {
+        if node_id.trim().is_empty() || node_id.len() > 128 {
+            return Err("secure peer id must contain 1-128 bytes".into());
+        }
+        if public_key.len() != 32 {
+            return Err("Noise peer public key must be exactly 32 bytes".into());
+        }
+
+        let key = format!("noise_peer_key:{node_id}");
+        let encoded = public_key.iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+        let inserted = self.conn.execute(
+            "INSERT OR IGNORE INTO kv(key,value) VALUES(?1,?2)",
+            params![key, encoded],
+        ).map_err(|error| format!("cannot pin secure peer identity: {error}"))?;
+
+        let stored = self.get(&key)
+            .ok_or_else(|| "cannot verify persisted secure peer identity".to_string())?;
+        let decoded = decode_exact_hex_key(&stored)
+            .ok_or_else(|| "stored secure peer identity pin is malformed".to_string())?;
+        if decoded != public_key {
+            return Err("Noise peer identity key changed".into());
+        }
+        Ok(inserted == 0)
     }
     pub(crate) fn add_memory(&self, memory: &Memory) {
         let _ = self.conn.execute(
@@ -673,6 +709,49 @@ fn dirs_fallback() -> PathBuf {
 mod tests {
     use super::Store;
     use rusqlite::Connection;
+
+    #[test]
+    fn secure_peer_key_is_pinned_once_and_changes_are_rejected() {
+        let conn = Connection::open_in_memory().expect("in-memory sqlite");
+        conn.execute_batch("CREATE TABLE kv(key TEXT PRIMARY KEY, value TEXT NOT NULL);")
+            .expect("test schema");
+        let store = Store { path: std::path::PathBuf::from(":memory:"), conn };
+        let first = [0x11_u8; 32];
+        let changed = [0x22_u8; 32];
+
+        assert!(!store.pin_secure_peer_key("node-a", &first).expect("first pin"));
+        assert!(store.pin_secure_peer_key("node-a", &first).expect("same pin"));
+        assert!(store.pin_secure_peer_key("node-a", &changed).is_err());
+        assert_eq!(
+            store.get("noise_peer_key:node-a").as_deref(),
+            Some("11".repeat(32).as_str())
+        );
+    }
+
+    #[test]
+    fn secure_peer_key_pin_fails_closed_when_storage_rejects_insert() {
+        let conn = Connection::open_in_memory().expect("in-memory sqlite");
+        conn.execute_batch(
+            "CREATE TABLE kv(key TEXT PRIMARY KEY, value TEXT NOT NULL);
+             CREATE TRIGGER reject_peer_pin BEFORE INSERT ON kv
+             BEGIN SELECT RAISE(ABORT, 'simulated storage failure'); END;",
+        ).expect("test schema");
+        let store = Store { path: std::path::PathBuf::from(":memory:"), conn };
+        assert!(store.pin_secure_peer_key("node-a", &[0x11; 32]).is_err());
+        assert!(store.get("noise_peer_key:node-a").is_none());
+    }
+
+    #[test]
+    fn malformed_peer_pin_is_not_replaced() {
+        let conn = Connection::open_in_memory().expect("in-memory sqlite");
+        conn.execute_batch(
+            "CREATE TABLE kv(key TEXT PRIMARY KEY, value TEXT NOT NULL);
+             INSERT INTO kv(key,value) VALUES('noise_peer_key:node-a','not-a-key');",
+        ).expect("test schema");
+        let store = Store { path: std::path::PathBuf::from(":memory:"), conn };
+        assert!(store.pin_secure_peer_key("node-a", &[0x11; 32]).is_err());
+        assert_eq!(store.get("noise_peer_key:node-a").as_deref(), Some("not-a-key"));
+    }
 
     #[test]
     fn try_set_reports_sqlite_write_errors() {
