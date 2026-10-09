@@ -151,7 +151,7 @@ fn run_worker(command_rx: Receiver<BrowserCommand>, event_tx: Sender<BrowserEven
                     }
                 }
             }
-            Ok(BrowserCommand::Shutdown) | Err(TryRecvError::Disconnected) => break,
+            Ok(BrowserCommand::Shutdown) | Err(_) => break,
         }
     }
 }
@@ -329,7 +329,7 @@ fn fetch_text(url: &str, budget: Duration) -> Result<String, String> {
         return Err("Browser request budget expired".into());
     }
 
-    let agent = ureq::Agent::config_builder()
+    let agent: ureq::Agent = ureq::Agent::config_builder()
         .timeout_global(Some(timeout))
         .build()
         .into();
