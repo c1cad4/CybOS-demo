@@ -89,7 +89,9 @@ impl RuntimeCell {
             id,
             inputs,
             outputs,
-            status: "READY",
+            // A declared cell is not healthy merely because the scheduler exists.
+            // Subsystems must explicitly report READY after successful initialization.
+            status: "IDLE",
             heartbeat: Instant::now(),
             budget: Duration::from_millis(budget_ms),
             last_run: Duration::ZERO,
@@ -216,7 +218,21 @@ mod tests {
         assert_eq!(runtime.ticks, 1);
         assert!(runtime.cells.iter().all(|cell| cell.runs == 1));
         assert!(runtime.cells.iter().all(|cell| cell.heartbeat_age_ms() < 1000));
-        assert_eq!(runtime.healthy_count(), runtime.cells.len());
+        assert!(runtime.cells.iter().all(|cell| cell.status == "IDLE"));
+        assert_eq!(runtime.healthy_count(), 0);
+    }
+
+    #[test]
+    fn cells_require_explicit_readiness_signal() {
+        let mut runtime = Runtime::new();
+        assert_eq!(runtime.healthy_count(), 0);
+
+        runtime.set_status("CYBCHAT", "READY");
+        assert_eq!(runtime.healthy_count(), 1);
+
+        runtime.tick();
+        assert_eq!(runtime.cell("CYBCHAT").unwrap().status, "READY");
+        assert_eq!(runtime.healthy_count(), 1);
     }
 
     #[test]
