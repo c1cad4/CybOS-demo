@@ -100,7 +100,7 @@ impl CybOs {
                         match result {
                             Ok(info) => {
                                 let report = format!(
-                                    "OFFLINE-READY · ARCHIVE VALIDATED\nName: {}\nFormat: {}\nTiles: {}\nZoom: {}–{}\nBounds (W,S,E,N): {}\nCenter (lon,lat,zoom): {}\nFile size: {}\n\nValidation means the local SQLite/MBTiles tables and tile count are readable. It does not certify map licensing, visual rendering, GPS, or routing.",
+                                    "ARCHIVE-VALIDATED · READABLE MBTILES\nName: {}\nFormat: {}\nTiles: {}\nZoom: {}–{}\nBounds (W,S,E,N): {}\nCenter (lon,lat,zoom): {}\nFile size: {}\n\nValidation means the local SQLite/MBTiles tables and tile count are readable. It does not certify map licensing, visual rendering, GPS, or routing.",
                                     info.name, info.format, info.tile_count, info.min_zoom, info.max_zoom,
                                     info.bounds, info.center, format_bytes(info.bytes)
                                 );
@@ -120,7 +120,7 @@ impl CybOs {
                 });
                 ui.add_space(8.0);
                 let status = self.store.get("offline_atlas_status").unwrap_or_else(|| "NOT CHECKED".into());
-                ui.label(RichText::new(status).size(10.0).color(if status.starts_with("OFFLINE-READY") { neon } else { Color32::LIGHT_GRAY }));
+                ui.label(RichText::new(status).size(10.0).color(if status.starts_with("ARCHIVE-VALIDATED") { neon } else { Color32::LIGHT_GRAY }));
             });
 
         ui.add_space(12.0);
