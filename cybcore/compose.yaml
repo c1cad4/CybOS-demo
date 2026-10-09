@@ -7,6 +7,7 @@ services:
     environment:
       DATABASE_URL: postgres://cybcore:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@postgres:5432/cybcore
       CYBCORE_BIND: 0.0.0.0:8080
+      CYBCORE_STATUS_TOKEN: ${CYBCORE_STATUS_TOKEN:?Set CYBCORE_STATUS_TOKEN in .env}
     depends_on:
       postgres:
         condition: service_healthy
