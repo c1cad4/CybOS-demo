@@ -13,8 +13,16 @@ impl CybOs {
         ui.add_space(10.0);
         egui::Grid::new("sys").num_columns(3).spacing([10.0, 8.0]).show(ui, |ui| {
             self.card(ui, "VERSION", APP_VERSION);
-            self.card(ui, "BATTERY", &format!("{:.0}%", self.battery));
-            self.card(ui, "TEMP", &format!("{:.1}°C", self.temperature));
+            self.card(ui, "RUNTIME CELLS", &self.runtime.cells.len().to_string());
+            self.card(ui, "LOCAL EVENTS", &self.events.len().to_string());
+            ui.end_row();
+            self.card(ui, "GRAPH NODES", &self.nodes.len().to_string());
+            self.card(ui, "MEMORIES", &self.store.memories().len().to_string());
+            self.card(
+                ui,
+                "QWEN",
+                if self.qwen_status.contains("ONLINE") { "ONLINE" } else { "OFFLINE" },
+            );
             ui.end_row();
         });
         ui.add_space(12.0);
@@ -45,19 +53,39 @@ impl CybOs {
             .color(dim),
         );
         for cell in &self.runtime.cells {
-            ui.horizontal(|ui| {
-                ui.label(
-                    RichText::new(format!(
-                        "{} · {} · {}ms budget · heartbeat {}ms ago",
-                        cell.id,
-                        cell.status,
-                        cell.budget.as_millis(),
-                        cell.heartbeat_age_ms()
-                    ))
-                    .size(9.0)
-                    .color(Color32::from_rgb(165, 220, 190)),
-                );
-            });
+            let status_color = match cell.status {
+                "READY" => neon,
+                "RUNNING" => Color32::from_rgb(110, 190, 255),
+                "ERROR" | "TIMEOUT" | "OVER_BUDGET" => Color32::from_rgb(255, 130, 115),
+                _ => Color32::from_rgb(225, 175, 90),
+            };
+            egui::Frame::new()
+                .fill(Color32::from_rgb(4, 15, 10))
+                .corner_radius(6)
+                .inner_margin(egui::Margin::symmetric(9, 6))
+                .show(ui, |ui| {
+                    ui.horizontal_wrapped(|ui| {
+                        ui.label(RichText::new("●").color(status_color).size(10.0));
+                        ui.label(
+                            RichText::new(format!("{} · {}", cell.id, cell.status))
+                                .strong()
+                                .size(10.0)
+                                .color(status_color),
+                        );
+                        ui.label(
+                            RichText::new(format!(
+                                "{}ms budget · heartbeat {}ms ago · {} runs · {} overruns",
+                                cell.budget.as_millis(),
+                                cell.heartbeat_age_ms(),
+                                cell.runs,
+                                cell.overruns
+                            ))
+                            .size(9.0)
+                            .color(Color32::from_rgb(145, 190, 165)),
+                        );
+                    });
+                });
+            ui.add_space(3.0);
         }
         ui.add_space(10.0);
 
