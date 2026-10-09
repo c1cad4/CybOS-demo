@@ -119,7 +119,7 @@ impl BrowserRuntime {
 
 impl Drop for BrowserRuntime {
     fn drop(&mut self) {
-        let _ = self.tx.send(BrowserCommand::Shutdown);
+        let _ = self.tx.try_send(BrowserCommand::Shutdown);
     }
 }
 
@@ -504,11 +504,11 @@ mod tests {
     #[test]
     fn navigation_queue_is_bounded_and_reports_backpressure() {
         let (tx, _rx) = std::sync::mpsc::sync_channel(1);
-        tx.try_send(super::BrowserCommand::Shutdown).expect("first command fits");
-        let error = tx
-            .try_send(super::BrowserCommand::Shutdown)
-            .expect_err("second command should hit backpressure");
-        assert!(matches!(error, TrySendError::Full(_)));
+        assert!(tx.try_send(super::BrowserCommand::Shutdown).is_ok());
+        assert!(matches!(
+            tx.try_send(super::BrowserCommand::Shutdown),
+            Err(TrySendError::Full(_))
+        ));
     }
 
     #[test]
