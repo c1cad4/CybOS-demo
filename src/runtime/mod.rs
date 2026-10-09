@@ -71,7 +71,7 @@ pub(crate) struct RuntimeCell {
     pub(crate) inputs: &'static str,
     pub(crate) outputs: &'static str,
     pub(crate) status: &'static str,
-    pub(crate) heartbeat: Instant,
+    pub(crate) last_signal: Instant,
     pub(crate) budget: Duration,
     pub(crate) last_run: Duration,
     pub(crate) runs: u64,
@@ -92,7 +92,7 @@ impl RuntimeCell {
             // A declared cell is not healthy merely because the scheduler exists.
             // Subsystems must explicitly report READY after successful initialization.
             status: "IDLE",
-            heartbeat: Instant::now(),
+            last_signal: Instant::now(),
             budget: Duration::from_millis(budget_ms),
             last_run: Duration::ZERO,
             runs: 0,
@@ -100,8 +100,9 @@ impl RuntimeCell {
         }
     }
 
-    pub(crate) fn heartbeat_age_ms(&self) -> u128 {
-        self.heartbeat.elapsed().as_millis()
+    /// Age of the last runtime status signal. This is not a worker heartbeat.
+    pub(crate) fn signal_age_ms(&self) -> u128 {
+        self.last_signal.elapsed().as_millis()
     }
 }
 
@@ -149,7 +150,7 @@ impl Runtime {
     pub(crate) fn set_status(&mut self, id: &str, status: &'static str) {
         if let Some(cell) = self.cells.iter_mut().find(|cell| cell.id == id) {
             cell.status = status;
-            cell.heartbeat = Instant::now();
+            cell.last_signal = Instant::now();
         }
     }
 
@@ -208,18 +209,18 @@ mod tests {
     fn cell_heartbeat_changes_only_on_explicit_status_update() {
         let mut runtime = Runtime::new();
         std::thread::sleep(std::time::Duration::from_millis(5));
-        let before = runtime.cell("CYBCHAT").unwrap().heartbeat_age_ms();
+        let before = runtime.cell("CYBCHAT").unwrap().signal_age_ms();
 
         runtime.tick();
         std::thread::sleep(std::time::Duration::from_millis(5));
-        let after = runtime.cell("CYBCHAT").unwrap().heartbeat_age_ms();
+        let after = runtime.cell("CYBCHAT").unwrap().signal_age_ms();
         assert!(
             after >= before + 4,
-            "scheduler tick must not refresh the cell heartbeat"
+            "scheduler tick must not refresh the cell status signal"
         );
 
         runtime.set_status("CYBCHAT", "READY");
-        assert!(runtime.cell("CYBCHAT").unwrap().heartbeat_age_ms() < 1000);
+        assert!(runtime.cell("CYBCHAT").unwrap().signal_age_ms() < 1000);
     }
 
     #[test]
