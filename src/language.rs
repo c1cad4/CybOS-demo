@@ -308,6 +308,12 @@ pub(crate) fn tr(language: Language, key: &str) -> &'static str {
             Language::Russian => "У каждой метрики должны быть указаны источник, период, дата обновления и охват. Оценки и прогнозы маркируются отдельно. Нет данных — значит нет данных: cybOS не выдумывает измерения.",
             Language::Hindi => "हर संकेतक में प्रकाशक, संदर्भ अवधि, अंतिम अपडेट और कवरेज दिखना चाहिए। अनुमान और पूर्वानुमान स्पष्ट रूप से चिह्नित हों। डेटा न हो तो उसे गढ़ा नहीं जाएगा।",
         },
+        (_, "pulse_next_integration") => match language {
+            Language::English => "Next integration: population, annual births and deaths, with source year and uncertainty shown on each metric.",
+            Language::Chinese => "下一步：接入人口、年度出生和死亡数据，并为每项指标显示来源年份和不确定性。",
+            Language::Russian => "Следующий этап: подключить население, годовые рождения и смерти, показывая год источника и неопределённость каждой метрики.",
+            Language::Hindi => "अगला चरण: जनसंख्या, वार्षिक जन्म और मृत्यु डेटा जोड़ना तथा हर संकेतक का स्रोत वर्ष और अनिश्चितता दिखाना।",
+        },
         (_, "pulse_current_state") => match language {
             Language::English => "Current state: source-linked prototype · external data is not yet ingested or refreshed automatically.",
             Language::Chinese => "当前状态：已链接来源的原型 · 尚未自动导入或刷新外部数据。",
@@ -599,10 +605,22 @@ mod tests {
             "pulse_wildlife",
             "pulse_air",
             "pulse_humanity",
+            "pulse_next_integration",
             "pulse_integrity",
         ];
         for language in Language::ALL {
             for key in keys {
+                assert!(!tr(language, key).is_empty(), "missing {key} for {}", language.code());
+            }
+        }
+    }
+
+    #[test]
+    fn planetary_pulse_is_localized_for_all_languages() {
+        for language in Language::ALL {
+            assert_eq!(page_title(language, Page::PlanetaryPulse), tr(language, "planetary_pulse"));
+            assert!(!page_guidance(language, Page::PlanetaryPulse).0.is_empty());
+            for key in ["pulse_subtitle", "pulse_wildlife", "pulse_air", "pulse_humanity", "pulse_integrity", "pulse_next_integration"] {
                 assert!(!tr(language, key).is_empty(), "missing {key} for {}", language.code());
             }
         }
