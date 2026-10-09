@@ -52,6 +52,7 @@ struct Envelope {
 
 pub(crate) struct Listener {
     pub(crate) events: Receiver<SecureEvent>,
+    pub(crate) startup_error: Option<String>,
     stop: Arc<AtomicBool>,
 }
 
@@ -64,6 +65,7 @@ impl Listener {
         let (_tx, events) = mpsc::channel();
         Self {
             events,
+            startup_error: None,
             stop: Arc::new(AtomicBool::new(true)),
         }
     }
@@ -176,8 +178,13 @@ fn spawn_listener_bind(
     });
     // Do not return until the listener is bound, so callers and tests never race startup.
     match ready_rx.recv_timeout(Duration::from_secs(3)) {
-        Ok(Ok(())) => Listener { events: rx, stop },
-        Ok(Err(_)) | Err(_) => Listener { events: rx, stop }
+        Ok(Ok(())) => Listener { events: rx, stop, startup_error: None },
+        Ok(Err(error)) => Listener { events: rx, stop, startup_error: Some(error) },
+        Err(error) => Listener {
+            events: rx,
+            stop,
+            startup_error: Some(format!("secure listener startup timed out: {error}")),
+        },
     }
 }
 
