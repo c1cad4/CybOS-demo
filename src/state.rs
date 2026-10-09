@@ -18,12 +18,9 @@ pub(crate) type RobotJobResult = Result<String, String>;
 
 #[derive(Clone)]
 pub(crate) struct PendingSecureTrust {
-    pub(crate) message_id: String,
     pub(crate) node_id: String,
-    pub(crate) message: String,
     pub(crate) fingerprint: String,
     pub(crate) public_key: Vec<u8>,
-    pub(crate) reply: std::sync::mpsc::Sender<crate::network::secure_chat::SecureReply>,
 }
 
 pub(crate) struct CybOs {
@@ -476,14 +473,19 @@ impl CybOs {
                                 self.secure_status = "SECURE CHAT · TRUST QUEUE FULL".into();
                                 continue;
                             }
-                            self.pending_secure_trust.push(PendingSecureTrust {
-                                message_id,
-                                node_id: node_id.clone(),
-                                message,
-                                fingerprint: fingerprint.clone(),
-                                public_key,
-                                reply,
-                            });
+                            if !self.pending_secure_trust.iter().any(|pending| pending.node_id == node_id) {
+                                self.pending_secure_trust.push(PendingSecureTrust {
+                                    node_id: node_id.clone(),
+                                    fingerprint: fingerprint.clone(),
+                                    public_key,
+                                });
+                            }
+                            // Never keep an unauthenticated TCP worker alive while a human
+                            // decides whether to trust a new identity. Reject this first
+                            // message; the sender can retry after the key is approved.
+                            let _ = reply.send(crate::network::secure_chat::SecureReply::Reject(
+                                "first-contact peer identity requires approval; retry after approval".into(),
+                            ));
                             self.secure_status = format!("SECURE CHAT · TRUST APPROVAL REQUIRED · {}", node_id);
                             self.runtime.set_status("CYBCHAT", "WAITING");
                             self.add_event(
@@ -553,31 +555,16 @@ impl CybOs {
         let pending = self.pending_secure_trust.remove(index);
         match self.store.pin_secure_peer_key(&pending.node_id, &pending.public_key) {
             Ok(_) => {
-                if !self.store.claim_secure_message_id(&pending.message_id, &pending.node_id) {
-                    let _ = pending.reply.send(crate::network::secure_chat::SecureReply::Reject(
-                        "replayed message id".into(),
-                    ));
-                    self.secure_status = format!("SECURE CHAT · REPLAY REJECTED · {}", pending.node_id);
-                    self.add_event("SECURITY", format!("Rejected replayed secure message {} from {}", pending.message_id, pending.node_id));
-                    return;
-                }
                 self.upsert_secure_peer(&pending.node_id, &pending.fingerprint, true);
-                self.push_chat_message(format!("CYB:{}", pending.node_id), pending.message.clone(), false);
                 self.add_event(
                     "SECURITY",
                     format!("User approved first-contact identity {} · SHA-256 {}", pending.node_id, pending.fingerprint),
                 );
-                self.add_event(
-                    "CHAT",
-                    format!("Secure message from {} · {} · fp {} · TRUSTED", pending.node_id, pending.message_id, pending.fingerprint),
-                );
-                let _ = pending.reply.send(crate::network::secure_chat::SecureReply::Ack);
-                self.secure_status = format!("SECURE CHAT · TRUSTED · {}", pending.node_id);
+                self.secure_status = format!("SECURE CHAT · TRUSTED · {} · RETRY MESSAGE", pending.node_id);
                 self.runtime.set_status("CYBCHAT", "READY");
-                self.notify(format!("SECURE PEER TRUSTED: {}", pending.node_id));
+                self.notify(format!("SECURE PEER TRUSTED: {} · RETRY YOUR MESSAGE", pending.node_id));
             }
             Err(reason) => {
-                let _ = pending.reply.send(crate::network::secure_chat::SecureReply::Reject(reason.clone()));
                 self.secure_status = format!("SECURE CHAT · IDENTITY PIN FAILED · {}", pending.node_id);
                 self.runtime.set_status("CYBCHAT", "ERROR");
                 self.add_event("SECURITY", format!("Could not pin approved peer {}: {}", pending.node_id, reason));
@@ -591,9 +578,6 @@ impl CybOs {
             return;
         }
         let pending = self.pending_secure_trust.remove(index);
-        let _ = pending.reply.send(crate::network::secure_chat::SecureReply::Reject(
-            "user rejected unverified peer identity".into(),
-        ));
         self.secure_status = format!("SECURE CHAT · PEER REJECTED · {}", pending.node_id);
         self.add_event("SECURITY", format!("User rejected first-contact peer {}", pending.node_id));
     }
