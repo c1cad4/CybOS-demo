@@ -17,6 +17,7 @@ pub(crate) enum Page {
     CybLex,
     CybDex,
     PlanetaryPulse,
+    OfflineAtlas,
     Browser,
     System,
 }
@@ -58,6 +59,7 @@ impl Page {
             Page::CybLex => "CYBLEX",
             Page::CybDex => "CYBDEX · MARKET",
             Page::PlanetaryPulse => "PLANETARY PULSE",
+            Page::OfflineAtlas => "OFFLINE ATLAS",
             Page::Browser => "CYBBROWSER",
         }
     }
@@ -79,6 +81,7 @@ impl Page {
             Page::CybLex => ("Manage authorized file downloads, sharing, and torrent jobs.", "Choose a magnet link or .torrent URL, verify the source, and choose the destination folder.", "Share only content you own or are authorized to distribute. Check the destination before starting."),
             Page::CybDex => ("Explore Solana token pairs, liquidity, volume, and price history in read-only mode.", "Search a token symbol or mint, choose a pair, then select a chart timeframe.", "Market data is informational and may be delayed. This page does not sign or execute swaps."),
             Page::PlanetaryPulse => ("Monitor biodiversity, air quality, and humanity indicators using attributed public sources.", "Review the data date and source notes on each card before interpreting a value.", "The wildlife index is an average change across monitored vertebrate populations, not a count of all animals lost. Air data is not live until a provider is connected."),
+            Page::OfflineAtlas => ("Inspect local MBTiles map archives for use without internet access.", "Enter the path to an MBTiles file and inspect its metadata and tile coverage.", "This first stage validates local archives only; it does not yet render maps, provide live GPS, or calculate routes."),
             Page::Browser => ("Open bounded text views of web and supported decentralized-protocol addresses.", "Enter a full URL such as https://example.com and press Open.", "Remote JavaScript is not executed here. Treat page content and links as untrusted."),
             Page::System => ("Inspect local runtime health, database status, and system components.", "Review any ERROR or OFFLINE status and open the related module for details.", "A READY status means the local component reports ready; it does not guarantee external services are reachable."),
         }
@@ -100,6 +103,7 @@ impl Page {
             Page::CybLex => Icon::Network,
             Page::CybDex => Icon::Assets,
             Page::PlanetaryPulse => Icon::Environment,
+            Page::OfflineAtlas => Icon::Search,
             Page::Browser => Icon::Network,
         }
     }
@@ -119,6 +123,7 @@ impl Page {
             Page::CybLex => "cyblex archive torrent bittorrent magnet seed share download p2p files",
             Page::CybDex => "cybdex dex market tokens pairs pools ohlcv candlestick price liquidity volume swap solana",
             Page::PlanetaryPulse => "planetary pulse planet wildlife biodiversity living planet index nature air pollution airnow openaq births deaths population climate environment earth пульс планеты природа дикая природа воздух загрязнение рождаемость смертность население",
+            Page::OfflineAtlas => "offline atlas offline maps mbtiles satellite imagery gps navigation waypoints offline-ready map tiles офлайн карты спутник спутниковые снимки навигация",
             Page::Browser => "browser cybbrowser web web2 http https ipfs ipns arweave ar decentralized browser",
             Page::System => "system energy battery node database",
         };
