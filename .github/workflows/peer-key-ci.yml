@@ -1,0 +1,76 @@
+name: cybOS secure peer key CI
+
+on:
+  push:
+    branches: [fix/secure-peer-key-persistence]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: cybOS-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cargo check
+        run: cargo check
+
+      - name: Cargo test
+        run: cargo test
+
+      - name: Validate macOS packaging script
+        run: bash -n scripts/package_macos.sh
+
+      - name: Diff whitespace check
+        run: git diff --check
+
+  macos:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install universal macOS targets
+        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
+
+      - name: Cargo check
+        run: cargo check
+
+      - name: Cargo test
+        run: cargo test
+
+      - name: macOS ARM64 release build
+        run: cargo build --release --target aarch64-apple-darwin
+
+      - name: macOS Intel release build
+        run: cargo build --release --target x86_64-apple-darwin
+
+      - name: Compile CoreBluetooth advertiser ARM64
+        run: swiftc -target arm64-apple-macosx13.0 macos/CybOSBLEAdvertiser.swift -o /tmp/cybOS-ble-arm64 -framework CoreBluetooth
+
+      - name: Compile CoreBluetooth advertiser Intel
+        run: swiftc -target x86_64-apple-macosx13.0 macos/CybOSBLEAdvertiser.swift -o /tmp/cybOS-ble-x86_64 -framework CoreBluetooth
+
+      - name: Verify universal packaging
+        run: |
+          set -euo pipefail
+          lipo -create target/aarch64-apple-darwin/release/cybos target/x86_64-apple-darwin/release/cybos -output /tmp/cybos-universal
+          lipo -create /tmp/cybOS-ble-arm64 /tmp/cybOS-ble-x86_64 -output /tmp/cybOS-ble-universal
+          lipo -info /tmp/cybos-universal
+          lipo -info /tmp/cybOS-ble-universal
+
+      - name: Diff whitespace check
+        run: git diff --check
