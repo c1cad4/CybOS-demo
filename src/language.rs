@@ -648,11 +648,19 @@ mod tests {
             "pulse_demographic_period",
             "pulse_next_integration",
             "pulse_integrity",
+            "offline_atlas",
         ];
         for language in Language::ALL {
             for key in keys {
                 assert!(!tr(language, key).is_empty(), "missing {key} for {}", language.code());
             }
+        }
+    }
+
+    #[test]
+    fn offline_atlas_title_is_localized_for_all_languages() {
+        for language in Language::ALL {
+            assert_eq!(page_title(language, Page::OfflineAtlas), tr(language, "offline_atlas"));
         }
     }
 
