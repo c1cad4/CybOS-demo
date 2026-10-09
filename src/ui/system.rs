@@ -19,6 +19,7 @@ impl CybOs {
         });
         ui.add_space(12.0);
         for (k, v) in [
+            ("LANGUAGE", self.language.label()),
             ("NODE", self.node_id.as_str()),
             ("DATABASE", self.store.path.to_str().unwrap_or("—")),
             ("RENDERER", "egui / eframe"),
