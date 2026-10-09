@@ -1,5 +1,5 @@
 mod events;
-use axum::{extract::State, http::{HeaderMap, StatusCode}, routing::get, Json, Router};
+use axum::{extract::State, http::{HeaderMap, StatusCode}, routing::{get, post}, Json, Router};
 use serde::Serialize;
 use sqlx::PgPool;
 use std::{env, net::SocketAddr};
@@ -54,10 +54,45 @@ async fn ready(State(state): State<AppState>, headers: HeaderMap) -> Result<Json
     }))
 }
 
+async fn ingest_event(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(event): Json<events::SignedEvent>,
+) -> Result<StatusCode, StatusCode> {
+    // Internal-only ingestion until per-node ACL and tenant scopes exist.
+    if !authorized(&headers, &state.status_token) {
+        return Err(StatusCode::UNAUTHORIZED);
+    }
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .as_millis();
+    let now_ms = i64::try_from(now_ms).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    event.verify(now_ms).map_err(|_| StatusCode::BAD_REQUEST)?;
+    let inserted = sqlx::query(
+        "INSERT INTO signed_events (author_key, event_id, kind, created_at_ms, content, signature) \
+         VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING",
+    )
+    .bind(&event.author_key)
+    .bind(&event.event_id)
+    .bind(&event.kind)
+    .bind(event.created_at_ms)
+    .bind(&event.content)
+    .bind(&event.signature)
+    .execute(&state.db)
+    .await
+    .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
+    if inserted.rows_affected() == 0 {
+        return Err(StatusCode::CONFLICT);
+    }
+    Ok(StatusCode::CREATED)
+}
+
 fn app(state: AppState) -> Router {
     Router::new()
         .route("/healthz", get(health))
         .route("/readyz", get(ready))
+        .route("/v1/events", post(ingest_event))
         .with_state(state)
 }
 
