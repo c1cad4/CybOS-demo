@@ -733,6 +733,21 @@ mod tests {
     use rusqlite::Connection;
 
     #[test]
+    fn checking_first_contact_does_not_auto_pin_the_key() {
+        let conn = Connection::open_in_memory().expect("in-memory sqlite");
+        conn.execute_batch("CREATE TABLE kv(key TEXT PRIMARY KEY, value TEXT NOT NULL);")
+            .expect("test schema");
+        let store = Store { path: std::path::PathBuf::from(":memory:"), conn };
+        let key = [0x11_u8; 32];
+
+        assert!(!store.secure_peer_key_is_pinned("node-a", &key).expect("unknown key"));
+        assert!(store.get("noise_peer_key:node-a").is_none());
+        assert!(!store.pin_secure_peer_key("node-a", &key).expect("approved pin"));
+        assert!(store.secure_peer_key_is_pinned("node-a", &key).expect("matching pin"));
+        assert!(store.secure_peer_key_is_pinned("node-a", &[0x22_u8; 32]).is_err());
+    }
+
+    #[test]
     fn secure_peer_key_is_pinned_once_and_changes_are_rejected() {
         let conn = Connection::open_in_memory().expect("in-memory sqlite");
         conn.execute_batch("CREATE TABLE kv(key TEXT PRIMARY KEY, value TEXT NOT NULL);")
