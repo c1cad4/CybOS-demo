@@ -122,6 +122,19 @@ impl Default for CybDexRuntime {
 }
 
 impl CybDexRuntime {
+    /// Creates a disconnected runtime for short-lived RobotCYB worker contexts.
+    pub(crate) fn empty() -> Self {
+        let (tx, command_rx) = mpsc::channel();
+        drop(command_rx);
+        let (event_tx, rx) = mpsc::channel();
+        drop(event_tx);
+        Self {
+            tx,
+            rx,
+            busy: Arc::new(AtomicBool::new(false)),
+        }
+    }
+
     pub(crate) fn new() -> Self {
         let (tx, command_rx) = mpsc::channel();
         let (event_tx, rx) = mpsc::channel();
