@@ -270,7 +270,7 @@ impl CybOs {
                         ui.label(RichText::new(&task.acceptance_criteria).size(10.0).color(Color32::from_rgb(145, 190, 165)));
                         ui.horizontal_wrapped(|ui| {
                             use crate::agent_economy::AgentTaskStatus as Status;
-                            let next = match task.status {
+                            let next = match &task.status {
                                 Status::Proposed => Some((Status::Ready, "MARK READY")),
                                 Status::Ready => Some((Status::InProgress, "START")),
                                 Status::InProgress => Some((Status::Submitted, "SUBMIT")),
@@ -286,7 +286,7 @@ impl CybOs {
                                     }
                                 }
                             }
-                            if matches!(task.status, Status::Proposed | Status::Ready | Status::InProgress | Status::Rejected)
+                            if matches!(&task.status, Status::Proposed | Status::Ready | Status::InProgress | Status::Rejected)
                                 && ui.small_button("CANCEL").clicked()
                             {
                                 let mut changed = task.clone();
