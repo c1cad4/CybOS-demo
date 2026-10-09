@@ -32,7 +32,11 @@ impl CybOs {
             ("DATABASE", self.store.path.to_str().unwrap_or("—")),
             ("RENDERER", "egui / eframe"),
             ("QWEN", self.qwen_status.as_str()),
-            ("KEYS", "Noise static + TOFU peer keys stored locally"),
+            ("KEYS", if cfg!(target_os = "macos") {
+                "Noise private key: macOS Keychain · peer trust pins: local SQLite"
+            } else {
+                "Noise identity: local SQLite · peer trust pins: local SQLite"
+            }),
         ] {
             ui.horizontal(|ui| {
                 ui.label(RichText::new(k).size(11.0).strong().color(neon).extra_letter_spacing(1.2));
