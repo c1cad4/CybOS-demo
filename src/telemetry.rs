@@ -160,6 +160,14 @@ impl TelemetrySampler {
                 "memory_bytes": process.memory_bytes,
             })).collect::<Vec<_>>(),
             "temperature_sensor_count": self.sensor_count,
+            "worker_traces": crate::runtime::recent_worker_traces().iter().map(|trace| serde_json::json!({
+                "task_id": trace.id,
+                "cell": trace.cell,
+                "started_at": trace.started_at,
+                "elapsed_ms": trace.elapsed_ms,
+                "budget_ms": trace.budget_ms,
+                "status": trace.status,
+            })).collect::<Vec<_>>(),
             "privacy": "Collected locally. No telemetry is uploaded by this module."
         })
     }
