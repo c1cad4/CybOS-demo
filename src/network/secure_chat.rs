@@ -336,7 +336,7 @@ fn receive_one(
         .get_remote_static()
         .ok_or_else(|| "remote static key missing after XX handshake".to_string())?
         .to_vec();
-    let fingerprint = short_hash(&public_key);
+    let fingerprint = fingerprint_sha256(&public_key);
 
     let mut transport = hs.into_transport_mode()
         .map_err(|e| format!("transport: {e}"))?;
@@ -434,18 +434,19 @@ fn decode_hex(value: &str) -> Result<Vec<u8>, String> {
         .collect()
 }
 
-fn short_hash(bytes: &[u8]) -> String {
-    let mut state = 0xcbf29ce484222325_u64;
-    for byte in bytes {
-        state ^= u64::from(*byte);
-        state = state.wrapping_mul(0x100000001b3);
-    }
-    format!("{state:016x}")
+/// Stable, collision-resistant peer fingerprint for out-of-band verification.
+/// This is intentionally SHA-256 rather than a short non-cryptographic hash:
+/// the fingerprint is a security identifier shown to users, not just a log label.
+fn fingerprint_sha256(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+
+    let digest = Sha256::digest(bytes);
+    encode_hex(&digest)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{decode_hex, decode_static_key, encode_hex, short_hash, spawn_listener_at, send_on_port, SecureSendStatus, SecureEvent, SecureReply, PATTERN};
+    use super::{decode_hex, decode_static_key, encode_hex, fingerprint_sha256, spawn_listener_at, send_on_port, SecureSendStatus, SecureEvent, SecureReply, PATTERN};
     use snow::{params::NoiseParams, Builder};
     use std::thread;
     use std::time::{Duration, Instant};
@@ -465,9 +466,13 @@ mod tests {
     }
 
     #[test]
-    fn fingerprint_is_stable_for_public_key() {
-        let key = [7_u8; 32];
-        assert_eq!(short_hash(&key), short_hash(&key));
+    fn fingerprint_uses_standard_sha256_and_is_stable() {
+        assert_eq!(
+            fingerprint_sha256(b"abc"),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+        assert_eq!(fingerprint_sha256(&[7_u8; 32]), fingerprint_sha256(&[7_u8; 32]));
+        assert_ne!(fingerprint_sha256(&[7_u8; 32]), fingerprint_sha256(&[8_u8; 32]));
     }
 
     #[test]
