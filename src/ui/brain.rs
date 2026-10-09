@@ -12,7 +12,7 @@ impl CybOs {
         let dim = Color32::from_rgb(55, 145, 105);
         let memories = self.store.memories();
         ui.label(
-            RichText::new("MEMORY · GRAPH · LOCAL AI · NO FAKE CLOUD BRAIN")
+            RichText::new(crate::language::tr(self.language, "brain_subtitle"))
                 .size(11.0)
                 .color(dim),
         );
@@ -32,7 +32,7 @@ impl CybOs {
                 .corner_radius(12.0)
                 .inner_margin(egui::Margin::same(12))
                 .show(ui, |ui| {
-                    ui.label(RichText::new("QWEN FIRST-RUN SETUP").size(12.0).strong().color(neon));
+                    ui.label(RichText::new(crate::language::tr(self.language, "qwen_setup")).size(12.0).strong().color(neon));
                     ui.add_space(5.0);
                     ui.label(RichText::new(
                         "RobotCYB is local-first. cybOS is ready without cloud AI, but the local Qwen model must be available before AI requests can run."
@@ -61,7 +61,7 @@ impl CybOs {
             .corner_radius(12)
             .inner_margin(egui::Margin::same(12))
             .show(ui, |ui| {
-                ui.label(RichText::new("WRITE TO LOCAL MEMORY").size(11.0).strong().color(neon));
+                ui.label(RichText::new(crate::language::tr(self.language, "local_memory")).size(11.0).strong().color(neon));
                 ui.add_space(6.0);
                 ui.horizontal(|ui| {
                     ui.add(
@@ -70,7 +70,7 @@ impl CybOs {
                             .desired_width(ui.available_width() - 130.0),
                     ).on_hover_text("Enter a short note to save in this device’s local memory.");
                     if ui
-                        .add(egui::Button::new(RichText::new("STORE").strong().color(neon)).min_size(Vec2::new(110.0, 30.0)))
+                        .add(egui::Button::new(RichText::new(crate::language::tr(self.language, "store")).strong().color(neon)).min_size(Vec2::new(110.0, 30.0)))
                         .on_hover_text("Save this note to the local cybOS database. Empty notes are ignored.")
                         .clicked()
                     {
