@@ -284,6 +284,7 @@ TOOL RESULT:
             battery: snapshot.battery,
             node_id: snapshot.node_id,
             runtime: crate::runtime::Runtime::new(),
+            telemetry: crate::telemetry::TelemetrySampler::new(),
             status: snapshot.status,
             database_integrity: "WORKER CONTEXT".into(),
             cyblex: crate::cyblex::CybLexRuntime::new(),
