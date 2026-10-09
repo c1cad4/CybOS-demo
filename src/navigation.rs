@@ -60,6 +60,27 @@ impl Page {
         }
     }
 
+    /// Plain-language guidance shown in the shared page header.
+    /// Each entry explains purpose, a safe first action, and an important limitation.
+    pub(crate) fn guidance(self) -> (&'static str, &'static str, &'static str) {
+        match self {
+            Page::Dashboard => ("Your overview of cybOS modules, node state, and recent activity.", "Select a labelled module in the map or use the left navigation rail.", "Status cards reflect the app's current local state; demo values may not be live sensor readings."),
+            Page::Robot => ("Ask RobotCYB for help and define work with a clear, checkable outcome.", "Enter a request, then use the work queue to create a task proposal with acceptance criteria.", "Task budgets are accounting limits only. Workflow checks do not authorize payments or physical actions."),
+            Page::Farm => ("Keep CicadaFarm observations, animals, plants, and farm activity in one workspace.", "Choose a farm section and record an observation or review the available farm status.", "Only connected and explicitly reported readings should be treated as live measurements."),
+            Page::Chat => ("Communicate with RobotCYB locally or with discovered peers when a secure channel is available.", "Start with the local conversation; for peer chat, discover a peer and verify its identity status.", "A first-seen peer is not independently verified. Check the fingerprint with the other person."),
+            Page::Graph => ("Explore the nodes and relationships stored in the local knowledge graph.", "Select a node to inspect it; zoom or pan to explore larger graphs.", "A graph relationship is stored data, not proof that the relationship is true."),
+            Page::Brain => ("Review local memory, graph knowledge, and the availability of the local AI model.", "Check Qwen status first; if it is offline, follow the first-run setup guidance on this page.", "cybOS can open without Qwen, but AI requests may not complete until the local model is running."),
+            Page::Network => ("Inspect local network discovery and peer connectivity.", "Run a scan, select a discovered peer, and check its current status before sending.", "Discovery does not itself establish trust; secure peer identity checks still matter."),
+            Page::Radar => ("See nearby nodes discovered through supported LAN or Bluetooth mechanisms.", "Enable visibility only when you want this node to be discoverable, then refresh discovery.", "Visibility can reveal that your node is nearby. Turn it off when you do not want to advertise."),
+            Page::Assets => ("Review configured token and wallet information.", "Inspect the displayed address and balances before copying or sharing anything.", "Market or balance data may be delayed. Never enter a seed phrase or private key into cybOS."),
+            Page::Cameras => ("Review configured farm camera sources and their connection state.", "Select a camera zone and check its status before expecting a live feed.", "A configured source is not necessarily connected; do not assume video is live unless the UI says so."),
+            Page::CybLex => ("Manage authorized file downloads, sharing, and torrent jobs.", "Choose a magnet link or .torrent URL, verify the source, and choose the destination folder.", "Share only content you own or are authorized to distribute. Check the destination before starting."),
+            Page::CybDex => ("Explore Solana token pairs, liquidity, volume, and price history in read-only mode.", "Search a token symbol or mint, choose a pair, then select a chart timeframe.", "Market data is informational and may be delayed. This page does not sign or execute swaps."),
+            Page::Browser => ("Open bounded text views of web and supported decentralized-protocol addresses.", "Enter a full URL such as https://example.com and press Open.", "Remote JavaScript is not executed here. Treat page content and links as untrusted."),
+            Page::System => ("Inspect local runtime health, database status, and system components.", "Review any ERROR or OFFLINE status and open the related module for details.", "A READY status means the local component reports ready; it does not guarantee external services are reachable."),
+        }
+    }
+
     pub(crate) fn icon(self) -> Icon {
         match self {
             Page::Dashboard => Icon::Dashboard,
