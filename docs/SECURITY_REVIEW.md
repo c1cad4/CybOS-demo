@@ -17,13 +17,13 @@ This review distinguishes transport security from local-data security. A green U
 
 ### P0 — Protect secrets and local conversations at rest
 
-The current implementation persists the Noise static private key as hex in SQLite (kv.noise_static_private_hex) and stores peer-key pins in the same database. Chat history is also persisted in SQLite. Transport encryption with Noise does **not** encrypt these local records.
+The PR now includes a macOS Keychain-backed Noise private-key path with a guarded one-time migration from legacy SQLite storage. It verifies read-back, checks identity consistency if both copies exist, and refuses to silently fall back or rotate the identity when Keychain access fails. CI and migration/recovery tests are still required before treating this path as verified. Peer-key pins and chat history remain in SQLite; Noise transport encryption does **not** encrypt these local records.
 
 Before a public release:
-- Move the Noise private key to macOS Keychain (or an OS-backed secret store on each supported platform).
-- Define and test a migration from the legacy SQLite key without silently changing identity.
+- Validate the macOS Keychain implementation on clean install, legacy migration, restart, locked/denied Keychain access, mismatched copies and interrupted migration.
+- Define and test an OS-backed trust-pin store or explicitly include SQLite trust pins in the accepted local threat model.
 - Encrypt sensitive chat history at rest or clearly disclose the local threat model and provide an explicit history-protection setting.
-- Set restrictive permissions on the database, WAL, and shared-memory files; test creation and migration on a clean install.
+- Set restrictive permissions on the app data directory, database, WAL, and shared-memory files; test creation and migration on a clean install. SQLite durability is configured to FULL in the PR branch.
 - Treat corrupt trust records as a security error requiring explicit user recovery, never automatic re-pairing.
 
 ### P1 — Verify the network boundary
