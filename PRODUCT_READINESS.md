@@ -19,10 +19,10 @@ Core desktop scope currently implemented:
 ## Public macOS beta
 **Not yet cleared for public release.** The previous 90–95% estimate should not be treated as a security sign-off.
 
-In addition to productization and real-device validation, local secret/data protection is still incomplete: the Noise private key and peer trust pins are persisted in SQLite, and chat history is stored locally. Noise protects transport; it does not by itself encrypt the local database. See [Security Review](docs/SECURITY_REVIEW.md).
+In addition to productization and real-device validation, local secret/data protection is still incomplete. The PR branch now includes a macOS Keychain-backed Noise private-key path and guarded migration from the legacy SQLite key, but this still needs CI and migration/recovery validation. Peer trust pins and chat history remain in SQLite. Noise protects transport; it does not by itself encrypt the local database. See [Security Review](docs/SECURITY_REVIEW.md).
 
 Release blockers:
-- OS-backed storage for the Noise private key and a tested migration from legacy storage;
+- CI plus clean-install, restart, legacy-migration and Keychain-denial validation for the new macOS Keychain private-key path;
 - an explicit local chat-history protection policy;
 - two-Mac interoperability tests for RADAR + Secure CYBChat + TOFU;
 - upgrade/reinstall and recovery testing;
@@ -40,7 +40,7 @@ Remaining work includes security review, cross-version interoperability,
 configuration migration, diagnostics/recovery, signed updates and operational
 release/support workflows.
 
-The v0.7.1 macOS ZIP is published through the companion `c1cad4/cybOS` release repository. Main contains replay protection, recovery diagnostics, truthful listener errors, cached database diagnostics, WAL persistence hardening, and universal ARM64 + Intel packaging for v0.7.2.
+The v0.7.2 macOS ZIP is published through the companion `c1cad4/cybOS` release repository. Main contains replay protection, recovery diagnostics, truthful listener errors, cached database diagnostics, WAL persistence hardening, and universal ARM64 + Intel packaging for v0.7.2.
 Physical RobotCYB hardware and farm sensor/camera integrations remain future product layers. CybLex is now part of the desktop beta; two-node interoperability still needs real-device validation.
 
 
