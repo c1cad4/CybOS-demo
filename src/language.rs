@@ -182,7 +182,13 @@ pub(crate) fn tr(language: Language, key: &str) -> &'static str {
             Language::Russian => "ROBOTCYB",
             Language::Hindi => "ROBOTCYB रोबोट",
         },
-        (_, "offline_atlas") => match language {\n            Language::English => "OFFLINE ATLAS",\n            Language::Chinese => "离线地图集",\n            Language::Russian => "ОФЛАЙН-АТЛАС",\n            Language::Hindi => "ऑफ़लाइन एटलस",\n        },\n        (_, "planetary_pulse") => match language {
+        (_, "offline_atlas") => match language {
+            Language::English => "OFFLINE ATLAS",
+            Language::Chinese => "离线地图集",
+            Language::Russian => "ОФЛАЙН-АТЛАС",
+            Language::Hindi => "ऑफ़लाइन एटलस",
+        },
+        (_, "planetary_pulse") => match language {
             Language::English => "PLANETARY PULSE",
             Language::Chinese => "地球脉搏",
             Language::Russian => "ПУЛЬС ПЛАНЕТЫ",
@@ -550,6 +556,7 @@ pub(crate) fn page_title(language: Language, page: Page) -> &'static str {
         Page::CybLex => "cyblex",
         Page::CybDex => "cybdex",
         Page::PlanetaryPulse => "planetary_pulse",
+        Page::OfflineAtlas => "offline_atlas",
         Page::Browser => "browser",
     };
     tr(language, key)
