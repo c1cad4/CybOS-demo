@@ -1,0 +1,24 @@
+name: CybChat first-contact trust CI
+
+on:
+  push:
+    branches: [feat/secure-peer-trust-approval-sha256]
+  pull_request:
+    branches: [main, fix/cryptographic-peer-fingerprints]
+
+concurrency:
+  group: cybchat-trust-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Cargo check
+        run: cargo check
+      - name: Cargo tests
+        run: cargo test
+      - name: Whitespace check
+        run: git diff --check
