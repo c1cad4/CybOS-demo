@@ -163,7 +163,7 @@ impl Default for CybOs {
                 }
                 Err(error) => (
                     Vec::new(),
-                    crate::network::secure_chat::Listener::empty(),
+                    crate::network::secure_chat::Listener::failed(format!("secure identity unavailable: {}", error)),
                     format!("SECURE CHAT · IDENTITY ERROR · {}", error),
                 ),
             };
@@ -462,7 +462,11 @@ impl CybOs {
                 Ok(event) => event,
                 Err(std::sync::mpsc::TryRecvError::Empty) => break,
                 Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                    self.secure_status = "SECURE CHAT · LISTENER STOPPED".into();
+                    if let Some(error) = self.secure_listener.startup_error.as_deref() {
+                        self.secure_status = format!("SECURE CHAT · UNAVAILABLE · {}", error);
+                    } else {
+                        self.secure_status = "SECURE CHAT · LISTENER STOPPED".into();
+                    }
                     self.runtime.set_status("CYBCHAT", "ERROR");
                     break;
                 }
