@@ -415,7 +415,8 @@ fn parse_pair(value: &serde_json::Value) -> Option<CybDexPair> {
 }
 
 fn number(value: &serde_json::Value) -> Option<f64> {
-    value.as_f64().or_else(|| value.as_str()?.parse::<f64>().ok())
+    let parsed = value.as_f64().or_else(|| value.as_str()?.parse::<f64>().ok())?;
+    parsed.is_finite().then_some(parsed)
 }
 
 fn looks_like_solana_address(value: &str) -> bool {
@@ -440,7 +441,7 @@ fn short_address(value: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{looks_like_solana_address, parse_pair, percent_encode};
+    use super::{looks_like_solana_address, number, parse_pair, percent_encode};
 
     #[test]
     fn recognizes_solana_like_mints() {
@@ -451,6 +452,17 @@ mod tests {
     #[test]
     fn percent_encodes_search() {
         assert_eq!(percent_encode("SOL/USDC"), "SOL%2FUSDC");
+    }
+
+
+    #[test]
+    fn market_numbers_reject_non_finite_values() {
+        assert_eq!(number(&serde_json::json!("2.5")), Some(2.5));
+        assert_eq!(number(&serde_json::json!(2.5)), Some(2.5));
+        assert_eq!(number(&serde_json::json!("NaN")), None);
+        assert_eq!(number(&serde_json::json!("inf")), None);
+        assert_eq!(number(&serde_json::json!("-inf")), None);
+        assert_eq!(number(&serde_json::json!("not-a-number")), None);
     }
 
     #[test]
