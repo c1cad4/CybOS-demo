@@ -419,7 +419,7 @@ fn encode_hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
-fn decode_hex(value: &str) -> Result<Vec<u8>, String> {
+pub(crate) fn decode_hex(value: &str) -> Result<Vec<u8>, String> {
     if value.len() % 2 != 0 {
         return Err("invalid hex length".into());
     }
@@ -482,6 +482,12 @@ mod tests {
     fn hex_roundtrip() {
         let data = [0, 1, 2, 15, 16, 255];
         assert_eq!(decode_hex(&encode_hex(&data)).unwrap(), data);
+    }
+
+    #[test]
+    fn hex_decoder_rejects_corrupt_persisted_keys() {
+        assert!(decode_hex("abc").is_err());
+        assert!(decode_hex("zz").is_err());
     }
 
     #[test]
