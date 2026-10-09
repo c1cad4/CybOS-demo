@@ -339,6 +339,7 @@ TOOL RESULT:
             secure_send_task: None,
             secure_send_contract: None,
             secure_status: "SECURE CHAT · WORKER CONTEXT".into(),
+            pending_secure_trust: Vec::new(),
             remember_note: String::new(),
         })
     }

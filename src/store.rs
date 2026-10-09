@@ -179,7 +179,29 @@ impl Store {
     pub(crate) fn set(&self, key: &str, value: &str) {
         let _ = self.try_set(key, value);
     }
-    /// Atomically pin a Noise peer key on first contact and reject later key changes.
+    /// Check an existing peer pin without trusting or persisting a first-seen key.
+    /// Returns false when no key has been approved yet; mismatches fail closed.
+    pub(crate) fn secure_peer_key_is_pinned(&self, node_id: &str, public_key: &[u8]) -> Result<bool, String> {
+        if node_id.trim().is_empty() || node_id.len() > 128 {
+            return Err("secure peer id must contain 1-128 bytes".into());
+        }
+        if public_key.len() != 32 {
+            return Err("Noise peer public key must be exactly 32 bytes".into());
+        }
+
+        let key = format!("noise_peer_key:{node_id}");
+        let Some(stored) = self.get(&key) else {
+            return Ok(false);
+        };
+        let decoded = decode_exact_hex_key(&stored)
+            .ok_or_else(|| "stored secure peer identity pin is malformed".to_string())?;
+        if decoded.as_slice() != public_key {
+            return Err("Noise peer identity key changed".into());
+        }
+        Ok(true)
+    }
+
+    /// Atomically pin a Noise peer key only after the user approves first contact.
     /// Returns true when the exact key was already pinned, false when this call pinned it.
     pub(crate) fn pin_secure_peer_key(&self, node_id: &str, public_key: &[u8]) -> Result<bool, String> {
         if node_id.trim().is_empty() || node_id.len() > 128 {
@@ -709,6 +731,21 @@ fn dirs_fallback() -> PathBuf {
 mod tests {
     use super::Store;
     use rusqlite::Connection;
+
+    #[test]
+    fn checking_first_contact_does_not_auto_pin_the_key() {
+        let conn = Connection::open_in_memory().expect("in-memory sqlite");
+        conn.execute_batch("CREATE TABLE kv(key TEXT PRIMARY KEY, value TEXT NOT NULL);")
+            .expect("test schema");
+        let store = Store { path: std::path::PathBuf::from(":memory:"), conn };
+        let key = [0x11_u8; 32];
+
+        assert!(!store.secure_peer_key_is_pinned("node-a", &key).expect("unknown key"));
+        assert!(store.get("noise_peer_key:node-a").is_none());
+        assert!(!store.pin_secure_peer_key("node-a", &key).expect("approved pin"));
+        assert!(store.secure_peer_key_is_pinned("node-a", &key).expect("matching pin"));
+        assert!(store.secure_peer_key_is_pinned("node-a", &[0x22_u8; 32]).is_err());
+    }
 
     #[test]
     fn secure_peer_key_is_pinned_once_and_changes_are_rejected() {
