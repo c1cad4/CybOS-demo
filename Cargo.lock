@@ -767,6 +767,7 @@ dependencies = [
  "chrono",
  "eframe",
  "egui",
+ "image",
  "rusqlite",
  "serde",
  "serde_json",
