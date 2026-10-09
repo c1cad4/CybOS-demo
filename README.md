@@ -160,29 +160,29 @@ CybOS-demo/
 
 See the repository license configuration.
 
-## User readiness
+## Release readiness
 
-### Technical beta — READY
+### Technical beta — conditional
 
-The native macOS application is usable now for a technically capable user who can build/package it locally. The core desktop runtime, local persistence, RobotCYB/Qwen path, CYB RADAR, unified LAN+BLE proximity, encrypted CYBChat, TOFU identity, Cybergraph and Assets services are implemented and covered by Linux/macOS CI.
+The native app has a substantial working feature set, but the current PR head must pass fresh Linux/macOS CI before this branch is treated as verified. A green compile alone does not replace two-device testing.
 
-### Public download — READY
+### Public release — blocked
 
-| Area | Status |
+Do not interpret feature presence or a percentage estimate as a security sign-off. See [Product Readiness](PRODUCT_READINESS.md) and [Security Review](docs/SECURITY_REVIEW.md).
+
+| Area | Current disposition |
 |---|---|
-| Native macOS app | READY |
-| Persistence / graph / chat | READY |
-| RobotCYB + local Qwen | READY WITH LOCAL QWEN SETUP |
-| LAN + BLE Radar | READY / OPT-IN |
-| Noise XX secure chat | READY |
-| Worker budgets / lifecycle | READY |
-| macOS packaging | READY |
-| GitHub release publication | v0.7.1 published; v0.7.2 hardening release pending final publication |
-| Developer ID signing / notarization | NOT CONFIGURED |
-| Hardware / camera integrations | FUTURE LAYER |
-| P2P / Nostr fallback | FUTURE LAYER |
-
-For the current state, the honest estimate is **~95% for a technical/private beta** and **~90% for a public macOS beta**; the remaining work is primarily Apple signing/notarization and real two-Mac/recovery validation. The remaining gap is mainly Developer ID signing/notarization plus two-Mac and upgrade/recovery validation, not the core desktop architecture.
+| Native macOS app | Technical beta; latest CI must pass |
+| Persistence / graph / chat | Implemented; local-data protection remains incomplete |
+| RobotCYB + local Qwen | Requires local Qwen setup |
+| LAN + BLE RADAR | Opt-in; real-device validation required |
+| Noise XX secure chat | Transport encryption implemented; local key/history protection remains a blocker |
+| Worker budgets / lifecycle | Implemented; validate real shutdown and timeout behavior |
+| CybLex P2P archive | Embedded librqbit engine; two-node transfer testing required |
+| macOS packaging | Scripted; verify on clean ARM64 and Intel environments |
+| Developer ID signing / notarization | Not configured for the published binary |
+| Farm sensors / cameras / robot hardware | Future hardware integration layer |
+| Nostr fallback | Future transport layer |
 
 ## Runtime stack status
 
