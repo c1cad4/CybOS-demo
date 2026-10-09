@@ -1,6 +1,6 @@
 use chrono::Local;
 use rusqlite::{params, Connection};
-use std::{fs, path::PathBuf, time::Duration};
+use std::{fs, path::{Path, PathBuf}, time::Duration};
 use uuid::Uuid;
 
 use crate::models::{Event, GraphLink, GraphNode, Memory};
@@ -13,10 +13,16 @@ impl Store {
     pub(crate) fn open() -> Self {
         let base = dirs_fallback();
         let _ = fs::create_dir_all(&base);
+        // The app data directory also contains SQLite WAL/SHM sidecars and
+        // local identity/trust records. Restrict directory traversal on Unix.
+        restrict_permissions(&base, 0o700);
         let path = base.join("cybos.db");
         let conn = Connection::open(&path).expect("cannot open cybOS database");
+        restrict_permissions(&path, 0o600);
         let _ = conn.busy_timeout(Duration::from_secs(3));
-        let _ = conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;");
+        // FULL sync gives identity/trust writes a stronger durability boundary.
+        // The app-data directory is owner-only, protecting SQLite WAL/SHM sidecars too.
+        let _ = conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;");
         conn.execute_batch(
             r#"
             CREATE TABLE IF NOT EXISTS events(
@@ -82,6 +88,10 @@ impl Store {
             "#,
         )
         .expect("cannot initialize database");
+        // SQLite creates WAL/SHM lazily; tighten permissions whenever they exist.
+        restrict_permissions(&path, 0o600);
+        restrict_permissions(&PathBuf::from(format!("{}-wal", path.display())), 0o600);
+        restrict_permissions(&PathBuf::from(format!("{}-shm", path.display())), 0o600);
         Self { path, conn }
     }
     pub(crate) fn get(&self, key: &str) -> Option<String> {
@@ -89,8 +99,45 @@ impl Store {
             .query_row("SELECT value FROM kv WHERE key=?1", [key], |r| r.get(0))
             .ok()
     }
+    /// Persist a setting and preserve SQLite errors for security-critical state.
+    pub(crate) fn try_set(&self, key: &str, value: &str) -> Result<(), String> {
+        self.conn
+            .execute(
+                "INSERT INTO kv(key,value) VALUES(?1,?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                params![key, value],
+            )
+            .map(|_| ())
+            .map_err(|error| format!("cannot persist setting '{key}': {error}"))
+    }
+
+    /// Remove a secret and compact SQLite storage after a successful external migration.
+    ///
+    /// SQLite cannot promise forensic erasure on flash storage, but checkpointing and
+    /// VACUUM avoid intentionally leaving the old value in live rows/free pages/WAL.
+    pub(crate) fn try_delete_and_compact(&self, key: &str) -> Result<(), String> {
+        self.conn
+            .execute("DELETE FROM kv WHERE key=?1", [key])
+            .map_err(|error| format!("cannot delete setting '{key}': {error}"))?;
+        self.conn
+            .execute_batch("PRAGMA wal_checkpoint(TRUNCATE); VACUUM;")
+            .map_err(|error| format!("cannot compact database after deleting '{key}': {error}"))?;
+        if self.get(key).is_some() {
+            return Err(format!("setting '{key}' remains after deletion"));
+        }
+        Ok(())
+    }
+
+    /// Remove a setting while preserving SQLite errors for security-sensitive migrations.
+    pub(crate) fn try_delete(&self, key: &str) -> Result<(), String> {
+        self.conn
+            .execute("DELETE FROM kv WHERE key=?1", [key])
+            .map(|_| ())
+            .map_err(|error| format!("cannot delete setting '{key}': {error}"))
+    }
+
+    /// Best-effort preference write. Use try_set for identity and trust state.
     pub(crate) fn set(&self, key: &str, value: &str) {
-        let _ = self.conn.execute("INSERT INTO kv(key,value) VALUES(?1,?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value", params![key,value]);
+        let _ = self.try_set(key, value);
     }
     pub(crate) fn add_memory(&self, memory: &Memory) {
         let _ = self.conn.execute(
@@ -343,6 +390,22 @@ impl Store {
         );
     }
 }
+fn restrict_permissions(path: &Path, mode: u32) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Ok(metadata) = fs::metadata(path) {
+            let mut permissions = metadata.permissions();
+            permissions.set_mode(mode);
+            let _ = fs::set_permissions(path, permissions);
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (path, mode);
+    }
+}
+
 fn dirs_fallback() -> PathBuf {
     if let Ok(p) = std::env::var("HOME") {
         PathBuf::from(p).join("Library/Application Support/cybOS")
@@ -357,6 +420,43 @@ fn dirs_fallback() -> PathBuf {
 mod tests {
     use super::Store;
     use rusqlite::Connection;
+
+    #[test]
+    fn try_set_reports_sqlite_write_errors() {
+        let conn = Connection::open_in_memory().expect("in-memory sqlite");
+        conn.execute_batch(
+            "CREATE TABLE kv(key TEXT PRIMARY KEY, value TEXT NOT NULL);
+             CREATE TRIGGER reject_kv BEFORE INSERT ON kv
+             BEGIN SELECT RAISE(ABORT, 'simulated storage failure'); END;",
+        )
+        .expect("test schema");
+        let store = Store {
+            path: std::path::PathBuf::from(":memory:"),
+            conn,
+        };
+        let error = store.try_set("noise_static_private_hex", "secret").unwrap_err();
+        assert!(error.contains("cannot persist setting"));
+        assert!(store.get("noise_static_private_hex").is_none());
+    }
+
+    #[test]
+    fn delete_and_compact_removes_legacy_secret_row() {
+        let dir = std::env::temp_dir().join(format!("cybos-store-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("cybos.db");
+        let conn = Connection::open(&path).unwrap();
+        conn.execute_batch(
+            "PRAGMA journal_mode=WAL;
+             CREATE TABLE kv(key TEXT PRIMARY KEY, value TEXT NOT NULL);
+             INSERT INTO kv(key,value) VALUES('noise_static_private_hex','legacy-secret');",
+        ).unwrap();
+        let store = Store { path: path.clone(), conn };
+
+        store.try_delete_and_compact("noise_static_private_hex").unwrap();
+        assert!(store.get("noise_static_private_hex").is_none());
+        drop(store);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 
     #[test]
     fn secure_message_id_claim_is_idempotent() {

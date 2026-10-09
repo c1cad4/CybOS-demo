@@ -7,7 +7,7 @@
 
 use std::{
     io::Read,
-    sync::mpsc::{self, Receiver, Sender, TryRecvError},
+    sync::mpsc::{self, Receiver, Sender, SyncSender, TrySendError},
     thread,
     time::Duration,
 };
@@ -18,6 +18,7 @@ const JOB_BUDGET: Duration = Duration::from_secs(12);
 const HTTP_TIMEOUT: Duration = Duration::from_secs(6);
 const MAX_BODY_BYTES: usize = 2 * 1024 * 1024;
 const MAX_LINKS: usize = 32;
+const MAX_PENDING_NAVIGATIONS: usize = 16;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum BrowserRoute {
@@ -71,7 +72,7 @@ enum BrowserCommand {
 }
 
 pub(crate) struct BrowserRuntime {
-    tx: Sender<BrowserCommand>,
+    tx: SyncSender<BrowserCommand>,
     rx: Receiver<BrowserEvent>,
 }
 
@@ -83,7 +84,8 @@ impl Default for BrowserRuntime {
 
 impl BrowserRuntime {
     pub(crate) fn new() -> Self {
-        let (tx, command_rx) = mpsc::channel();
+        // A slow remote page must not let UI navigation enqueue unbounded work.
+        let (tx, command_rx) = mpsc::sync_channel(MAX_PENDING_NAVIGATIONS);
         let (event_tx, rx) = mpsc::channel();
 
         thread::Builder::new()
@@ -97,8 +99,13 @@ impl BrowserRuntime {
     pub(crate) fn navigate(&self, url: String) -> Result<(), String> {
         validate_input(&url)?;
         self.tx
-            .send(BrowserCommand::Navigate(url.trim().to_string()))
-            .map_err(|_| "CybBrowser worker is not running".into())
+            .try_send(BrowserCommand::Navigate(url.trim().to_string()))
+            .map_err(|error| match error {
+                TrySendError::Full(_) => {
+                    "CybBrowser navigation queue is full; wait for the current page and retry".into()
+                }
+                TrySendError::Disconnected(_) => "CybBrowser worker is not running".into(),
+            })
     }
 
     pub(crate) fn poll(&self) -> Vec<BrowserEvent> {
@@ -112,7 +119,7 @@ impl BrowserRuntime {
 
 impl Drop for BrowserRuntime {
     fn drop(&mut self) {
-        let _ = self.tx.send(BrowserCommand::Shutdown);
+        let _ = self.tx.try_send(BrowserCommand::Shutdown);
     }
 }
 
@@ -151,7 +158,7 @@ fn run_worker(command_rx: Receiver<BrowserCommand>, event_tx: Sender<BrowserEven
                     }
                 }
             }
-            Ok(BrowserCommand::Shutdown) | Err(TryRecvError::Disconnected) => break,
+            Ok(BrowserCommand::Shutdown) | Err(_) => break,
         }
     }
 }
@@ -329,7 +336,7 @@ fn fetch_text(url: &str, budget: Duration) -> Result<String, String> {
         return Err("Browser request budget expired".into());
     }
 
-    let agent = ureq::Agent::config_builder()
+    let agent: ureq::Agent = ureq::Agent::config_builder()
         .timeout_global(Some(timeout))
         .build()
         .into();
@@ -340,9 +347,13 @@ fn fetch_text(url: &str, budget: Duration) -> Result<String, String> {
         .call()
         .map_err(|e| format!("Browser fetch failed: {e}"))?;
 
+    let bytes = read_bounded(response.into_body().into_reader())?;
+    Ok(String::from_utf8_lossy(&bytes).into_owned())
+}
+
+fn read_bounded<R: Read>(reader: R) -> Result<Vec<u8>, String> {
     let mut bytes = Vec::new();
-    response
-        .into_body()
+    reader
         .take((MAX_BODY_BYTES + 1) as u64)
         .read_to_end(&mut bytes)
         .map_err(|e| format!("Browser body read failed: {e}"))?;
@@ -354,7 +365,7 @@ fn fetch_text(url: &str, budget: Duration) -> Result<String, String> {
         ));
     }
 
-    Ok(String::from_utf8_lossy(&bytes).into_owned())
+    Ok(bytes)
 }
 
 fn parse_document(
@@ -487,7 +498,19 @@ fn validate_input(input: &str) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{resolve, BrowserRoute};
+    use super::{read_bounded, resolve, BrowserRoute, MAX_BODY_BYTES};
+    use std::io::Cursor;
+    use std::sync::mpsc::TrySendError;
+
+    #[test]
+    fn navigation_queue_is_bounded_and_reports_backpressure() {
+        let (tx, _rx) = std::sync::mpsc::sync_channel(1);
+        assert!(tx.try_send(super::BrowserCommand::Shutdown).is_ok());
+        assert!(matches!(
+            tx.try_send(super::BrowserCommand::Shutdown),
+            Err(TrySendError::Full(_))
+        ));
+    }
 
     #[test]
     fn resolves_http() {
@@ -498,7 +521,8 @@ mod tests {
 
     #[test]
     fn resolves_cyb_ipfs() {
-        let resolved = resolve("cyb://ipfs/bafybeigdyrzt5example");
+        let resolved = resolve("cyb://ipfs/bafybeigdyrzt5example")
+            .expect("valid cyb:// IPFS URL should resolve");
         assert_eq!(resolved.route, BrowserRoute::IpfsLocal);
         assert!(resolved.resolved_url.contains("/ipfs/"));
         assert!(resolved.fallback_url.is_some());
@@ -506,7 +530,8 @@ mod tests {
 
     #[test]
     fn resolves_arweave() {
-        let resolved = resolve("ar://AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+        let resolved = resolve("ar://AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
+            .expect("valid Arweave URL should resolve");
         assert_eq!(resolved.route, BrowserRoute::ArweaveGateway);
         assert!(resolved.resolved_url.contains("arweave.net"));
     }
@@ -514,5 +539,18 @@ mod tests {
     #[test]
     fn rejects_unknown_scheme() {
         assert!(resolve("ftp://example.org").is_err());
+    }
+
+    #[test]
+    fn accepts_body_at_exact_limit() {
+        let body = vec![b'x'; MAX_BODY_BYTES];
+        assert_eq!(read_bounded(Cursor::new(body.clone())).unwrap(), body);
+    }
+
+    #[test]
+    fn rejects_body_over_limit_without_reading_unbounded_data() {
+        let body = vec![b'x'; MAX_BODY_BYTES + 4096];
+        let error = read_bounded(Cursor::new(body)).unwrap_err();
+        assert!(error.contains("exceeds 2 MiB limit"));
     }
 }

@@ -7,13 +7,14 @@ use librqbit::{AddTorrent, AddTorrentOptions, CreateTorrentOptions, Session, Ses
 use std::{
     fs,
     path::{Path, PathBuf},
-    sync::mpsc::{self, Receiver, Sender, TryRecvError},
+    sync::mpsc::{self, Receiver, Sender, SyncSender, TryRecvError, TrySendError},
     sync::Arc,
     thread,
     time::Duration,
 };
 
 const SNAPSHOT_INTERVAL: Duration = Duration::from_millis(750);
+const MAX_PENDING_COMMANDS: usize = 32;
 const MAX_SOURCE_LEN: usize = 64 * 1024;
 const MAX_PATH_LEN: usize = 4096;
 
@@ -49,7 +50,7 @@ enum CybLexCommand {
 }
 
 pub(crate) struct CybLexRuntime {
-    tx: Sender<CybLexCommand>,
+    tx: SyncSender<CybLexCommand>,
     rx: Receiver<CybLexEvent>,
 }
 
@@ -61,7 +62,8 @@ impl Default for CybLexRuntime {
 
 impl CybLexRuntime {
     pub(crate) fn new() -> Self {
-        let (tx, command_rx) = mpsc::channel();
+        // Bound pending UI commands so a busy UI cannot grow an unbounded queue.
+        let (tx, command_rx) = mpsc::sync_channel(MAX_PENDING_COMMANDS);
         let (event_tx, rx) = mpsc::channel();
 
         thread::Builder::new()
@@ -75,12 +77,10 @@ impl CybLexRuntime {
     pub(crate) fn add_source(&self, source: String, output_folder: String) -> Result<(), String> {
         validate_source(&source)?;
         validate_path_text(&output_folder)?;
-        self.tx
-            .send(CybLexCommand::AddSource {
-                source: source.trim().to_string(),
-                output_folder: expand_tilde(output_folder.trim()),
-            })
-            .map_err(|_| "CybLex worker is not running".to_string())
+        self.send_command(CybLexCommand::AddSource {
+            source: source.trim().to_string(),
+            output_folder: expand_tilde(output_folder.trim()),
+        })
     }
 
     pub(crate) fn seed_path(&self, path: String) -> Result<(), String> {
@@ -89,21 +89,23 @@ impl CybLexRuntime {
         if !Path::new(&path).exists() {
             return Err(format!("Path does not exist: {path}"));
         }
-        self.tx
-            .send(CybLexCommand::SeedPath { path })
-            .map_err(|_| "CybLex worker is not running".to_string())
+        self.send_command(CybLexCommand::SeedPath { path })
     }
 
     pub(crate) fn pause(&self, id: usize) -> Result<(), String> {
-        self.tx.send(CybLexCommand::Pause { id }).map_err(|_| "CybLex worker is not running".into())
+        self.send_command(CybLexCommand::Pause { id })
     }
 
     pub(crate) fn resume(&self, id: usize) -> Result<(), String> {
-        self.tx.send(CybLexCommand::Resume { id }).map_err(|_| "CybLex worker is not running".into())
+        self.send_command(CybLexCommand::Resume { id })
     }
 
     pub(crate) fn forget(&self, id: usize, delete_files: bool) -> Result<(), String> {
-        self.tx.send(CybLexCommand::Forget { id, delete_files }).map_err(|_| "CybLex worker is not running".into())
+        self.send_command(CybLexCommand::Forget { id, delete_files })
+    }
+
+    fn send_command(&self, command: CybLexCommand) -> Result<(), String> {
+        send_bounded(&self.tx, command)
     }
 
     pub(crate) fn poll(&self) -> Vec<CybLexEvent> {
@@ -113,6 +115,15 @@ impl CybLexRuntime {
         }
         events
     }
+}
+
+fn send_bounded<T>(tx: &SyncSender<T>, command: T) -> Result<(), String> {
+    tx.try_send(command).map_err(|error| match error {
+        TrySendError::Full(_) => {
+            "CybLex command queue is full; wait for the current operation and retry".into()
+        }
+        TrySendError::Disconnected(_) => "CybLex worker is not running".into(),
+    })
 }
 
 impl Drop for CybLexRuntime {
@@ -203,9 +214,17 @@ fn run_worker(command_rx: Receiver<CybLexCommand>, event_tx: Sender<CybLexEvent>
                     Ok(CybLexCommand::SeedPath { path }) => {
                         if session.is_none() {
                             session = Some(
-                                Session::new(download_dir.clone())
-                                    .await
-                                    .map_err(|e| format!("CybLex session init: {e:#}"))?,
+                                Session::new_with_opts(
+                                    download_dir.clone(),
+                                    SessionOptions {
+                                        persistence: Some(SessionPersistenceConfig::Json {
+                                            folder: Some(persistence_dir.clone()),
+                                        }),
+                                        ..Default::default()
+                                    },
+                                )
+                                .await
+                                .map_err(|e| format!("CybLex session init: {e:#}"))?,
                             );
                             let _ = event_tx_inner.send(CybLexEvent::Status("CYBLEX · P2P SESSION ACTIVE".into()));
                         }
@@ -221,9 +240,7 @@ fn run_worker(command_rx: Receiver<CybLexCommand>, event_tx: Sender<CybLexEvent>
 
                                 let sidecar = torrent.as_bytes()
                                     .map_err(|e| e.to_string())
-                                    .and_then(|bytes| {
-                                        fs::write(&torrent_path, &bytes).map_err(|e| e.to_string())
-                                    });
+                                    .and_then(|bytes| write_sidecar_new(&torrent_path, &bytes));
 
                                 let detail = match sidecar {
                                     Ok(()) => format!(
@@ -404,6 +421,27 @@ fn expand_tilde(path: &str) -> String {
     path.into()
 }
 
+/// Never overwrite an existing sidecar or an unrelated user file.
+fn write_sidecar_new(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    use std::io::Write;
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .map_err(|error| {
+            if error.kind() == std::io::ErrorKind::AlreadyExists {
+                format!("refusing to overwrite existing torrent sidecar: {}", path.display())
+            } else {
+                format!("cannot create torrent sidecar {}: {error}", path.display())
+            }
+        })?;
+    file.write_all(bytes)
+        .map_err(|error| format!("cannot write torrent sidecar {}: {error}", path.display()))?;
+    file.sync_all()
+        .map_err(|error| format!("cannot sync torrent sidecar {}: {error}", path.display()))?;
+    Ok(())
+}
+
 fn default_download_dir() -> PathBuf {
     std::env::var("HOME")
         .map(PathBuf::from)
@@ -431,26 +469,68 @@ fn torrent_sidecar_path(path: &Path) -> PathBuf {
 
 #[cfg(test)]
 mod tests {
-    use super::{validate_source, MAX_SOURCE_LEN};
+    use super::{send_bounded, validate_source, validate_path_text, write_sidecar_new};
+    use std::{fs, sync::mpsc};
 
     #[test]
-    fn accepts_magnet_sources() {
+    fn command_queue_reports_backpressure_without_blocking() {
+        let (tx, _rx) = mpsc::sync_channel(1);
+        tx.try_send("first").expect("first command fits");
+        let error = send_bounded(&tx, "second").unwrap_err();
+        assert!(error.contains("queue is full"));
+    }
+
+    #[test]
+    fn command_queue_reports_stopped_worker() {
+        let (tx, rx) = mpsc::sync_channel::<()>(1);
+        drop(rx);
+        let error = send_bounded(&tx, ()).unwrap_err();
+        assert!(error.contains("worker is not running"));
+    }
+
+    #[test]
+    fn rejects_empty_and_unsupported_sources() {
+        assert!(validate_source(" ").is_err());
+        assert!(validate_source("file:///etc/passwd").is_err());
+        assert!(validate_source("ftp://example.org/a.torrent").is_err());
+    }
+
+    #[test]
+    fn accepts_magnet_and_https_torrent_sources() {
         assert!(validate_source("magnet:?xt=urn:btih:abc").is_ok());
+        assert!(validate_source("https://example.org/file.torrent").is_ok());
     }
 
     #[test]
-    fn accepts_torrent_urls() {
-        assert!(validate_source("https://example.com/file.torrent").is_ok());
-        assert!(validate_source("http://127.0.0.1/file.torrent").is_ok());
+    fn rejects_empty_or_oversized_paths() {
+        assert!(validate_path_text("").is_err());
+        assert!(validate_path_text(&"x".repeat(4097)).is_err());
+        assert!(validate_path_text("~/Downloads/CybLex").is_ok());
     }
 
     #[test]
-    fn rejects_unknown_source_schemes() {
-        assert!(validate_source("ftp://example.com/file.torrent").is_err());
+    fn sidecar_writer_never_overwrites_existing_file() {
+        let dir = std::env::temp_dir().join(format!("cyblex-sidecar-test-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("content.torrent");
+        fs::write(&path, b"existing").unwrap();
+
+        let error = write_sidecar_new(&path, b"replacement").unwrap_err();
+        assert!(error.contains("refusing to overwrite"));
+        assert_eq!(fs::read(&path).unwrap(), b"existing");
+
+        fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
-    fn rejects_oversized_sources() {
-        assert!(validate_source(&"m".repeat(MAX_SOURCE_LEN + 1)).is_err());
+    fn sidecar_writer_creates_file_atomically_without_overwriting() {
+        let dir = std::env::temp_dir().join(format!("cyblex-sidecar-test-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("content.torrent");
+
+        write_sidecar_new(&path, b"torrent-data").unwrap();
+        assert_eq!(fs::read(&path).unwrap(), b"torrent-data");
+
+        fs::remove_dir_all(&dir).unwrap();
     }
 }

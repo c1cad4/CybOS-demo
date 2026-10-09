@@ -23,6 +23,7 @@ pub(crate) enum SecureReply {
 
 #[derive(Clone, Debug)]
 pub(crate) enum SecureEvent {
+    ListenerStatus(String),
     Received {
         message_id: String,
         node_id: String,
@@ -76,23 +77,106 @@ impl Drop for Listener {
 }
 
 pub(crate) fn load_or_create_static_key(store: &crate::store::Store) -> Result<Vec<u8>, String> {
+    #[cfg(target_os = "macos")]
+    {
+        load_or_create_keychain_key(store)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        load_or_create_sqlite_key(store)
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn load_or_create_sqlite_key(store: &crate::store::Store) -> Result<Vec<u8>, String> {
     if let Some(encoded) = store.get("noise_static_private_hex") {
-        if encoded.len() == 64 && encoded.chars().all(|c| c.is_ascii_hexdigit()) {
-            let mut key = Vec::with_capacity(32);
-            for i in (0..encoded.len()).step_by(2) {
-                key.push(u8::from_str_radix(&encoded[i..i + 2], 16).map_err(|e| e.to_string())?);
-            }
-            return Ok(key);
-        }
+        return decode_static_private_key(&encoded);
     }
 
+    let private_key = generate_static_private_key()?;
+    let encoded = encode_static_private_key(&private_key);
+    // Do not start with an ephemeral key if durable storage fails.
+    store.try_set("noise_static_private_hex", &encoded)?;
+    if store.get("noise_static_private_hex").as_deref() != Some(encoded.as_str()) {
+        return Err("could not verify persisted Noise identity key; refusing to start".into());
+    }
+    Ok(private_key)
+}
+
+#[cfg(target_os = "macos")]
+fn load_or_create_keychain_key(store: &crate::store::Store) -> Result<Vec<u8>, String> {
+    const SERVICE: &str = "to.cicada.cybos";
+    const ACCOUNT: &str = "noise-static-private-key";
+    const LEGACY_KEY: &str = "noise_static_private_hex";
+
+    let entry = keyring::Entry::new(SERVICE, ACCOUNT)
+        .map_err(|error| format!("cannot access macOS Keychain entry: {error}"))?;
+    let legacy = store.get(LEGACY_KEY);
+    let had_legacy = legacy.is_some();
+
+    match entry.get_password() {
+        Ok(encoded) => {
+            let key = decode_static_private_key(&encoded)
+                .map_err(|error| format!("macOS Keychain Noise identity is invalid: {error}"))?;
+            if let Some(legacy_encoded) = legacy {
+                let legacy_key = decode_static_private_key(&legacy_encoded)
+                    .map_err(|error| format!("legacy SQLite Noise identity is invalid; preserving both copies: {error}"))?;
+                if legacy_key != key {
+                    return Err("macOS Keychain and SQLite Noise identities differ; refusing to rotate identity or delete either copy".into());
+                }
+                store.try_delete_and_compact(LEGACY_KEY)?;
+            }
+            Ok(key)
+        }
+        Err(keyring::Error::NoEntry) => {
+            let key = if let Some(legacy_encoded) = legacy {
+                // Migration preserves the established public identity.
+                decode_static_private_key(&legacy_encoded)
+                    .map_err(|error| format!("legacy SQLite Noise identity is invalid; migration stopped: {error}"))?
+            } else {
+                generate_static_private_key()?
+            };
+            let encoded = encode_static_private_key(&key);
+            entry.set_password(&encoded)
+                .map_err(|error| format!("cannot write Noise identity to macOS Keychain: {error}"))?;
+            let verified = entry.get_password()
+                .map_err(|error| format!("cannot verify Noise identity in macOS Keychain: {error}"))?;
+            if verified != encoded {
+                return Err("macOS Keychain read-back mismatch; preserving legacy data and refusing to start".into());
+            }
+            if had_legacy {
+                store.try_delete_and_compact(LEGACY_KEY)?;
+            }
+            Ok(key)
+        }
+        Err(error) => Err(format!(
+            "macOS Keychain is unavailable or access was denied; refusing to fall back to SQLite or rotate identity: {error}"
+        )),
+    }
+}
+
+fn generate_static_private_key() -> Result<Vec<u8>, String> {
     let params = PATTERN.parse().map_err(|e| format!("noise params: {e}"))?;
-    let keypair = Builder::new(params)
+    Builder::new(params)
         .generate_keypair()
-        .map_err(|e| format!("noise key generation: {e}"))?;
-    let encoded = keypair.private.iter().map(|b| format!("{b:02x}")).collect::<String>();
-    store.set("noise_static_private_hex", &encoded);
-    Ok(keypair.private)
+        .map(|keypair| keypair.private)
+        .map_err(|e| format!("noise key generation: {e}"))
+}
+
+fn encode_static_private_key(key: &[u8]) -> String {
+    key.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+fn decode_static_private_key(encoded: &str) -> Result<Vec<u8>, String> {
+    if encoded.len() != 64 || !encoded.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err(
+            "stored Noise identity key is malformed; refusing to silently rotate peer identity".into(),
+        );
+    }
+    (0..encoded.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&encoded[i..i + 2], 16).map_err(|e| e.to_string()))
+        .collect()
 }
 
 pub(crate) fn spawn_listener(node_id: String, private_key: Vec<u8>) -> Listener {
@@ -117,11 +201,22 @@ fn spawn_listener_bind(
     thread::spawn(move || {
         let listener = match TcpListener::bind((host, port)) {
             Ok(v) => v,
-            Err(_) => return,
+            Err(error) => {
+                let _ = tx.send(SecureEvent::ListenerStatus(format!(
+                    "SECURE CHAT · LISTENER BIND FAILED · {host}:{port} · {error}"
+                )));
+                return;
+            }
         };
-        if listener.set_nonblocking(true).is_err() {
+        if let Err(error) = listener.set_nonblocking(true) {
+            let _ = tx.send(SecureEvent::ListenerStatus(format!(
+                "SECURE CHAT · LISTENER CONFIG FAILED · {error}"
+            )));
             return;
         }
+        let _ = tx.send(SecureEvent::ListenerStatus(format!(
+            "SECURE CHAT · LISTENING · {host}:{port}"
+        )));
 
         const MAX_ACTIVE: usize = 8;
         let active = Arc::new(AtomicUsize::new(0));
@@ -129,12 +224,21 @@ fn spawn_listener_bind(
         while !stop_thread.load(Ordering::Relaxed) {
             match listener.accept() {
                 Ok((mut stream, _addr)) => {
-                    if active.load(Ordering::Acquire) >= MAX_ACTIVE {
+                    // Normalize accepted sockets before read_exact-based framing.
+                    if stream.set_nonblocking(false).is_err() {
+                        continue;
+                    }
+                    // Reserve capacity atomically; load-then-increment can exceed MAX_ACTIVE.
+                    let reserved = active
+                        .try_update(Ordering::AcqRel, Ordering::Acquire, |count| {
+                            (count < MAX_ACTIVE).then_some(count + 1)
+                        })
+                        .is_ok();
+                    if !reserved {
                         continue;
                     }
                     let _ = stream.set_read_timeout(Some(TIMEOUT));
                     let _ = stream.set_write_timeout(Some(TIMEOUT));
-                    active.fetch_add(1, Ordering::AcqRel);
                     let tx = tx.clone();
                     let node_id = node_id.clone();
                     let key = private_key.clone();
@@ -399,7 +503,7 @@ fn encode_hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
-fn decode_hex(value: &str) -> Result<Vec<u8>, String> {
+pub(crate) fn decode_hex(value: &str) -> Result<Vec<u8>, String> {
     if value.len() % 2 != 0 {
         return Err("invalid hex length".into());
     }
@@ -425,9 +529,49 @@ mod tests {
     use std::time::{Duration, Instant};
 
     #[test]
+    fn malformed_persisted_static_key_is_rejected() {
+        assert!(super::decode_static_private_key("not-a-key").is_err());
+        assert!(super::decode_static_private_key(&"0".repeat(62)).is_err());
+        assert!(super::decode_static_private_key(&"g".repeat(64)).is_err());
+    }
+
+    #[test]
+    fn persisted_static_key_decodes_exactly_32_bytes() {
+        let encoded = "ab".repeat(32);
+        let decoded = super::decode_static_private_key(&encoded).expect("valid key");
+        assert_eq!(decoded, vec![0xab; 32]);
+    }
+
+    #[test]
+    fn read_frame_rejects_oversized_length_before_reading_payload() {
+        use std::io::Write;
+        use std::net::{TcpListener, TcpStream};
+
+        let listener = TcpListener::bind(("127.0.0.1", 0)).expect("bind test listener");
+        let address = listener.local_addr().expect("listener address");
+        let client = thread::spawn(move || {
+            let mut stream = TcpStream::connect(address).expect("connect test client");
+            let too_large = (super::MAX_FRAME + 4097) as u32;
+            stream.write_all(&too_large.to_be_bytes()).expect("write frame length");
+        });
+        let (mut server, _) = listener.accept().expect("accept test client");
+        let mut buffer = vec![0_u8; 65535];
+        let error = super::read_frame(&mut server, &mut buffer)
+            .expect_err("oversized frame must fail");
+        assert!(error.contains("frame exceeds receive limit"));
+        client.join().expect("client thread");
+    }
+
+    #[test]
     fn hex_roundtrip() {
         let data = [0, 1, 2, 15, 16, 255];
         assert_eq!(decode_hex(&encode_hex(&data)).unwrap(), data);
+    }
+
+    #[test]
+    fn hex_decoder_rejects_corrupt_persisted_keys() {
+        assert!(decode_hex("abc").is_err());
+        assert!(decode_hex("zz").is_err());
     }
 
     #[test]
@@ -461,6 +605,7 @@ mod tests {
         let deadline = Instant::now() + Duration::from_secs(4);
         let message_id = loop {
             match listener.try_recv() {
+                Ok(SecureEvent::ListenerStatus(_)) => continue,
                 Ok(SecureEvent::Received { message_id, reply, .. }) => {
                     reply
                         .send(SecureReply::Reject("receiver rejected test".into()))
@@ -470,8 +615,10 @@ mod tests {
                 Err(std::sync::mpsc::TryRecvError::Empty) if Instant::now() < deadline => {
                     thread::sleep(Duration::from_millis(20));
                 }
+                Err(std::sync::mpsc::TryRecvError::Empty) => {
+                    panic!("secure listener timed out")
+                }
                 Err(error) => panic!("secure listener did not receive message: {error:?}"),
-                _ => panic!("secure listener timed out"),
             }
         };
 
@@ -513,6 +660,7 @@ mod tests {
         let deadline = Instant::now() + Duration::from_secs(4);
         let message_id = loop {
             match listener.try_recv() {
+                Ok(SecureEvent::ListenerStatus(_)) => continue,
                 Ok(SecureEvent::Received {
                     message_id,
                     node_id,
@@ -528,8 +676,10 @@ mod tests {
                 Err(std::sync::mpsc::TryRecvError::Empty) if Instant::now() < deadline => {
                     thread::sleep(Duration::from_millis(20));
                 }
+                Err(std::sync::mpsc::TryRecvError::Empty) => {
+                    panic!("secure listener timed out")
+                }
                 Err(error) => panic!("secure listener did not receive message: {error:?}"),
-                _ => panic!("secure listener timed out"),
             }
         };
 

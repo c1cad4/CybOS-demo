@@ -37,7 +37,7 @@ impl CybOs {
             ui.add_space(14.0);
 
             // FARM STATUS
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 for (symbol, title, value) in [
                     ("∿", "CHICKENS", "60+"),
                     ("∆", "GOATS", "2"),
@@ -171,7 +171,7 @@ impl CybOs {
             // ------------------------------------------------
             // PRODUCTS
             // ------------------------------------------------
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 // HONEY
                 egui::Frame::NONE
                     .fill(panel)

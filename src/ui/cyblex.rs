@@ -53,7 +53,7 @@ impl CybOs {
                 ui.horizontal(|ui| {
                     ui.add(
                         egui::TextEdit::singleline(&mut self.cyblex_source)
-                            .desired_width(560.0)
+                            .desired_width((ui.available_width() - 150.0).max(150.0))
                             .hint_text("magnet:?… or https://…/file.torrent"),
                     );
 
@@ -72,7 +72,7 @@ impl CybOs {
                     ui.label(RichText::new("OUTPUT").size(9.0).color(dim));
                     ui.add(
                         egui::TextEdit::singleline(&mut self.cyblex_download_path)
-                            .desired_width(560.0),
+                            .desired_width((ui.available_width() - 90.0).max(150.0)),
                     );
 
                     if ui.button("DEFAULT").clicked() {
@@ -100,7 +100,7 @@ impl CybOs {
                 ui.horizontal(|ui| {
                     ui.add(
                         egui::TextEdit::singleline(&mut self.cyblex_seed_path)
-                            .desired_width(560.0)
+                            .desired_width((ui.available_width() - 150.0).max(150.0))
                             .hint_text("~/path/to/file-or-folder"),
                     );
 
@@ -177,14 +177,26 @@ impl CybOs {
 
                         if torrent.paused {
                             if ui.button("RESUME").clicked() {
-                                let _ = self.cyblex.resume(torrent.id);
+                                if let Err(error) = self.cyblex.resume(torrent.id) {
+                                    self.notify(format!("CYBLEX: {error}"));
+                                } else {
+                                    self.notify("CYBLEX RESUME QUEUED");
+                                }
                             }
                         } else if ui.button("PAUSE").clicked() {
-                            let _ = self.cyblex.pause(torrent.id);
+                            if let Err(error) = self.cyblex.pause(torrent.id) {
+                                self.notify(format!("CYBLEX: {error}"));
+                            } else {
+                                self.notify("CYBLEX PAUSE QUEUED");
+                            }
                         }
 
                         if ui.button("REMOVE").clicked() {
-                            let _ = self.cyblex.forget(torrent.id, false);
+                            if let Err(error) = self.cyblex.forget(torrent.id, false) {
+                                self.notify(format!("CYBLEX: {error}"));
+                            } else {
+                                self.notify("CYBLEX TORRENT REMOVAL QUEUED");
+                            }
                         }
                     });
 

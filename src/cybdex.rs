@@ -155,8 +155,11 @@ impl CybDexRuntime {
         timeframe: CybDexTimeframe,
     ) -> Result<(), String> {
         let address = pair_address.trim();
-        if address.is_empty() || address.len() > MAX_QUERY {
-            return Err("Invalid pool address".into());
+        if address.is_empty()
+            || address.len() > MAX_QUERY
+            || !address.bytes().all(|byte| byte.is_ascii_alphanumeric())
+        {
+            return Err("Invalid pool address; use a Solana pool address without URL characters".into());
         }
         self.tx
             .send(CybDexCommand::LoadPair {
@@ -329,6 +332,9 @@ fn load_pair(
         .ok_or_else(|| "DexScreener pair not found".to_string())?;
 
     let pair = parse_pair(raw_pair).ok_or_else(|| "invalid pair payload".to_string())?;
+    if pair.chain_id != "solana" {
+        return Err("provider returned a non-Solana pair for a Solana query".into());
+    }
     let candles = load_ohlcv(pair_address, timeframe)?;
 
     Ok((pair, candles))
@@ -366,14 +372,27 @@ fn load_ohlcv(
             if values.len() < 6 {
                 return None;
             }
-            Some(CybDexCandle {
+            let candle = CybDexCandle {
                 timestamp: values[0].as_i64()?,
                 open: number(&values[1])?,
                 high: number(&values[2])?,
                 low: number(&values[3])?,
                 close: number(&values[4])?,
                 volume: number(&values[5])?,
-            })
+            };
+            // Reject malformed provider rows instead of charting impossible prices.
+            if candle.timestamp <= 0
+                || candle.low < 0.0
+                || candle.high < candle.low
+                || candle.open < candle.low
+                || candle.open > candle.high
+                || candle.close < candle.low
+                || candle.close > candle.high
+                || candle.volume < 0.0
+            {
+                return None;
+            }
+            Some(candle)
         })
         .collect::<Vec<_>>();
 
@@ -415,7 +434,8 @@ fn parse_pair(value: &serde_json::Value) -> Option<CybDexPair> {
 }
 
 fn number(value: &serde_json::Value) -> Option<f64> {
-    value.as_f64().or_else(|| value.as_str()?.parse::<f64>().ok())
+    let parsed = value.as_f64().or_else(|| value.as_str()?.parse::<f64>().ok())?;
+    parsed.is_finite().then_some(parsed)
 }
 
 fn looks_like_solana_address(value: &str) -> bool {
@@ -440,7 +460,7 @@ fn short_address(value: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{looks_like_solana_address, parse_pair, percent_encode};
+    use super::{looks_like_solana_address, number, parse_pair, percent_encode};
 
     #[test]
     fn recognizes_solana_like_mints() {
@@ -451,6 +471,13 @@ mod tests {
     #[test]
     fn percent_encodes_search() {
         assert_eq!(percent_encode("SOL/USDC"), "SOL%2FUSDC");
+    }
+
+    #[test]
+    fn rejects_non_finite_market_numbers() {
+        assert!(number(&serde_json::json!("NaN")).is_none());
+        assert!(number(&serde_json::json!("inf")).is_none());
+        assert!(number(&serde_json::json!(-3.5)).unwrap() == -3.5);
     }
 
     #[test]

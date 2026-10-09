@@ -62,8 +62,9 @@ impl CybOs {
                         ui.allocate_exact_size(Vec2::splat(22.0), egui::Sense::hover());
                     Self::paint_icon(ui.painter(), search_icon.center(), Icon::Search, neon, 16.0);
 
+                    let search_width = (ui.available_width() - 205.0).clamp(120.0, 280.0);
                     let search = ui.add_sized(
-                        [280.0, 30.0],
+                        [search_width, 30.0],
                         egui::TextEdit::singleline(&mut self.search)
                             .hint_text("⌘K  search pages, tokens, cameras…")
                             .id(egui::Id::new("cybos_search")),
@@ -94,10 +95,15 @@ impl CybOs {
                     }
 
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        let status_color = if self.qwen_status.contains("ONLINE") {
+                            neon
+                        } else {
+                            Color32::from_rgb(225, 170, 85)
+                        };
                         ui.label(
-                            RichText::new(format!("• {}", self.qwen_status))
+                            RichText::new(format!("● {}", self.qwen_status))
                                 .size(10.0)
-                                .color(neon),
+                                .color(status_color),
                         );
                     });
                 });

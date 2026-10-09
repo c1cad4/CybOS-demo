@@ -276,7 +276,8 @@ impl CybOs {
                                 self.push_chat_message("YOU", t.clone(), true);
                                 let _ = self.start_robot_job(t.clone());
                                 self.chat_input.clear();
-                                self.add_event("CHAT", &format!("Local message accepted by RobotCYB: {}", t));
+                                // Do not duplicate private prompts into the general event log.
+                                self.add_event("CHAT", "Local message accepted by RobotCYB; content omitted from event log");
                                 self.notify("MESSAGE ACCEPTED BY BOUNDED ROBOT WORKER");
                             }
                         }
@@ -303,9 +304,9 @@ impl CybOs {
 
                         ui.label(
                             RichText::new(if local_busy {
-                                "LOCAL-FIRST · ROBOT WORKER RUNNING · SECURE CHAT READY"
+                                "LOCAL-FIRST · ROBOT WORKER RUNNING · ENCRYPTION STATUS SHOWN SEPARATELY"
                             } else {
-                                "LOCAL-FIRST · ROBOT WORKER BOUNDED · CHAT ENCRYPTED · ACKNOWLEDGED"
+                                "LOCAL-FIRST · BOUNDED AI · USE SEND ENCRYPTED FOR PEER DELIVERY"
                             })
                                 .size(8.0)
                                 .color(dim),

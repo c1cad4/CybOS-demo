@@ -4,6 +4,7 @@ use eframe::egui;
 use egui::{Color32, RichText};
 use std::process::Command;
 use std::fs;
+use std::io::Write;
 
 impl CybOs {
     pub(crate) fn system(&mut self, ui: &mut egui::Ui) {
@@ -13,8 +14,16 @@ impl CybOs {
         ui.add_space(10.0);
         egui::Grid::new("sys").num_columns(3).spacing([10.0, 8.0]).show(ui, |ui| {
             self.card(ui, "VERSION", APP_VERSION);
-            self.card(ui, "BATTERY", &format!("{:.0}%", self.battery));
-            self.card(ui, "TEMP", &format!("{:.1}°C", self.temperature));
+            self.card(ui, "RUNTIME CELLS", &self.runtime.cells.len().to_string());
+            self.card(ui, "LOCAL EVENTS", &self.events.len().to_string());
+            ui.end_row();
+            self.card(ui, "GRAPH NODES", &self.nodes.len().to_string());
+            self.card(ui, "MEMORIES", &self.store.memories().len().to_string());
+            self.card(
+                ui,
+                "QWEN",
+                if self.qwen_status.contains("ONLINE") { "ONLINE" } else { "OFFLINE" },
+            );
             ui.end_row();
         });
         ui.add_space(12.0);
@@ -23,7 +32,11 @@ impl CybOs {
             ("DATABASE", self.store.path.to_str().unwrap_or("—")),
             ("RENDERER", "egui / eframe"),
             ("QWEN", self.qwen_status.as_str()),
-            ("KEYS", "Noise static + TOFU peer keys stored locally"),
+            ("KEYS", if cfg!(target_os = "macos") {
+                "Noise private key: macOS Keychain · peer trust pins: local SQLite"
+            } else {
+                "Noise identity: local SQLite · peer trust pins: local SQLite"
+            }),
         ] {
             ui.horizontal(|ui| {
                 ui.label(RichText::new(k).size(11.0).strong().color(neon).extra_letter_spacing(1.2));
@@ -45,19 +58,39 @@ impl CybOs {
             .color(dim),
         );
         for cell in &self.runtime.cells {
-            ui.horizontal(|ui| {
-                ui.label(
-                    RichText::new(format!(
-                        "{} · {} · {}ms budget · heartbeat {}ms ago",
-                        cell.id,
-                        cell.status,
-                        cell.budget.as_millis(),
-                        cell.heartbeat_age_ms()
-                    ))
-                    .size(9.0)
-                    .color(Color32::from_rgb(165, 220, 190)),
-                );
-            });
+            let status_color = match cell.status {
+                "READY" => neon,
+                "RUNNING" => Color32::from_rgb(110, 190, 255),
+                "ERROR" | "TIMEOUT" | "OVER_BUDGET" => Color32::from_rgb(255, 130, 115),
+                _ => Color32::from_rgb(225, 175, 90),
+            };
+            egui::Frame::new()
+                .fill(Color32::from_rgb(4, 15, 10))
+                .corner_radius(6)
+                .inner_margin(egui::Margin::symmetric(9, 6))
+                .show(ui, |ui| {
+                    ui.horizontal_wrapped(|ui| {
+                        ui.label(RichText::new("●").color(status_color).size(10.0));
+                        ui.label(
+                            RichText::new(format!("{} · {}", cell.id, cell.status))
+                                .strong()
+                                .size(10.0)
+                                .color(status_color),
+                        );
+                        ui.label(
+                            RichText::new(format!(
+                                "{}ms budget · last status signal {}ms ago · {} runs · {} overruns",
+                                cell.budget.as_millis(),
+                                cell.signal_age_ms(),
+                                cell.runs,
+                                cell.overruns
+                            ))
+                            .size(9.0)
+                            .color(Color32::from_rgb(145, 190, 165)),
+                        );
+                    });
+                });
+            ui.add_space(3.0);
         }
         ui.add_space(10.0);
 
@@ -83,32 +116,39 @@ impl CybOs {
                 let path = dirs_fallback_for_export()
                     .join(format!("cybOS-state-{timestamp}.json"));
 
+                // Diagnostics are metadata-only by default. Chat, memory text,
+                // event text, trust records and credentials may contain private data.
                 let payload = serde_json::json!({
+                    "schema_version": 1,
                     "version": APP_VERSION,
                     "node_id": self.node_id,
                     "status": self.status,
                     "qwen_status": self.qwen_status,
+                    "database_integrity": self.database_integrity,
+                    "counts": {
+                        "runtime_cells": self.runtime.cells.len(),
+                        "ready_cells": self.runtime.healthy_count(),
+                        "local_events": self.store.exportable_events().len(),
+                        "memories": self.store.exportable_memories().len(),
+                        "graph_nodes": self.nodes.len(),
+                        "graph_links": self.links.len(),
+                        "chat_messages": self.store.exportable_chat().len(),
+                    },
                     "runtime": self.runtime.cells.iter().map(|cell| serde_json::json!({
                         "id": cell.id,
                         "status": cell.status,
                         "budget_ms": cell.budget.as_millis(),
+                        "last_status_signal_age_ms": cell.signal_age_ms(),
                         "last_run_ms": cell.last_run.as_millis(),
                         "runs": cell.runs,
                         "overruns": cell.overruns,
                     })).collect::<Vec<_>>(),
-                    "events": self.store.exportable_events(),
-                    "memories": self.store.exportable_memories(),
-                    "graph_nodes": &self.nodes,
-                    "graph_links": &self.links,
-                    "chat": self.store.exportable_chat(),
-                    "note": "Private Noise keys and peer TOFU keys are intentionally excluded."
+                    "note": "Metadata-only diagnostic export. Private chat, memory/event text, Noise keys, peer trust pins, and credentials are excluded."
                 });
 
                 match serde_json::to_string_pretty(&payload)
                     .map_err(|error| error.to_string())
-                    .and_then(|content| {
-                        fs::write(&path, content).map_err(|error| error.to_string())
-                    }) {
+                    .and_then(|content| write_private_export(&path, content.as_bytes())) {
                     Ok(()) => self.notify(format!("STATE EXPORTED: {}", path.display())),
                     Err(error) => self.notify(format!("STATE EXPORT FAILED: {}", error)),
                 }
@@ -137,4 +177,22 @@ fn dirs_fallback_for_export() -> std::path::PathBuf {
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|_| std::path::PathBuf::from("."))
         .join("Desktop")
+}
+
+fn write_private_export(path: &std::path::Path, bytes: &[u8]) -> Result<(), String> {
+    let mut options = fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut file = options
+        .open(path)
+        .map_err(|error| format!("cannot create private diagnostic export {}: {error}", path.display()))?;
+    file.write_all(bytes)
+        .map_err(|error| format!("cannot write diagnostic export: {error}"))?;
+    file.sync_all()
+        .map_err(|error| format!("cannot sync diagnostic export: {error}"))?;
+    Ok(())
 }

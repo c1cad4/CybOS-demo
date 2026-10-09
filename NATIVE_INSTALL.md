@@ -15,9 +15,9 @@ The current native runtime includes local SQLite state with WAL/busy-timeout har
 
 ## Download the macOS beta
 
-The previous v0.7.1 package remains available from the companion release repository; v0.7.2 is the hardened release line:
+The v0.7.2 package is the current hardened release line in the companion release repository:
 
-https://github.com/c1cad4/cybOS/releases/tag/v0.7.1
+https://github.com/c1cad4/cybOS/releases/tag/v0.7.2
 
 Download the ZIP, unpack it, and open `cybOS.app`.
 
@@ -73,13 +73,13 @@ Secure CYBChat uses Noise XX encrypted transport and stores first-seen peer publ
 - Qwen model weights;
 - farm hardware integration;
 - live camera hardware;
-- P2P and Nostr fallback transports.
+- Nostr fallback transport (CybLex P2P is embedded in the native app).
 
 These are separate product layers, not prerequisites for the current desktop core.
 
 ## Public release path
 
-The current public beta is **v0.7.1**:
+The published release line is **v0.7.2**:
 
 [Open cybOS v0.7.2 release](https://github.com/c1cad4/cybOS/releases/tag/v0.7.2)
 
