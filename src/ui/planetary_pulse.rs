@@ -62,7 +62,7 @@ impl CybOs {
                     ui.label(RichText::new(crate::language::tr(self.language, "pulse_births_deaths")).size(19.0).strong().color(neon));
                     ui.label(RichText::new(crate::language::tr(self.language, "pulse_demographic_note")).size(10.0).color(Color32::WHITE));
                     ui.add_space(8.0);
-                    ui.label(RichText::new("Next integration: population, annual births and deaths, with source year and uncertainty shown on each metric.").size(9.0).color(dim));
+                    ui.label(RichText::new(crate::language::tr(self.language, "pulse_next_integration")).size(9.0).color(dim));
                     if ui.button(crate::language::tr(self.language, "pulse_open_demographics")).clicked() {
                         self.browser_url = "https://ourworldindata.org/births-and-deaths".into();
                         self.go(Page::Browser);
