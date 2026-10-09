@@ -453,7 +453,11 @@ impl CybOs {
                 Ok(event) => event,
                 Err(std::sync::mpsc::TryRecvError::Empty) => break,
                 Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                    self.secure_status = "SECURE CHAT · LISTENER STOPPED".into();
+                    if !self.secure_status.contains("BIND FAILED")
+                        && !self.secure_status.contains("CONFIG FAILED")
+                    {
+                        self.secure_status = "SECURE CHAT · LISTENER STOPPED".into();
+                    }
                     self.runtime.set_status("CYBCHAT", "ERROR");
                     break;
                 }
