@@ -75,6 +75,16 @@ impl CybOs {
             .inner_margin(egui::Margin::same(12))
             .show(ui, |ui| {
                 ui.label(RichText::new("CYBCORE · OPTIONAL SERVER").strong().color(neon));
+                if ui.button("CREATE / VIEW NODE SIGNING ID").clicked() {
+                    match crate::network::cybcore_identity::load_or_create_key(&self.store) {
+                        Ok(key) => {
+                            ui.ctx().copy_text(hex::encode(key.verifying_key().to_bytes()));
+                            self.notify("CYBCORE PUBLIC SIGNING KEY COPIED");
+                        }
+                        Err(_) => self.notify("CYBCORE SIGNING ID UNAVAILABLE"),
+                    }
+                }
+                ui.label(RichText::new("Copies PUBLIC key only; never share the private seed.").size(9.0).color(dim));
                 let configured = std::env::var("CYBCORE_URL").ok().filter(|v| !v.trim().is_empty());
                 if configured.is_some() {
                     ui.label(RichText::new("Configured · offline-first mode preserved").size(10.0).color(dim));
