@@ -2,7 +2,7 @@ name: cybOS CI
 
 on:
   push:
-    branches: [main, fix/propagate-store-write-errors]
+    branches: [main, fix/secure-chat-key-persistence]
   pull_request:
     branches: [main]
 
