@@ -52,6 +52,7 @@ pub(crate) struct CybOs {
     // Local identity and runtime
     pub(crate) node_id: String,
     pub(crate) runtime: crate::runtime::Runtime,
+    pub(crate) telemetry: crate::telemetry::TelemetrySampler,
     pub(crate) status: String,
     pub(crate) database_integrity: String,
     pub(crate) cyblex: crate::cyblex::CybLexRuntime,
@@ -180,6 +181,7 @@ impl Default for CybOs {
 
             node_id,
             runtime: crate::runtime::Runtime::new(),
+            telemetry: crate::telemetry::TelemetrySampler::new(),
             status: "LOCAL-FIRST · READY".into(),
             database_integrity,
             cyblex: crate::cyblex::CybLexRuntime::new(),
