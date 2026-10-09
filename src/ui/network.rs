@@ -42,7 +42,7 @@ impl CybOs {
         let dim = Color32::from_rgb(55, 145, 105);
 
         ui.label(
-            RichText::new("ONE NODE IDENTITY · DISCOVERY · DIRECT DELIVERY · NO FAKE CONNECTIONS")
+            RichText::new(crate::language::tr(self.language, "network_subtitle"))
                 .size(11.0)
                 .color(dim),
         );
@@ -56,8 +56,8 @@ impl CybOs {
             .inner_margin(egui::Margin::same(12))
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new("RADAR VISIBILITY").size(11.0).strong().color(neon));
-                    let label = if self.radar_visible { "VISIBLE" } else { "HIDDEN" };
+                    ui.label(RichText::new(crate::language::tr(self.language, "radar_visibility")).size(11.0).strong().color(neon));
+                    let label = if self.radar_visible { crate::language::tr(self.language, "visible") } else { crate::language::tr(self.language, "hidden") };
                     let button = egui::Button::new(RichText::new(label).strong().color(neon));
                     if ui.add(button).on_hover_text("Toggle local discovery visibility. When visible, cybOS advertises a short node ID over supported LAN/Bluetooth discovery.").clicked() {
                         self.radar_visible = !self.radar_visible;
