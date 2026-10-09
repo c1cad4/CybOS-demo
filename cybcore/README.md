@@ -50,3 +50,7 @@ The API listens on port 8080 **inside** the internal Docker network; no host por
 ## Trusted nodes and event permissions
 
 Migration `0003_node_registry.sql` introduces a default-deny allowlist. Signed events are rejected with HTTP 403 unless the Ed25519 public key is enabled in `trusted_nodes` **and** explicitly allowed to publish the event's exact `kind` in `node_event_permissions`. No keys or permissions are seeded by default. The internal bearer token is still required, but it is **not** sufficient for publication. Revoking a node is done by setting `trusted_nodes.enabled = FALSE`. Provisioning currently requires a trusted database administrator; do not expose SQL provisioning or accept arbitrary self-registration. Key enrollment, tenant scopes, audit and integration tests remain necessary before production use.
+
+## cybOS client foundation
+
+`src/network/cybcore_client.rs` adds an **opt-in** status probe for the server's `/healthz` endpoint. It is not yet wired into the app lifecycle/UI, does not authenticate or upload events, and is not a sync engine. The probe allows HTTPS endpoints or explicit loopback HTTP and has a two-second timeout. Never assume a successful health check proves a node is trusted or authorized. For remote deployments use TLS with proper certificate validation; the internal Compose API is not directly exposed on a host port.
