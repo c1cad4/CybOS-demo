@@ -140,6 +140,7 @@ impl CybOs {
                         (Page::Chat, crate::language::page_title(self.language, Page::Chat)),
                         (Page::CybLex, crate::language::page_title(self.language, Page::CybLex)),
                         (Page::CybDex, crate::language::page_title(self.language, Page::CybDex)),
+                        (Page::PlanetaryPulse, crate::language::page_title(self.language, Page::PlanetaryPulse)),
                         (Page::Browser, crate::language::page_title(self.language, Page::Browser)),
                     ];
                     for (page, tooltip) in items {
@@ -320,6 +321,11 @@ impl CybOs {
                             egui::ScrollArea::vertical()
                                 .auto_shrink([false, false])
                                 .show(ui, |ui| self.cybdex_page(ui));
+                        }
+                        Page::PlanetaryPulse => {
+                            egui::ScrollArea::vertical()
+                                .auto_shrink([false, false])
+                                .show(ui, |ui| self.planetary_pulse(ui));
                         }
                         Page::Browser => {
                             egui::ScrollArea::vertical()
