@@ -144,7 +144,7 @@ impl Default for CybOs {
                         node_id.clone(),
                         key.clone(),
                     );
-                    (key, listener, "SECURE CHAT · READY".to_string())
+                    (key, listener, "SECURE CHAT · STARTING".to_string())
                 }
                 Err(error) => {
                     // Fail closed: never start the secure listener with an empty or
@@ -460,6 +460,14 @@ impl CybOs {
             };
 
             match event {
+                crate::network::secure_chat::SecureEvent::ListenerStatus(status) => {
+                    self.secure_status = status;
+                    if self.secure_status.contains("LISTENING") {
+                        self.runtime.set_status("CYBCHAT", "READY");
+                    } else {
+                        self.runtime.set_status("CYBCHAT", "ERROR");
+                    }
+                }
                 crate::network::secure_chat::SecureEvent::Received {
                     message_id,
                     node_id,
