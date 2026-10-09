@@ -289,6 +289,22 @@ mod tests {
     }
 
     #[test]
+    fn worker_trace_records_start_and_finish_without_unbounded_growth() {
+        let worker = super::WorkerContract::new("TEST_TRACE", std::time::Duration::from_secs(1));
+        let id = super::recent_worker_traces().into_iter()
+            .find(|trace| trace.cell == "TEST_TRACE")
+            .expect("worker start trace should be recorded").id;
+        worker.finish("READY");
+        let trace = super::recent_worker_traces().into_iter()
+            .find(|trace| trace.id == id)
+            .expect("worker trace should remain available");
+        assert_eq!(trace.status, "READY");
+        assert_eq!(trace.cell, "TEST_TRACE");
+        assert!(trace.elapsed_ms < 1000);
+        assert_eq!(trace.budget_ms, 1000);
+    }
+
+    #[test]
     fn cell_status_can_track_worker_lifecycle() {
         let mut runtime = Runtime::new();
 
