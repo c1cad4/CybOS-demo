@@ -97,6 +97,6 @@ Evaluate these as optional companion applications or interoperability targets fi
 9. **Spectrum viewer:** hardware adapter, FFT/waterfall and recorded-sample analysis.
 10. **Voice integration:** evaluate Mumble interoperability separately from radio hardware integration.
 
-## Current implementation status
+## Capability boundary and release gate
 
-This document is a roadmap and architecture specification. These capabilities are **not yet implemented by this document**. The current cybOS build must not be described as having offline maps, GPS navigation, radio transmission, or spectrum scanning until the respective feature has been implemented and tested on the target hardware.
+This file is the roadmap and architecture specification, not proof that a capability is shipped. At present, cybOS includes the first-stage local MBTiles inspector and a small raster-tile preview described at the top of this document. Full offline map interaction, GNSS, routing, region-pack downloads, radio hardware transmission, and SDR spectrum scanning remain unimplemented until each is separately delivered and tested on target hardware. Do not label a planned or adapter-ready stack as active, and do not report a message as delivered or a device as detected without an observed result.
