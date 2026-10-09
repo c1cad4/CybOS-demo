@@ -127,20 +127,20 @@ impl CybOs {
                 ui.vertical_centered(|ui| {
                     ui.add_space(10.0);
                     let items = [
-                        (Page::Dashboard, "DASHBOARD"),
-                        (Page::Graph, "GRAPH"),
-                        (Page::Network, "NETWORK"),
-                        (Page::Radar, "RADAR"),
-                        (Page::Brain, "BRAIN"),
-                        (Page::Farm, "FARM"),
-                        (Page::Robot, "ROBOT"),
-                        (Page::Cameras, "CAMERAS"),
-                        (Page::System, "SYSTEM"),
-                        (Page::Assets, "TOKENS"),
-                        (Page::Chat, "CYBCHAT"),
-                        (Page::CybLex, "CYBLEX"),
-                        (Page::CybDex, "CYBDEX"),
-                        (Page::Browser, "CYBBROWSER"),
+                        (Page::Dashboard, crate::language::page_title(self.language, Page::Dashboard)),
+                        (Page::Graph, crate::language::page_title(self.language, Page::Graph)),
+                        (Page::Network, crate::language::page_title(self.language, Page::Network)),
+                        (Page::Radar, crate::language::page_title(self.language, Page::Radar)),
+                        (Page::Brain, crate::language::page_title(self.language, Page::Brain)),
+                        (Page::Farm, crate::language::page_title(self.language, Page::Farm)),
+                        (Page::Robot, crate::language::page_title(self.language, Page::Robot)),
+                        (Page::Cameras, crate::language::page_title(self.language, Page::Cameras)),
+                        (Page::System, crate::language::page_title(self.language, Page::System)),
+                        (Page::Assets, crate::language::page_title(self.language, Page::Assets)),
+                        (Page::Chat, crate::language::page_title(self.language, Page::Chat)),
+                        (Page::CybLex, crate::language::page_title(self.language, Page::CybLex)),
+                        (Page::CybDex, crate::language::page_title(self.language, Page::CybDex)),
+                        (Page::Browser, crate::language::page_title(self.language, Page::Browser)),
                     ];
                     for (page, tooltip) in items {
                         if self.rail_icon(ui, page.icon(), tooltip, self.page == page) {
