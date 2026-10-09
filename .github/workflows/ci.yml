@@ -2,7 +2,7 @@ name: cybOS CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, feature/system-telemetry-dashboard]
   pull_request:
     branches: [main]
 

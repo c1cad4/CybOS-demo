@@ -5,14 +5,53 @@
 //! model work itself; those operations stay in bounded worker threads.
 
 use crate::store::Store;
+use std::collections::VecDeque;
+use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 use uuid::Uuid;
+
+const WORKER_TRACE_LIMIT: usize = 100;
+static WORKER_TRACES: OnceLock<Mutex<VecDeque<WorkerTrace>>> = OnceLock::new();
+
+#[derive(Clone, Debug)]
+pub(crate) struct WorkerTrace {
+    pub(crate) id: String,
+    pub(crate) cell: String,
+    pub(crate) started_at: String,
+    pub(crate) elapsed_ms: u128,
+    pub(crate) budget_ms: u128,
+    pub(crate) status: String,
+}
+
+fn trace_store() -> &'static Mutex<VecDeque<WorkerTrace>> {
+    WORKER_TRACES.get_or_init(|| Mutex::new(VecDeque::new()))
+}
+
+fn record_worker_trace(trace: WorkerTrace) {
+    if let Ok(mut traces) = trace_store().lock() {
+        if let Some(existing) = traces.iter_mut().find(|item| item.id == trace.id) {
+            *existing = trace;
+        } else {
+            traces.push_front(trace);
+        }
+        while traces.len() > WORKER_TRACE_LIMIT {
+            traces.pop_back();
+        }
+    }
+}
+
+pub(crate) fn recent_worker_traces() -> Vec<WorkerTrace> {
+    trace_store().lock().map(|traces| traces.iter().cloned().collect()).unwrap_or_default()
+}
 
 #[derive(Clone, Debug)]
 pub(crate) struct WorkerContract {
     pub(crate) cell: &'static str,
     pub(crate) started: Instant,
     pub(crate) deadline: Instant,
+    task_id: String,
+    started_at: String,
+    budget: Duration,
     status: std::sync::Arc<std::sync::Mutex<&'static str>>,
     heartbeat: std::sync::Arc<std::sync::Mutex<Instant>>,
     runs: std::sync::Arc<std::sync::atomic::AtomicU64>,
@@ -21,10 +60,23 @@ pub(crate) struct WorkerContract {
 impl WorkerContract {
     pub(crate) fn new(cell: &'static str, budget: Duration) -> Self {
         let now = Instant::now();
+        let task_id = Uuid::new_v4().to_string();
+        let started_at = chrono::Local::now().to_rfc3339();
+        record_worker_trace(WorkerTrace {
+            id: task_id.clone(),
+            cell: cell.to_string(),
+            started_at: started_at.clone(),
+            elapsed_ms: 0,
+            budget_ms: budget.as_millis(),
+            status: "RUNNING".into(),
+        });
         Self {
             cell,
             started: now,
             deadline: now + budget,
+            task_id,
+            started_at,
+            budget,
             status: std::sync::Arc::new(std::sync::Mutex::new("RUNNING")),
             heartbeat: std::sync::Arc::new(std::sync::Mutex::new(now)),
             runs: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(1)),
@@ -36,6 +88,16 @@ impl WorkerContract {
             *value = Instant::now();
         }
         self.runs.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        // Refresh the visible span while a worker is still running. Otherwise
+        // the dashboard would show a RUNNING task with a stale zero duration.
+        record_worker_trace(WorkerTrace {
+            id: self.task_id.clone(),
+            cell: self.cell.to_string(),
+            started_at: self.started_at.clone(),
+            elapsed_ms: self.started.elapsed().as_millis(),
+            budget_ms: self.budget.as_millis(),
+            status: self.status().to_string(),
+        });
     }
 
     pub(crate) fn expired(&self) -> bool {
@@ -47,10 +109,30 @@ impl WorkerContract {
     }
 
     pub(crate) fn finish(&self, status: &'static str) {
-        if let Ok(mut value) = self.status.lock() {
-            *value = status;
+        // A timeout/error reported by the UI thread must not be overwritten
+        // later by a worker that eventually returns after its budget.
+        let final_status = if let Ok(mut current) = self.status.lock() {
+            if *current == "TIMEOUT" || *current == "ERROR" || *current == "CANCELLED" {
+                *current
+            } else {
+                *current = status;
+                *current
+            }
+        } else {
+            "ERROR"
+        };
+        if let Ok(mut value) = self.heartbeat.lock() {
+            *value = Instant::now();
         }
-        self.heartbeat();
+        self.runs.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        record_worker_trace(WorkerTrace {
+            id: self.task_id.clone(),
+            cell: self.cell.to_string(),
+            started_at: self.started_at.clone(),
+            elapsed_ms: self.started.elapsed().as_millis(),
+            budget_ms: self.budget.as_millis(),
+            status: final_status.to_string(),
+        });
     }
 
     pub(crate) fn status(&self) -> &'static str {
@@ -226,6 +308,43 @@ mod tests {
         assert!(!worker.expired());
         assert!(worker.remaining() <= std::time::Duration::from_secs(1));
         assert!(worker.heartbeat_age_ms() < 1000);
+        let id = super::recent_worker_traces().into_iter()
+            .find(|trace| trace.cell == "ROBOTCYB" && trace.status == "RUNNING")
+            .expect("running worker should be visible").id;
+        worker.heartbeat();
+        let trace = super::recent_worker_traces().into_iter()
+            .find(|trace| trace.id == id)
+            .expect("running worker trace should remain visible");
+        assert_eq!(trace.status, "RUNNING");
+        assert!(trace.budget_ms > 0);
+    }
+
+    #[test]
+    fn worker_trace_records_start_and_finish_without_unbounded_growth() {
+        let worker = super::WorkerContract::new("TEST_TRACE", std::time::Duration::from_secs(1));
+        let id = super::recent_worker_traces().into_iter()
+            .find(|trace| trace.cell == "TEST_TRACE")
+            .expect("worker start trace should be recorded").id;
+        worker.finish("READY");
+        let trace = super::recent_worker_traces().into_iter()
+            .find(|trace| trace.id == id)
+            .expect("worker trace should remain available");
+        assert_eq!(trace.status, "READY");
+        assert_eq!(trace.cell, "TEST_TRACE");
+        assert!(trace.elapsed_ms < 1000);
+        assert_eq!(trace.budget_ms, 1000);
+    }
+
+    #[test]
+    fn worker_terminal_timeout_is_not_overwritten_by_late_success() {
+        let worker = super::WorkerContract::new("TEST_TIMEOUT", std::time::Duration::from_millis(1));
+        worker.finish("TIMEOUT");
+        worker.finish("READY");
+        assert_eq!(worker.status(), "TIMEOUT");
+        let trace = super::recent_worker_traces().into_iter()
+            .find(|trace| trace.cell == "TEST_TIMEOUT")
+            .expect("timeout trace should remain visible");
+        assert_eq!(trace.status, "TIMEOUT");
     }
 
     #[test]
