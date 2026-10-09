@@ -144,9 +144,14 @@ impl CybDexRuntime {
         if query.len() > MAX_QUERY {
             return Err("CYBDEX query is too large".into());
         }
-        self.tx
-            .send(CybDexCommand::Search(query.to_string()))
-            .map_err(|_| "CYBDEX worker is not running".to_string())
+        self.busy
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .map_err(|_| "CYBDEX is already processing a request".to_string())?;
+        if self.tx.send(CybDexCommand::Search(query.to_string())).is_err() {
+            self.busy.store(false, Ordering::Release);
+            return Err("CYBDEX worker is not running".to_string());
+        }
+        Ok(())
     }
 
     pub(crate) fn load_pair(
@@ -158,12 +163,17 @@ impl CybDexRuntime {
         if address.is_empty() || address.len() > MAX_QUERY {
             return Err("Invalid pool address".into());
         }
-        self.tx
-            .send(CybDexCommand::LoadPair {
-                pair_address: address.to_string(),
-                timeframe,
-            })
-            .map_err(|_| "CYBDEX worker is not running".to_string())
+        self.busy
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .map_err(|_| "CYBDEX is already processing a request".to_string())?;
+        if self.tx.send(CybDexCommand::LoadPair {
+            pair_address: address.to_string(),
+            timeframe,
+        }).is_err() {
+            self.busy.store(false, Ordering::Release);
+            return Err("CYBDEX worker is not running".to_string());
+        }
+        Ok(())
     }
 
     pub(crate) fn poll(&self) -> Vec<CybDexEvent> {
