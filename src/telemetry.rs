@@ -50,7 +50,7 @@ impl TelemetrySampler {
         let temperature = components
             .list()
             .iter()
-            .filter_map(|component| component.temperature())
+            .map(|component| component.temperature())
             .filter(|value| value.is_finite())
             .reduce(f32::max);
         let disk_total_bytes = disks.list().iter().map(|disk| disk.total_space()).sum();
@@ -101,7 +101,7 @@ impl TelemetrySampler {
 
         let mut processes = self.system.processes().iter().map(|(pid, process)| ProcessMetric {
             pid: pid.to_string(),
-            name: process.name().to_string_lossy().into_owned(),
+            name: process.name().to_string(),
             cpu_percent: process.cpu_usage(),
             memory_bytes: process.memory(),
         }).collect::<Vec<_>>();
