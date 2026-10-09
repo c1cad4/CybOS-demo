@@ -455,6 +455,7 @@ impl CybOs {
                 Err(std::sync::mpsc::TryRecvError::Disconnected) => {
                     if !self.secure_status.contains("BIND FAILED")
                         && !self.secure_status.contains("CONFIG FAILED")
+                        && !self.secure_status.contains("DISABLED")
                     {
                         self.secure_status = "SECURE CHAT · LISTENER STOPPED".into();
                     }
