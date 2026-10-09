@@ -338,6 +338,55 @@ impl CybOs {
                         ui.label(RichText::new(format!("{} · {}", run.workflow_name, run.id.chars().take(8).collect::<String>())).strong().color(Color32::from_rgb(180, 235, 205)));
                         ui.label(RichText::new(format!("{} · step {} · updated {}", run.status.as_str(), run.step, run.updated_at)).size(9.0).color(dim));
                         ui.horizontal_wrapped(|ui| {
+                            if matches!(&run.status, crate::agent_runtime::WorkflowStatus::Running) {
+                                if ui.small_button("RUN CONTRACT CHECK").clicked() {
+                                    let mut registry = crate::agent_runtime::CapabilityRegistry::default();
+                                    let registration = crate::agent_runtime::CapabilitySpec::new(
+                                        "task.validate_contract",
+                                        "Check required task fields before execution",
+                                        crate::agent_runtime::CapabilityRisk::ReadOnly,
+                                        false,
+                                        crate::agent_runtime::MAX_INPUT_BYTES,
+                                    ).and_then(|spec| registry.register(
+                                        spec,
+                                        std::sync::Arc::new(crate::agent_runtime::TaskContractValidator),
+                                    ));
+                                    match registration.and_then(|()| crate::agent_runtime::WorkflowRunner::new(&registry, 8)) {
+                                        Ok(runner) => {
+                                            let plan = crate::agent_runtime::WorkflowPlan {
+                                                name: "task_contract_validation".into(),
+                                                steps: vec![crate::agent_runtime::WorkflowStep {
+                                                    capability_id: "task.validate_contract".into(),
+                                                    input: run.input.clone(),
+                                                    approved: false,
+                                                }],
+                                            };
+                                            match runner.run(&plan) {
+                                                Ok(report) => {
+                                                    let report_json = serde_json::to_value(&report).unwrap_or_else(|_| serde_json::json!({"error":"report serialization failed"}));
+                                                    let mut changed = run.clone();
+                                                    if changed.checkpoint(report_json.clone()).is_ok() {
+                                                        match crate::agent_runtime::WorkflowCheckpoint::new(
+                                                            run.id.clone(), changed.step, "contract_validation",
+                                                            "Deterministic local task-contract validation", report_json
+                                                        ) {
+                                                            Ok(checkpoint) => {
+                                                                run_update = Some(changed);
+                                                                new_checkpoint = Some(checkpoint);
+                                                            }
+                                                            Err(error) => self.notify(format!("VALIDATION CHECKPOINT FAILED: {error}")),
+                                                        }
+                                                    } else {
+                                                        self.notify("CONTRACT CHECK COULD NOT BE RECORDED");
+                                                    }
+                                                }
+                                                Err(error) => self.notify(format!("CONTRACT CHECK FAILED: {error}")),
+                                            }
+                                        }
+                                        Err(error) => self.notify(format!("VALIDATOR SETUP FAILED: {error}")),
+                                    }
+                                }
+                            }
                             use crate::agent_runtime::WorkflowStatus as Status;
                             let next = match &run.status {
                                 Status::Planned => Some((Status::Running, "START RUN")),
