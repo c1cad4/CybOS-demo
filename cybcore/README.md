@@ -45,7 +45,7 @@ The API listens on port 8080 **inside** the internal Docker network; no host por
 
 `POST /v1/events` accepts a JSON Ed25519 signed event with fields `version`, `event_id`, `author_key` (32-byte hex), `kind`, `created_at_ms`, `content` and `signature` (64-byte hex). The signature covers the JSON serialization of the positional tuple `("cybcore-event-v1", version, event_id, author_key, kind, created_at_ms, content)`. Requests also require the **internal** bearer status token until scoped node authorization is implemented. The event timestamp must be within five minutes of server time; content is limited to 16 KiB. Repeated `(author_key, event_id)` returns HTTP 409. Do not use this endpoint for private chat plaintext or production multi-tenant workloads.
 
-**Security limitation:** the signing public key is self-asserted and is not yet registered to a tenant, device or capability. Signature validity alone does not grant authorization. The API is isolated on the internal Docker network; the shared bearer token is a temporary administrative gate, not per-node authentication. Add allowlists/ACL and rate limiting before exposing any ingestion endpoint externally.
+**Security limitation:** node public keys are manually enrolled by a database administrator; there is no verified tenant or device enrollment flow. Signature validity alone does not grant authorization. The API is isolated on the internal Docker network; the shared bearer token is a temporary administrative gate, not per-node authentication. Add allowlists/ACL and rate limiting before exposing any ingestion endpoint externally.
 
 ## Trusted nodes and event permissions
 
@@ -53,4 +53,10 @@ Migration `0003_node_registry.sql` introduces a default-deny allowlist. Signed e
 
 ## cybOS client foundation
 
-`src/network/cybcore_client.rs` adds an **opt-in** status probe for the server's `/healthz` endpoint. It is not yet wired into the app lifecycle/UI, does not authenticate or upload events, and is not a sync engine. The probe allows HTTPS endpoints or explicit loopback HTTP and has a two-second timeout. Never assume a successful health check proves a node is trusted or authorized. For remote deployments use TLS with proper certificate validation; the internal Compose API is not directly exposed on a host port.
+`src/network/cybcore_client.rs` adds an **opt-in** status probe for the server's `/healthz` endpoint. The Network screen now exposes a manual non-blocking health probe and displays the result. It does not authenticate or upload events, and is not a sync engine. The probe allows HTTPS endpoints or explicit loopback HTTP and has a two-second timeout. Never assume a successful health check proves a node is trusted or authorized. For remote deployments use TLS with proper certificate validation; the internal Compose API is not directly exposed on a host port.
+
+## Node identity in cybOS (experimental)
+
+The Network screen offers **CREATE / VIEW NODE SIGNING ID**. This creates an Ed25519 signing seed on first use, stores it in the existing local SQLite key-value table and copies only its public key to the clipboard. The seed is **not protected by macOS Keychain** yet. Restrict access to the database and backups; do not expose the seed or copy it into tickets or logs. The Noise XX private key used by CybChat is separate and must never be reused for Ed25519 signatures.
+
+The local `SignedCoreEvent` envelope uses the same positional JSON signing format as the server and has a unit signature test. This is a building block, **not an active event uploader**. Public-key provisioning and per-kind permissions remain an administrator-controlled database operation. Do not connect the experimental ingestion endpoint to an untrusted network.
