@@ -4,7 +4,7 @@ CybCore is a **separate, opt-in** backend for collaboration, remote workers, Nos
 
 ## First deployable milestone
 
-This directory introduces an infrastructure-only Compose stack: PostgreSQL 16, Redis 7 and MinIO object storage. **It does not yet provide a CybCore API, Nostr relay, authentication, E2E chat bridge, or worker execution.** None of these services should be exposed to the public internet as configured.
+This directory introduces a Compose stack: PostgreSQL 16, Redis 7, MinIO and a minimal Rust Axum API with database migrations and internal /healthz and /readyz endpoints. **It does not yet provide authenticated application APIs, a Nostr relay, E2E chat bridge, or worker execution.** None of these services should be exposed to the public internet as configured.
 
 Prerequisites: Docker Engine with Compose plugin. From the repository root:
 
@@ -30,8 +30,8 @@ State persists in named volumes. `docker compose down -v` **deletes** local data
 - **Identity:** do not equate a Nostr signing key with a Noise static key without an explicit verified binding.
 
 ### Milestones
-1. Compose healthchecks and private networking (this PR).
-2. Rust CybCore API service with authenticated health/status, database migrations and integration tests.
+1. Compose private networking and minimal Rust health/readiness API (this PR).
+2. Authenticated application APIs, database integration tests and production healthchecks.
 3. Signed event ingestion, schema/version limits, tenant-scoped authorization and append-only audit.
 4. Agent worker queues, bounded execution, retry/ACK semantics and metrics.
 5. Optional Nostr relay and encrypted CybChat delivery; test two-node offline/online recovery.
