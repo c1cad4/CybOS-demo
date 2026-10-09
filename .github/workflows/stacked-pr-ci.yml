@@ -2,7 +2,7 @@ name: cybOS stacked PR CI
 
 on:
   push:
-    branches: [fix/secure-chat-session-admission]
+    branches: [fix/propagate-store-write-errors]
   pull_request:
     branches: [main]
 
