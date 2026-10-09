@@ -203,9 +203,17 @@ fn run_worker(command_rx: Receiver<CybLexCommand>, event_tx: Sender<CybLexEvent>
                     Ok(CybLexCommand::SeedPath { path }) => {
                         if session.is_none() {
                             session = Some(
-                                Session::new(download_dir.clone())
-                                    .await
-                                    .map_err(|e| format!("CybLex session init: {e:#}"))?,
+                                Session::new_with_opts(
+                                    download_dir.clone(),
+                                    SessionOptions {
+                                        persistence: Some(SessionPersistenceConfig::Json {
+                                            folder: Some(persistence_dir.clone()),
+                                        }),
+                                        ..Default::default()
+                                    },
+                                )
+                                .await
+                                .map_err(|e| format!("CybLex session init: {e:#}"))?,
                             );
                             let _ = event_tx_inner.send(CybLexEvent::Status("CYBLEX · P2P SESSION ACTIVE".into()));
                         }
