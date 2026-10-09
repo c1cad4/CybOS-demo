@@ -85,12 +85,11 @@ pub(crate) fn load_or_create_static_key(store: &crate::store::Store) -> Result<V
         .generate_keypair()
         .map_err(|e| format!("noise key generation: {e}"))?;
     let encoded = keypair.private.iter().map(|b| format!("{b:02x}")).collect::<String>();
-    store.set("noise_static_private_hex", &encoded);
-
-    // Store::set intentionally hides database errors for ordinary preferences.
-    // A node identity is different: never start with a key that won't survive restart.
+    // Identity material must be durable; don't start with an ephemeral key if
+    // SQLite rejects the write. The read-back also verifies the stored value.
+    store.try_set("noise_static_private_hex", &encoded)?;
     if store.get("noise_static_private_hex").as_deref() != Some(encoded.as_str()) {
-        return Err("could not persist Noise identity key; refusing to start with a temporary identity".into());
+        return Err("could not verify persisted Noise identity key; refusing to start with a temporary identity".into());
     }
 
     Ok(keypair.private)
