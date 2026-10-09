@@ -40,3 +40,9 @@ State persists in named volumes. `docker compose down -v` **deletes** local data
 ## Internal API diagnostics
 
 The API listens on port 8080 **inside** the internal Docker network; no host port is exposed. `/healthz` reports process liveness without database access. `/readyz` checks PostgreSQL and requires `Authorization: Bearer <CYBCORE_STATUS_TOKEN>`. Neither endpoint is a user-facing application API. The token is an internal diagnostic credential, **not** a replacement for user/node authentication or TLS. Never commit `.env` or print credentials in logs.
+
+## Signed event ingestion (experimental)
+
+`POST /v1/events` accepts a JSON Ed25519 signed event with fields `version`, `event_id`, `author_key` (32-byte hex), `kind`, `created_at_ms`, `content` and `signature` (64-byte hex). The signature covers the JSON serialization of the positional tuple `("cybcore-event-v1", version, event_id, author_key, kind, created_at_ms, content)`. Requests also require the **internal** bearer status token until scoped node authorization is implemented. The event timestamp must be within five minutes of server time; content is limited to 16 KiB. Repeated `(author_key, event_id)` returns HTTP 409. Do not use this endpoint for private chat plaintext or production multi-tenant workloads.
+
+**Security limitation:** the signing public key is self-asserted and is not yet registered to a tenant, device or capability. Signature validity alone does not grant authorization. The API is isolated on the internal Docker network; the shared bearer token is a temporary administrative gate, not per-node authentication. Add allowlists/ACL and rate limiting before exposing any ingestion endpoint externally.
