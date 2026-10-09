@@ -59,10 +59,20 @@ impl CybOs {
                 .show(&mut columns[2], |ui| {
                     ui.label(RichText::new(crate::language::tr(self.language, "pulse_humanity")).size(11.0).strong().color(neon));
                     ui.add_space(8.0);
-                    ui.label(RichText::new(crate::language::tr(self.language, "pulse_births_deaths")).size(19.0).strong().color(neon));
-                    ui.label(RichText::new(crate::language::tr(self.language, "pulse_demographic_note")).size(10.0).color(Color32::WHITE));
-                    ui.add_space(8.0);
-                    ui.label(RichText::new(crate::language::tr(self.language, "pulse_next_integration")).size(9.0).color(dim));
+                    ui.label(RichText::new("8.2B").size(34.0).strong().color(neon));
+                    ui.label(RichText::new(crate::language::tr(self.language, "pulse_population")).size(9.0).color(dim));
+                    ui.add_space(6.0);
+                    ui.horizontal_wrapped(|ui| {
+                        ui.label(RichText::new("132M").size(18.0).strong().color(Color32::from_rgb(100, 225, 150)));
+                        ui.label(RichText::new(crate::language::tr(self.language, "pulse_births")).size(9.0).color(Color32::WHITE));
+                    });
+                    ui.horizontal_wrapped(|ui| {
+                        ui.label(RichText::new("63M").size(18.0).strong().color(Color32::from_rgb(255, 170, 120)));
+                        ui.label(RichText::new(crate::language::tr(self.language, "pulse_deaths")).size(9.0).color(Color32::WHITE));
+                    });
+                    ui.add_space(5.0);
+                    ui.label(RichText::new(crate::language::tr(self.language, "pulse_demographic_period")).size(9.0).color(dim));
+                    ui.label(RichText::new(crate::language::tr(self.language, "pulse_demographic_note")).size(9.0).color(Color32::LIGHT_GRAY));
                     if ui.button(crate::language::tr(self.language, "pulse_open_demographics")).clicked() {
                         self.browser_url = "https://ourworldindata.org/births-and-deaths".into();
                         self.go(Page::Browser);
