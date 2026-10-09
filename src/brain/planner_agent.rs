@@ -255,6 +255,7 @@ TOOL RESULT:
 
         Ok(Self {
             store,
+            language: crate::language::Language::English,
             page: crate::navigation::Page::Robot,
             search: String::new(),
             robot_input: String::new(),
