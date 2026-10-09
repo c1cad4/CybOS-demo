@@ -1,5 +1,23 @@
 use ed25519_dalek::{Signer, SigningKey};
 use serde::Serialize;
+use crate::store::Store;
+
+/// The seed is persisted in the existing local SQLite store. This is not an OS keychain;
+/// protect the user profile and database backups accordingly.
+pub(crate) fn load_or_create_key(store: &Store) -> Result<SigningKey, String> {
+    if let Some(encoded) = store.get("cybcore_ed25519_seed_hex") {
+        let bytes: [u8; 32] = hex::decode(encoded)
+            .map_err(|e| e.to_string())?
+            .try_into().map_err(|_| "invalid persisted key length")?;
+        return Ok(SigningKey::from_bytes(&bytes));
+    }
+    let mut seed = [0u8; 32];
+    getrandom::fill(&mut seed).map_err(|e| e.to_string())?;
+    let key = SigningKey::from_bytes(&seed);
+    store.set("cybcore_ed25519_seed_hex", &hex::encode(seed));
+    Ok(key)
+}
+
 
 #[derive(Serialize)]
 pub struct SignedCoreEvent {
