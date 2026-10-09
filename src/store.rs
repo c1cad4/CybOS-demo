@@ -179,7 +179,29 @@ impl Store {
     pub(crate) fn set(&self, key: &str, value: &str) {
         let _ = self.try_set(key, value);
     }
-    /// Atomically pin a Noise peer key on first contact and reject later key changes.
+    /// Check an existing peer pin without trusting or persisting a first-seen key.
+    /// Returns false when no key has been approved yet; mismatches fail closed.
+    pub(crate) fn secure_peer_key_is_pinned(&self, node_id: &str, public_key: &[u8]) -> Result<bool, String> {
+        if node_id.trim().is_empty() || node_id.len() > 128 {
+            return Err("secure peer id must contain 1-128 bytes".into());
+        }
+        if public_key.len() != 32 {
+            return Err("Noise peer public key must be exactly 32 bytes".into());
+        }
+
+        let key = format!("noise_peer_key:{node_id}");
+        let Some(stored) = self.get(&key) else {
+            return Ok(false);
+        };
+        let decoded = decode_exact_hex_key(&stored)
+            .ok_or_else(|| "stored secure peer identity pin is malformed".to_string())?;
+        if decoded.as_slice() != public_key {
+            return Err("Noise peer identity key changed".into());
+        }
+        Ok(true)
+    }
+
+    /// Atomically pin a Noise peer key only after the user approves first contact.
     /// Returns true when the exact key was already pinned, false when this call pinned it.
     pub(crate) fn pin_secure_peer_key(&self, node_id: &str, public_key: &[u8]) -> Result<bool, String> {
         if node_id.trim().is_empty() || node_id.len() > 128 {
