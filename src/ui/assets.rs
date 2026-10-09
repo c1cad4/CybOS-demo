@@ -7,6 +7,21 @@ impl CybOs {
     pub(crate) fn assets(&mut self, ui: &mut egui::Ui) {
         self.token_matrix(ui);
 
+        ui.add_space(12.0);
+        egui::Frame::new()
+            .fill(Color32::from_rgb(7, 25, 16))
+            .stroke(Stroke::new(1.0, Color32::from_rgb(28, 74, 48)))
+            .corner_radius(9)
+            .inner_margin(egui::Margin::same(13))
+            .show(ui, |ui| {
+                ui.label(RichText::new("CYBCORE · CYBWALLET").size(18.0).strong());
+                ui.label("PROPOSED UTILITY TOKEN · NOT DEPLOYED");
+                ui.label("Wallet: not connected · On-chain balance: unavailable");
+                ui.label("Planned uses: compute, encrypted storage, node services.");
+                ui.label("Robot spending: disabled by default; human approval required.");
+                ui.label(RichText::new("No mint address, real token, or transaction signing exists yet.").small().color(Color32::GRAY));
+            });
+
         ui.add_space(18.0);
         ui.separator();
         ui.add_space(10.0);
