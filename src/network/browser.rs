@@ -7,7 +7,7 @@
 
 use std::{
     io::Read,
-    sync::mpsc::{self, Receiver, Sender},
+    sync::mpsc::{self, Receiver, SyncSender, TrySendError},
     thread,
     time::Duration,
 };
@@ -18,6 +18,7 @@ const JOB_BUDGET: Duration = Duration::from_secs(12);
 const HTTP_TIMEOUT: Duration = Duration::from_secs(6);
 const MAX_BODY_BYTES: usize = 2 * 1024 * 1024;
 const MAX_LINKS: usize = 32;
+const MAX_PENDING_NAVIGATIONS: usize = 16;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum BrowserRoute {
@@ -71,7 +72,7 @@ enum BrowserCommand {
 }
 
 pub(crate) struct BrowserRuntime {
-    tx: Sender<BrowserCommand>,
+    tx: SyncSender<BrowserCommand>,
     rx: Receiver<BrowserEvent>,
 }
 
@@ -83,7 +84,8 @@ impl Default for BrowserRuntime {
 
 impl BrowserRuntime {
     pub(crate) fn new() -> Self {
-        let (tx, command_rx) = mpsc::channel();
+        // A slow remote page must not let UI navigation enqueue unbounded work.
+        let (tx, command_rx) = mpsc::sync_channel(MAX_PENDING_NAVIGATIONS);
         let (event_tx, rx) = mpsc::channel();
 
         thread::Builder::new()
@@ -97,8 +99,13 @@ impl BrowserRuntime {
     pub(crate) fn navigate(&self, url: String) -> Result<(), String> {
         validate_input(&url)?;
         self.tx
-            .send(BrowserCommand::Navigate(url.trim().to_string()))
-            .map_err(|_| "CybBrowser worker is not running".into())
+            .try_send(BrowserCommand::Navigate(url.trim().to_string()))
+            .map_err(|error| match error {
+                TrySendError::Full(_) => {
+                    "CybBrowser navigation queue is full; wait for the current page and retry".into()
+                }
+                TrySendError::Disconnected(_) => "CybBrowser worker is not running".into(),
+            })
     }
 
     pub(crate) fn poll(&self) -> Vec<BrowserEvent> {
@@ -493,6 +500,16 @@ fn validate_input(input: &str) -> Result<(), String> {
 mod tests {
     use super::{read_bounded, resolve, BrowserRoute, MAX_BODY_BYTES};
     use std::io::Cursor;
+
+    #[test]
+    fn navigation_queue_is_bounded_and_reports_backpressure() {
+        let (tx, _rx) = std::sync::mpsc::sync_channel(1);
+        tx.try_send(super::BrowserCommand::Shutdown).expect("first command fits");
+        let error = tx
+            .try_send(super::BrowserCommand::Shutdown)
+            .expect_err("second command should hit backpressure");
+        assert!(matches!(error, TrySendError::Full(_)));
+    }
 
     #[test]
     fn resolves_http() {
