@@ -1,0 +1,16 @@
+name: CybCore checks
+on:
+  pull_request:
+  push:
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Check server
+        working-directory: cybcore/server
+        run: cargo check --all-targets
+      - name: Unit tests
+        working-directory: cybcore/server
+        run: cargo test --lib --bins
