@@ -302,6 +302,66 @@ pub(crate) fn tr(language: Language, key: &str) -> &'static str {
             Language::Russian => "СОХРАНИТЬ",
             Language::Hindi => "सहेजें",
         },
+        (_, "public_identifiers") => match language {
+            Language::English => "◇ PUBLIC IDENTIFIERS",
+            Language::Chinese => "◇ 公共标识",
+            Language::Russian => "◇ ПУБЛИЧНЫЕ ИДЕНТИФИКАТОРЫ",
+            Language::Hindi => "◇ सार्वजनिक पहचानकर्ता",
+        },
+        (_, "physical_world") => match language {
+            Language::English => "PHYSICAL WORLD",
+            Language::Chinese => "现实世界",
+            Language::Russian => "ФИЗИЧЕСКИЙ МИР",
+            Language::Hindi => "भौतिक दुनिया",
+        },
+        (_, "digital_world") => match language {
+            Language::English => "DIGITAL WORLD",
+            Language::Chinese => "数字世界",
+            Language::Russian => "ЦИФРОВОЙ МИР",
+            Language::Hindi => "डिजिटल दुनिया",
+        },
+        (_, "copy") => match language {
+            Language::English => "COPY",
+            Language::Chinese => "复制",
+            Language::Russian => "КОПИРОВАТЬ",
+            Language::Hindi => "कॉपी करें",
+        },
+        (_, "system_subtitle") => match language {
+            Language::English => "NATIVE DESKTOP RUNTIME · NO BROWSER SHELL",
+            Language::Chinese => "原生桌面运行时 · 无浏览器外壳",
+            Language::Russian => "НАТИВНАЯ СРЕДА РАБОЧЕГО СТОЛА · БЕЗ БРАУЗЕРНОЙ ОБОЛОЧКИ",
+            Language::Hindi => "नेटिव डेस्कटॉप रनटाइम · ब्राउज़र शेल नहीं",
+        },
+        (_, "check_database") => match language {
+            Language::English => "CHECK DATABASE",
+            Language::Chinese => "检查数据库",
+            Language::Russian => "ПРОВЕРИТЬ БАЗУ",
+            Language::Hindi => "डेटाबेस जाँचें",
+        },
+        (_, "export_state") => match language {
+            Language::English => "EXPORT STATE",
+            Language::Chinese => "导出状态",
+            Language::Russian => "ЭКСПОРТ СОСТОЯНИЯ",
+            Language::Hindi => "स्थिति निर्यात करें",
+        },
+        (_, "copy_node_id") => match language {
+            Language::English => "COPY NODE ID",
+            Language::Chinese => "复制节点 ID",
+            Language::Russian => "КОПИРОВАТЬ ID УЗЛА",
+            Language::Hindi => "नोड ID कॉपी करें",
+        },
+        (_, "open_data_folder") => match language {
+            Language::English => "OPEN DATA FOLDER",
+            Language::Chinese => "打开数据文件夹",
+            Language::Russian => "ОТКРЫТЬ ПАПКУ ДАННЫХ",
+            Language::Hindi => "डेटा फ़ोल्डर खोलें",
+        },
+        (_, "write_system_event") => match language {
+            Language::English => "WRITE SYSTEM EVENT",
+            Language::Chinese => "写入系统事件",
+            Language::Russian => "ЗАПИСАТЬ СОБЫТИЕ СИСТЕМЫ",
+            Language::Hindi => "सिस्टम इवेंट लिखें",
+        },
         _ => "",
     }
 }
