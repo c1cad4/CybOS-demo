@@ -23,13 +23,14 @@ The System Core page currently samples host metrics every 2 seconds and retains 
 - OS network received/transmitted counters.
 - Highest available OS-reported temperature and the number of exposed sensors.
 - CPU/RAM sparklines, runtime-cell run counts, budgets, status and overruns.
+- Bounded worker execution traces with correlation IDs, start timestamps, elapsed duration, budget and final status (up to 100 active/recent tasks).
 - Export of telemetry history/current sample in the existing local JSON state export.
 
 Sampling is local-only. The module does not send telemetry to any service. History is bounded and in-memory unless the user explicitly exports a state file. Process CPU readings are OS snapshots and may fluctuate between samples. Network counters are OS counters, not per-cybOS traffic attribution.
 
 ## Known limitations (not yet implemented)
 
-- **Task/dispatcher detail:** runtime-cell tick metrics are available, but individual task queue wait, enqueue/dequeue timestamps, retry counts, cancellation reasons, worker CPU attribution, and per-task memory peaks need to be instrumented at the dispatch boundary.
+- **Task/dispatcher detail:** worker execution spans are now recorded from `WorkerContract` starts and finishes, but individual task queue wait, enqueue/dequeue timestamps, retry counts, cancellation reasons, worker CPU attribution, and per-task memory peaks still need instrumentation at the dispatch boundary.
 - **Video:** the current Cameras UI does not yet expose a connected decode pipeline. FPS, dropped frames, decode latency, buffer depth, codec, GPU video engine utilization, and VRAM are therefore not reported.
 - **Maps:** Offline Atlas currently inspects MBTiles archives. There is no map renderer/tile cache pipeline to measure yet; tile-cache hit rate, tile decode time, frame/render latency, and GPU draw cost should be added with the renderer.
 - **GPU/thermal:** portable GPU utilization, VRAM, fan speed, and component temperatures differ by OS and hardware. Add platform adapters (for example, macOS-specific APIs and supported Windows/Linux providers) and clearly label unsupported sensors. Never replace missing data with a simulated value.
