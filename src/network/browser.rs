@@ -7,7 +7,7 @@
 
 use std::{
     io::Read,
-    sync::mpsc::{self, Receiver, SyncSender, TrySendError},
+    sync::mpsc::{self, Receiver, Sender, SyncSender, TrySendError},
     thread,
     time::Duration,
 };
