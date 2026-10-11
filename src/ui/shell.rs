@@ -13,6 +13,7 @@ impl CybOs {
         self.poll_lan_scan();
         self.poll_secure_events();
         self.poll_secure_send();
+        self.vpn_setup.poll_diagnostics();
         self.poll_lan_send();
         self.poll_lan_events();
         self.poll_cyblex();

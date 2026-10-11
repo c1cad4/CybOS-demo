@@ -47,6 +47,7 @@ impl CybOs {
                 .color(dim),
         );
 
+        self.wireguard_setup_panel(ui);
         ui.add_space(10.0);
 
         egui::Frame::new()
@@ -348,5 +349,51 @@ impl CybOs {
 
             ui.add_space(6.0);
         }
+    }
+}
+
+impl CybOs {
+    fn wireguard_setup_panel(&mut self, ui: &mut egui::Ui) {
+        ui.group(|ui| {
+            ui.heading("Private device network · WireGuard");
+            ui.hyperlink_to("Official WireGuard installation", "https://www.wireguard.com/install/");
+            ui.label("Prepare a device profile and activate it in WireGuard. CLI diagnostics provide manual snapshots; App Store tunnels are not monitored.");
+            ui.label("This profile routes only the private device subnet; it does not set a default internet route or DNS.");
+            ui.separator();
+            if ui.button("Create / load device identity").clicked() { self.vpn_setup.create_identity(&self.store); }
+            if let Some(key) = &self.vpn_setup.public_key {
+                ui.label("Device public key — add this on the server");
+                ui.add(egui::Label::new(key).selectable(true).wrap());
+                if ui.button("Copy public key").clicked() { ui.ctx().copy_text(key.clone()); }
+            }
+            ui.collapsing("Import public device invitation", |ui| {
+                ui.add(egui::TextEdit::multiline(&mut self.vpn_setup.invitation_input).desired_rows(3).desired_width(f32::INFINITY).hint_text("Paste device-invitation.json; never paste private keys"));
+                if ui.button("Load public invitation").clicked() { self.vpn_setup.import_invitation(); }
+            });
+            ui.collapsing("Configure server and device", |ui| {
+                ui.label("Server endpoint (IP:UDP-port)");
+                let mut changed = ui.add(egui::TextEdit::singleline(&mut self.vpn_setup.profile.endpoint).hint_text("203.0.113.10:51820").desired_width(f32::INFINITY)).changed();
+                ui.label("Server public key — verify with the administrator");
+                changed |= ui.add(egui::TextEdit::singleline(&mut self.vpn_setup.profile.server_key).desired_width(f32::INFINITY)).changed();
+                ui.label("Unique device address (/32)"); changed |= ui.text_edit_singleline(&mut self.vpn_setup.profile.address).changed();
+                ui.label("Private device subnet (AllowedIPs)"); changed |= ui.text_edit_singleline(&mut self.vpn_setup.profile.network).changed();
+                if changed { self.vpn_setup.settings_changed(); }
+            });
+            ui.checkbox(&mut self.vpn_setup.server_verified, "I verified the server public key through a trusted channel");
+            let validation = self.vpn_setup.profile.validate();
+            if let Err(error) = &validation { ui.label(error); }
+            if ui.add_enabled(validation.is_ok() && self.vpn_setup.server_verified, egui::Button::new("Export WireGuard profile")).clicked() { self.vpn_setup.export(&self.store); }
+            ui.add(egui::Label::new(&self.vpn_setup.status).wrap());
+            if let Some(path) = &self.vpn_setup.export_path {
+                ui.label("Private config file: import locally, do not share.");
+                ui.add(egui::Label::new(path.display().to_string()).selectable(true).wrap());
+            }
+            ui.collapsing("CLI tunnel diagnostics", |ui| {
+                ui.label("Reads public keys and handshake timestamps only. App Store tunnels are not monitored by the CLI.");
+                if ui.add_enabled(self.vpn_setup.diagnostic_task.is_none(), egui::Button::new("Refresh WireGuard diagnostics")).clicked() { self.vpn_setup.start_diagnostics(); }
+                ui.add(egui::Label::new(&self.vpn_setup.diagnostic_status).wrap());
+            });
+            ui.label("No server yet? Create your device identity now; fill in the server fields later.");
+        });
     }
 }

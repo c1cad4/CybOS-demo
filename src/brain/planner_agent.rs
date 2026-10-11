@@ -253,6 +253,7 @@ TOOL RESULT:
         let store = crate::runtime::open_store();
         let lan_events = crate::network::lan::Listener::empty();
 
+        let vpn_setup = crate::network::vpn::Setup::load(&store);
         Ok(Self {
             store,
             page: crate::navigation::Page::Robot,
@@ -316,6 +317,7 @@ TOOL RESULT:
             camera_zone: 0,
             search_focus: false,
             last_scan: None,
+            vpn_setup,
             manual_peers: Vec::new(),
             manual_node_input: String::new(),
             manual_address_input: String::new(),
