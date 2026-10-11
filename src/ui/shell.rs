@@ -10,6 +10,9 @@ impl CybOs {
     pub(crate) fn shell_ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         self.runtime.tick();
         self.ensure_qwen();
+        self.poll_lan_scan();
+        self.poll_secure_events();
+        self.poll_secure_send();
         self.poll_lan_send();
         self.poll_lan_events();
         self.poll_cyblex();
@@ -18,7 +21,7 @@ impl CybOs {
         self.neon_theme(ui.ctx());
 
         let neon = Self::neon();
-        let dim = Color32::from_rgb(0, 100, 65);
+        let dim = Color32::from_rgb(105, 185, 145);
         let bg = Color32::from_rgb(2, 8, 6);
         let panel = Color32::from_rgb(4, 15, 10);
 
@@ -51,11 +54,9 @@ impl CybOs {
             .frame(egui::Frame::NONE.fill(bg).inner_margin(egui::Margin::symmetric(16, 10)))
             .show(ui, |ui| {
                 ui.horizontal_centered(|ui| {
-                    ui.label(RichText::new("CICADAFARM").size(13.0).strong().color(neon));
-                    ui.add_space(10.0);
+
                     ui.label(RichText::new("C Y B O S").size(20.0).strong().color(neon));
                     ui.add_space(10.0);
-                    ui.label(RichText::new("ROBOTCYB").size(13.0).strong().color(neon));
                     ui.add_space(18.0);
 
                     let (search_icon, _) =
@@ -80,19 +81,6 @@ impl CybOs {
                         self.apply_search();
                     }
 
-                    let (plus_icon, plus_resp) =
-                        ui.allocate_exact_size(Vec2::splat(22.0), egui::Sense::click());
-                    Self::paint_icon(ui.painter(), plus_icon.center(), Icon::Plus, neon, 16.0);
-                    if plus_resp.on_hover_text("Write a local event").clicked()
-                        || ui
-                            .add(egui::Button::new(RichText::new("+ EVENT").strong().color(neon)))
-                            .on_hover_text("Write a local event")
-                            .clicked()
-                    {
-                        self.add_event("USER", "Manual event created from cybOS");
-                        self.notify("EVENT WRITTEN");
-                    }
-
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         ui.label(
                             RichText::new(format!("• {}", self.qwen_status))
@@ -104,53 +92,21 @@ impl CybOs {
             });
 
         egui::Panel::left("cybos_left")
-            .exact_size(78.0)
-            .frame(egui::Frame::NONE.fill(panel))
+            .exact_size(170.0)
+            .frame(egui::Frame::NONE.fill(panel).inner_margin(10))
             .show(ui, |ui| {
-                ui.vertical_centered(|ui| {
-                    ui.add_space(10.0);
-                    let items = [
-                        (Page::Dashboard, "DASHBOARD"),
-                        (Page::Graph, "GRAPH"),
-                        (Page::Network, "NETWORK"),
-                        (Page::Radar, "RADAR"),
-                        (Page::Brain, "BRAIN"),
-                        (Page::Farm, "FARM"),
-                        (Page::Robot, "ROBOT"),
-                        (Page::Cameras, "CAMERAS"),
-                        (Page::System, "SYSTEM"),
-                        (Page::Assets, "TOKENS"),
-                        (Page::Chat, "CYBCHAT"),
-                        (Page::CybLex, "CYBLEX"),
-                        (Page::CybDex, "CYBDEX"),
-                        (Page::Browser, "CYBBROWSER"),
-                    ];
-                    for (page, tooltip) in items {
-                        if self.rail_icon(ui, page.icon(), tooltip, self.page == page) {
-                            self.go(page);
-                        }
-                    }
-                });
-            });
-
-        egui::Panel::right("cybos_right")
-            .exact_size(78.0)
-            .frame(egui::Frame::NONE.fill(panel))
-            .show(ui, |ui| {
-                ui.vertical_centered(|ui| {
-                    ui.add_space(10.0);
-                    let actions = [
-                        (Icon::Node, "LIVE NODE", Page::Dashboard),
-                        (Icon::Assets, "TOKENS", Page::Assets),
-                        (Icon::Energy, "ENERGY", Page::System),
-                        (Icon::Environment, "ENVIRONMENT", Page::Farm),
-                        (Icon::Activity, "ACTIVITY", Page::Dashboard),
-                    ];
-                    for (icon, tooltip, page) in actions {
-                        if self.rail_icon(ui, icon, tooltip, self.page == page) {
-                            self.go(page);
-                            if icon == Icon::Activity {
-                                self.notify("ACTIVITY LOG ON DASHBOARD");
+                egui::ScrollArea::vertical().show(ui, |ui| {
+                    for (heading, items) in [
+                        ("WORKSPACE", vec![(Page::Dashboard, "Home"), (Page::Chat, "Chat"), (Page::Robot, "Local assistant"), (Page::Brain, "Knowledge"), (Page::Graph, "Graph")]),
+                        ("DEVICES", vec![(Page::Network, "Network"), (Page::Radar, "Nearby devices"), (Page::System, "Diagnostics")]),
+                        ("TOOLS", vec![(Page::Browser, "Browser"), (Page::CybLex, "File archive"), (Page::CybDex, "Market data")]),
+                        ("PROJECT MODULES", vec![(Page::Farm, "Farm demo"), (Page::Cameras, "Cameras"), (Page::Assets, "Tokens")]),
+                    ] {
+                        ui.add_space(10.0);
+                        ui.label(RichText::new(heading).size(11.0).color(neon));
+                        for (page, label) in items {
+                            if ui.add_sized([ui.available_width(), 30.0], egui::Button::new(label).selected(self.page == page)).clicked() {
+                                self.go(page);
                             }
                         }
                     }
@@ -158,37 +114,13 @@ impl CybOs {
             });
 
         egui::Panel::bottom("cybos_bottom")
-            .exact_size(40.0)
+            .exact_size(30.0)
             .frame(egui::Frame::NONE.fill(bg))
             .show(ui, |ui| {
-                ui.horizontal_centered(|ui| {
-                    let bus = [
-                        ("LIVE NODE", Page::Dashboard),
-                        ("QWEN", Page::Brain),
-                        ("MEMORY", Page::Brain),
-                        ("GRAPH", Page::Graph),
-                        ("FARM", Page::Farm),
-                        ("ENERGY", Page::System),
-                        ("NETWORK", Page::Network),
-                        ("CHAT", Page::Chat),
-                    ];
-                    for (name, page) in bus {
-                        let active = self.page == page;
-                        let text = RichText::new(name).size(11.0).strong().color(if active {
-                            neon
-                        } else {
-                            dim
-                        });
-                        if ui.add(egui::Button::new(text).frame(false)).clicked() {
-                            self.go(page);
-                        }
-                        ui.label(RichText::new("·").size(12.0).color(dim));
-                    }
-                    ui.label(
-                        RichText::new(format!("v{}", APP_VERSION))
-                            .size(10.0)
-                            .color(dim),
-                    );
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new(format!("cybOS {}", APP_VERSION)).size(11.0).color(dim));
+                    ui.separator();
+                    ui.label(RichText::new(&self.node_id).size(11.0).color(dim));
                 });
             });
 

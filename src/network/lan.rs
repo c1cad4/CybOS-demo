@@ -428,7 +428,7 @@ impl crate::state::CybOs {
                 let target_still_exists = self
                     .lan_target
                     .as_deref()
-                    .map(|target| self.lan_peers.iter().any(|peer| peer.node_id == target))
+                    .map(|target| self.chat_peers().iter().any(|peer| peer.node_id == target))
                     .unwrap_or(false);
 
                 if !target_still_exists {

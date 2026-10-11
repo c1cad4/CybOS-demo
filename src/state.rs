@@ -88,6 +88,10 @@ pub(crate) struct CybOs {
 
     // Directed LAN communication
     pub(crate) last_scan: Option<Instant>,
+    pub(crate) manual_peers: Vec<crate::network::manual_peers::ManualPeer>,
+    pub(crate) manual_node_input: String,
+    pub(crate) manual_address_input: String,
+    pub(crate) manual_peer_status: String,
     pub(crate) lan_peers: Vec<crate::network::lan::LanPeer>,
     pub(crate) lan_scan: Option<std::sync::mpsc::Receiver<Vec<crate::network::lan::LanPeer>>>,
     pub(crate) lan_scan_contract: Option<crate::runtime::WorkerContract>,
@@ -157,6 +161,10 @@ impl Default for CybOs {
             .map(|e| format!("SECURE CHAT · UNAVAILABLE · {e}"))
             .unwrap_or_else(|| "SECURE CHAT · LISTENING · APPROVAL REQUIRED FOR NEW PEERS".into());
 
+        let (manual_peers, manual_peer_status) = match crate::network::manual_peers::load(&store) {
+            Ok(peers) => (peers, String::new()),
+            Err(error) => (Vec::new(), error),
+        };
         let mut app = Self {
             store,
             page: Page::Dashboard,
@@ -226,6 +234,10 @@ impl Default for CybOs {
             search_focus: false,
 
             last_scan: None,
+            manual_peers,
+            manual_node_input: String::new(),
+            manual_address_input: String::new(),
+            manual_peer_status,
             lan_peers: Vec::new(),
             lan_scan: None,
             lan_scan_contract: None,
@@ -547,7 +559,46 @@ impl CybOs {
         }
     }
 
+    pub(crate) fn chat_peers(&self) -> Vec<crate::network::lan::LanPeer> {
+        let mut peers: Vec<_> = self.manual_peers.iter().map(|p| crate::network::lan::LanPeer {
+            node_id: p.node_id.clone(), address: p.address.clone(), version: "manual".into(),
+            distance_m: None, last_seen: Instant::now(),
+        }).collect();
+        for peer in &self.lan_peers {
+            if !peers.iter().any(|p| p.node_id == peer.node_id) { peers.push(peer.clone()); }
+        }
+        peers
+    }
+    pub(crate) fn save_manual_chat_peer(&mut self) {
+        match crate::network::manual_peers::save(&self.store, &self.manual_peers, &self.node_id,
+            &self.manual_node_input, &self.manual_address_input) {
+            Ok(peers) => {
+                self.lan_target = Some(self.manual_node_input.trim().into());
+                self.manual_peers = peers;
+                self.manual_node_input.clear(); self.manual_address_input.clear();
+                self.manual_peer_status = "Device saved and selected. Verify its key before sending.".into();
+            }
+            Err(error) => self.manual_peer_status = error,
+        }
+    }
+    pub(crate) fn remove_manual_chat_peer(&mut self, node: &str) {
+        match crate::network::manual_peers::remove(&self.store, &self.manual_peers, node) {
+            Ok(peers) => {
+                self.manual_peers = peers;
+                if self.lan_target.as_deref() == Some(node) { self.lan_target = None; }
+                self.manual_peer_status = "Saved address removed. Identity approval retained.".into();
+            }
+            Err(error) => self.manual_peer_status = error,
+        }
+    }
+
+    pub(crate) fn check_secure_connection(&mut self) {
+        self.start_secure_chat("Identity check", true);
+    }
     pub(crate) fn send_secure_chat(&mut self, message: &str) {
+        self.start_secure_chat(message, false);
+    }
+    fn start_secure_chat(&mut self, message: &str, probe: bool) {
         if let Some(error) = &self.secure_startup_error {
             self.secure_status = format!("SECURE CHAT · UNAVAILABLE · {error}");
             return;
@@ -563,11 +614,11 @@ impl CybOs {
         }
 
         let Some(target_id) = self.lan_target.clone() else {
-            self.notify("SELECT A DISCOVERED LAN PEER FIRST");
+            self.notify("SELECT A DEVICE FIRST");
             return;
         };
 
-        let Some(peer) = self.lan_peers.iter().find(|p| p.node_id == target_id).cloned() else {
+        let Some(peer) = self.chat_peers().into_iter().find(|p| p.node_id == target_id) else {
             self.notify("SELECTED PEER IS NOT AVAILABLE");
             return;
         };
@@ -582,7 +633,8 @@ impl CybOs {
         };
         let (tx, rx) = std::sync::mpsc::channel();
         self.secure_send_task = Some(rx);
-        self.secure_outgoing_message = Some(message.clone());
+        self.secure_outgoing_message = if probe { None } else { Some(message.clone()) };
+        let expected_key = if probe { None } else { expected_key };
         let contract = crate::runtime::WorkerContract::new("CYBCHAT", std::time::Duration::from_secs(12));
         let worker_contract = contract.clone();
         self.secure_send_contract = Some(contract);
@@ -649,11 +701,16 @@ impl CybOs {
                         self.notify("ENCRYPTED MESSAGE DELIVERED");
                     }
                     crate::network::secure_chat::SecureSendStatus::NeedsTrust { peer_id, public_key } => {
-                        self.secure_status = match self.queue_secure_peer(peer_id, public_key) {
-                            Ok(()) => "SECURE CHAT · APPROVAL REQUIRED · MESSAGE NOT SENT".into(),
+                        let trust = crate::network::peer_trust::check_peer(&self.store, &peer_id, &public_key);
+                        self.secure_status = match &trust {
+                            Ok(true) if outgoing.is_none() => format!("SECURE CHAT · CONNECTION VERIFIED · {peer_id}"),
                             Err(error) => format!("SECURE CHAT · IDENTITY ERROR · {error}"),
+                            _ => match self.queue_secure_peer(peer_id, public_key) {
+                                Ok(()) => "SECURE CHAT · APPROVAL REQUIRED · MESSAGE NOT SENT".into(),
+                                Err(error) => format!("SECURE CHAT · IDENTITY ERROR · {error}"),
+                            },
                         };
-                        self.runtime.set_status("CYBCHAT", "ERROR");
+                        self.runtime.set_status("CYBCHAT", if matches!(trust, Ok(true)) { "READY" } else { "ERROR" });
                     }
                     crate::network::secure_chat::SecureSendStatus::Failed { message_id, peer_id, reason } => {
                         self.secure_status = format!("SECURE CHAT · FAILED · {}", reason);

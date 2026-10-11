@@ -9,7 +9,7 @@ impl CybOs {
 
         context.push_str("\nSYSTEM:\n");
         context.push_str(&format!(
-            "Node ID: {}\nStatus: {}\nTemperature: {:.1} C\nBattery: {:.0}%\n",
+            "Node ID: {}\nStatus: {}\nDemo temperature (no sensor): {:.1} C\nDemo battery (not measured): {:.0}%\n",
             self.node_id, self.status, self.temperature, self.battery
         ));
 

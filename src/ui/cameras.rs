@@ -68,7 +68,7 @@ impl CybOs {
                 painter.text(
                     rect.left_top() + egui::vec2(16.0, 16.0),
                     egui::Align2::LEFT_TOP,
-                    format!("CAM-{:02}  {}°C  NODE {}", self.camera_zone + 1, self.temperature as i32, &self.node_id[..8.min(self.node_id.len())]),
+                    format!("CAM-{:02}  DEMO {}°C  NODE {}", self.camera_zone + 1, self.temperature as i32, &self.node_id[..8.min(self.node_id.len())]),
                     egui::FontId::monospace(11.0),
                     dim,
                 );

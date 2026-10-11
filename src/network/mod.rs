@@ -22,3 +22,5 @@ pub mod vpn;
 pub mod browser;
 
 pub(crate) mod peer_trust;
+
+pub(crate) mod manual_peers;

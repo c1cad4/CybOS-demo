@@ -36,6 +36,7 @@ impl CybOs {
 
             ui.add_space(14.0);
 
+            ui.label("DEMO DATA · sensors are not connected");
             // FARM STATUS
             ui.horizontal(|ui| {
                 for (symbol, title, value) in [

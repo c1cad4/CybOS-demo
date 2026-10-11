@@ -190,37 +190,6 @@ impl CybOs {
         }
     }
 
-    pub(crate) fn rail_icon(&mut self, ui: &mut egui::Ui, icon: Icon, tooltip: &str, active: bool) -> bool {
-        let (rect, response) = ui.allocate_exact_size(Vec2::new(64.0, 54.0), egui::Sense::click());
-        let painter = ui.painter();
-        let pulse = ((ui.input(|i| i.time) * 2.4).sin() * 0.5 + 0.5) as f32;
-        let c = rect.center();
-        let color = if active {
-            Self::neon()
-        } else if response.hovered() {
-            Color32::from_rgb(90, 230, 160)
-        } else {
-            Color32::from_rgb(42, 120, 82)
-        };
-        if active {
-            painter.rect_filled(
-                egui::Rect::from_min_max(rect.left_top(), rect.left_bottom() + egui::vec2(3.0, 0.0)),
-                0.0,
-                Self::neon(),
-            );
-            painter.circle_stroke(
-                c,
-                20.0 + pulse * 1.6,
-                Stroke::new(1.1, Color32::from_rgba_unmultiplied(0, 255, 150, 90)),
-            );
-        } else if response.hovered() {
-            painter.circle_stroke(c, 19.0, Stroke::new(1.0, color));
-        }
-        Self::paint_icon(painter, c, icon, color, if active { 22.0 } else { 20.0 });
-        response.clone().on_hover_text(tooltip);
-        response.clicked()
-    }
-
     pub(crate) fn neon_theme(&self, ctx: &egui::Context) {
         let mut visuals = egui::Visuals::dark();
 
