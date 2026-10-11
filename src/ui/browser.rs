@@ -11,7 +11,13 @@ impl CybOs {
             #[cfg(target_os = "macos")]
             {
                 let result = std::env::current_exe().map_err(|e| e.to_string()).and_then(|exe| {
-                    std::process::Command::new(exe.parent().unwrap().join("cybos-browser"))
+                    let dir = exe.parent().ok_or("Не найден каталог приложения")?;
+                    let packaged = dir.parent().ok_or("Не найден каталог пакета")?.join("Resources/CybBrowser.app");
+                    let development = dir.join("CybBrowser.app");
+                    let bundle = if packaged.is_dir() { packaged } else { development };
+                    if !bundle.is_dir() { return Err("CybBrowser не собран. Запустите scripts/build_browser_macos.sh или используйте полный пакет CybOS".into()); }
+                    std::process::Command::new("/usr/bin/open")
+                        .args(["-n", "-a"]).arg(bundle).arg("--args")
                         .arg(self.browser_url.trim()).spawn().map(|_| ()).map_err(|e| e.to_string())
                 });
                 if let Err(error) = result { self.notify(format!("Не удалось открыть CybBrowser: {error}")); }

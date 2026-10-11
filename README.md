@@ -182,7 +182,7 @@ The native macOS application is usable now for a technically capable user who ca
 | Hardware / camera integrations | FUTURE LAYER |
 | P2P / Nostr fallback | FUTURE LAYER |
 
-For the current state, the honest estimate is **~95% for a technical/private beta** and **~90% for a public macOS beta**; the remaining work is primarily Apple signing/notarization and real two-Mac/recovery validation. The remaining gap is mainly Developer ID signing/notarization plus two-Mac and upgrade/recovery validation, not the core desktop architecture.
+Readiness is not expressed as a percentage. Signing/notarization, physical multi-device behavior and recovery remain acceptance work; successful compilation alone does not establish product readiness.
 
 ## Runtime stack status
 
@@ -218,3 +218,9 @@ The home screen provides direct links to chat, network, assistant, knowledge and
 ### Private device network preparation
 
 Network now prepares separate WireGuard device identities, imports public server invitations, validates private-subnet routing and exports private client profiles for the official WireGuard app. This stage does not activate a VPN. Read-only CLI diagnostics check matching public identities and handshake ages; App Store tunnels are not monitored. See [setup and validation](docs/WIREGUARD_DEVICE_NETWORK.md).
+
+### Current desktop workspace
+
+The home screen presents CybChat, CybBrowser, CybLex, knowledge, the local assistant and devices. Planned global synchronization, agent teams and encrypted USB profiles are not implemented.
+
+For a development macOS build, run `bash scripts/build_browser_macos.sh` after building Rust to package the WebKit companion next to the executable. Release packaging includes it automatically. CybBrowser opens in its own application window.
