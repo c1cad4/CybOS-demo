@@ -1,0 +1,190 @@
+{
+  "checked_at": "2026-10-11",
+  "note": "Snapshot for development planning; check current heads and CI before integration.",
+  "pull_requests": [
+    {
+      "number": 32,
+      "title": "CYBCORE ecosystem foundation: modules, contracts and roadmap",
+      "head": "feat/cyb-ecosystem-foundation",
+      "base": "feat/cybcore-server-foundation",
+      "url": "https://github.com/c1cad4/CybOS-demo/pull/32",
+      "sha": "da96e90c03d530e198ffd88c2b8b7c8ad5e88dac"
+    },
+    {
+      "number": 31,
+      "title": "CybCore: introduce optional self-hosted infrastructure foundation",
+      "head": "feat/cybcore-server-foundation",
+      "base": "main",
+      "url": "https://github.com/c1cad4/CybOS-demo/pull/31",
+      "sha": "e44a0cf8c06f92602d6b3fc16566d0119779d8c3"
+    },
+    {
+      "number": 30,
+      "title": "Introduce bounded local-first event foundation informed by Buzz",
+      "head": "feat/buzz-event-foundation",
+      "base": "main",
+      "url": "https://github.com/c1cad4/CybOS-demo/pull/30",
+      "sha": "3b19f2247857ba34b3b2572f6734d0d58da43bfa"
+    },
+    {
+      "number": 29,
+      "title": "Surface CybChat identity and listener startup failures",
+      "head": "fix/secure-listener-startup-errors",
+      "base": "feat/secure-peer-trust-approval-sha256",
+      "url": "https://github.com/c1cad4/CybOS-demo/pull/29",
+      "sha": "92874ac64c551b09490cbc481b9c4e8fb0b72266"
+    },
+    {
+      "number": 28,
+      "title": "Require explicit approval for first-contact CybChat peers",
+      "head": "feat/secure-peer-trust-approval-sha256",
+      "base": "fix/cryptographic-peer-fingerprints",
+      "url": "https://github.com/c1cad4/CybOS-demo/pull/28",
+      "sha": "eb07b5d43996fc2f0c84d63086cae87d9a5fd049"
+    },
+    {
+      "number": 26,
+      "title": "Use cryptographic fingerprints for CybChat peer identity",
+      "head": "fix/cryptographic-peer-fingerprints",
+      "base": "fix/secure-peer-key-persistence",
+      "url": "https://github.com/c1cad4/CybOS-demo/pull/26",
+      "sha": "a520f81f82df2e3f911ee2a7720fa099121310d9"
+    },
+    {
+      "number": 25,
+      "title": "Fail closed when secure peer identity pins cannot be persisted",
+      "head": "fix/secure-peer-key-persistence",
+      "base": "fix/propagate-store-write-errors",
+      "url": "https://github.com/c1cad4/CybOS-demo/pull/25",
+      "sha": "d3d7cb961263406dc6461ca8ab13a33dfe86c1ed"
+    },
+    {
+      "number": 24,
+      "title": "fix: harden secure identity and runtime health reporting",
+      "head": "fix/security-runtime-hardening",
+      "base": "main",
+      "url": "https://github.com/c1cad4/CybOS-demo/pull/24",
+      "sha": "48d0d6d3cca8bf475031d9dee5cae74100f22f3e"
+    },
+    {
+      "number": 23,
+      "title": "Test workflow state transition matrix",
+      "head": "test/workflow-transition-matrix",
+      "base": "feature/agent-work-economy-stack",
+      "url": "https://github.com/c1cad4/CybOS-demo/pull/23",
+      "sha": "024a995e4fa290b48c9112f1f23d466af064a5f4"
+    },
+    {
+      "number": 22,
+      "title": "Bound secure chat session admission atomically",
+      "head": "fix/secure-chat-session-admission",
+      "base": "fix/propagate-store-write-errors",
+      "url": "https://github.com/c1cad4/CybOS-demo/pull/22",
+      "sha": "a275c705670e15b762ab84b68ae08c7d72241e1d"
+    },
+    {
+      "number": 21,
+      "title": "Add local system telemetry and worker observability dashboard",
+      "head": "feature/system-telemetry-dashboard",
+      "base": "feature/agent-work-economy-stack",
+      "url": "https://github.com/c1cad4/CybOS-demo/pull/21",
+      "sha": "ffab55b4c22df68cbdd0e0c3bf6d7ba5f4ec50fa"
+    },
+    {
+      "number": 20,
+      "title": "Propagate SQLite write failures for Noise identity",
+      "head": "fix/propagate-store-write-errors",
+      "base": "fix/secure-chat-key-persistence",
+      "url": "https://github.com/c1cad4/CybOS-demo/pull/20",
+      "sha": "a22b7b76bec0d0c3d28117be813c4253750b94b9"
+    },
+    {
+      "number": 18,
+      "title": "Validate CybLex source links before queueing",
+      "head": "fix/cyblex-source-validation",
+      "base": "feature/agent-work-economy-stack",
+      "url": "https://github.com/c1cad4/CybOS-demo/pull/18",
+      "sha": "58919c586bb4ee0e1e9441e45f52426791d60f8d"
+    },
+    {
+      "number": 17,
+      "title": "Add backpressure to CYBDEX market requests",
+      "head": "fix/cybdex-backpressure",
+      "base": "feature/agent-work-economy-stack",
+      "url": "https://github.com/c1cad4/CybOS-demo/pull/17",
+      "sha": "f918e12d0a86bde5857fcfb5e03a369b3227e5d7"
+    },
+    {
+      "number": 16,
+      "title": "Preserve CYBChat node identity across restarts",
+      "head": "fix/secure-chat-key-persistence",
+      "base": "feature/agent-work-economy-stack",
+      "url": "https://github.com/c1cad4/CybOS-demo/pull/16",
+      "sha": "4ca6e20739896a0a1378a7e3a2691b8931a3b44c"
+    },
+    {
+      "number": 15,
+      "title": "Reject non-finite CYBDEX market values",
+      "head": "fix/cybdex-finite-market-values",
+      "base": "feature/agent-work-economy-stack",
+      "url": "https://github.com/c1cad4/CybOS-demo/pull/15",
+      "sha": "a06d4a1bfe4eb60083b22b78021e0dea4742d1a4"
+    },
+    {
+      "number": 14,
+      "title": "feat: add the first agent work and economy stack",
+      "head": "feature/agent-work-economy-stack",
+      "base": "main",
+      "url": "https://github.com/c1cad4/CybOS-demo/pull/14",
+      "sha": "e6015b3c8993f030f9572be1862ac4357ec4f92c"
+    },
+    {
+      "number": 13,
+      "title": "docs: define agent autonomy and economic self-sustainability",
+      "head": "design/agent-autonomy-economy",
+      "base": "main",
+      "url": "https://github.com/c1cad4/CybOS-demo/pull/13",
+      "sha": "b3bfcb486518c0920e9553a7d241a98954bbb1c6"
+    },
+    {
+      "number": 12,
+      "title": "Harden CybDEX market data and define a non-duplicating cybOS roadmap",
+      "head": "fix/market-data-validation",
+      "base": "main",
+      "url": "https://github.com/c1cad4/CybOS-demo/pull/12",
+      "sha": "ba9874d5a58b3c9777973077f15e96550c33d7da"
+    },
+    {
+      "number": 11,
+      "title": "Integrate and harden CybLex with embedded rqbit",
+      "head": "feature/cyblex-rqbit-integration",
+      "base": "main",
+      "url": "https://github.com/c1cad4/CybOS-demo/pull/11",
+      "sha": "53524c9d18ebf245d407773c30de48c6002a8387"
+    },
+    {
+      "number": 9,
+      "title": "feat: integrate CybLex rqbit, CybLaunch boundary and PumpFun reference",
+      "head": "feature/cyblex-cyblaunch-pumpfun-hardening",
+      "base": "main",
+      "url": "https://github.com/c1cad4/CybOS-demo/pull/9",
+      "sha": "6270d0a7c440f8241fb0938455bf434e4bc14e02"
+    },
+    {
+      "number": 3,
+      "title": "feat: implement authenticated encrypted CybChat wire protocol",
+      "head": "feat/secure-wire-envelope",
+      "base": "main",
+      "url": "https://github.com/c1cad4/CybOS-demo/pull/3",
+      "sha": "ab480398e45ade275f393fee96b5961c23ed5e14"
+    },
+    {
+      "number": 2,
+      "title": "feat: add bounded cells and cryptographic CybChat identity layer",
+      "head": "feat/secure-cybchat-cells",
+      "base": "main",
+      "url": "https://github.com/c1cad4/CybOS-demo/pull/2",
+      "sha": "bc938f4901fdbad09cc4243e5e93ce3c28905d22"
+    }
+  ]
+}

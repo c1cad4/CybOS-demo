@@ -1,3 +1,7 @@
 target/
 cybOS.app
 .DS_Store
+
+# Python setup tooling
+__pycache__/
+*.py[cod]

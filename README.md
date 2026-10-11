@@ -160,29 +160,14 @@ CybOS-demo/
 
 See the repository license configuration.
 
-## User readiness
+## Development readiness
 
-### Technical beta — READY
-
-The native macOS application is usable now for a technically capable user who can build/package it locally. The core desktop runtime, local persistence, RobotCYB/Qwen path, CYB RADAR, unified LAN+BLE proximity, encrypted CYBChat, TOFU identity, Cybergraph and Assets services are implemented and covered by Linux/macOS CI.
-
-### Public download — READY
-
-| Area | Status |
-|---|---|
-| Native macOS app | READY |
-| Persistence / graph / chat | READY |
-| RobotCYB + local Qwen | READY WITH LOCAL QWEN SETUP |
-| LAN + BLE Radar | READY / OPT-IN |
-| Noise XX secure chat | READY |
-| Worker budgets / lifecycle | READY |
-| macOS packaging | READY |
-| GitHub release publication | v0.7.1 published; v0.7.2 hardening release pending final publication |
-| Developer ID signing / notarization | NOT CONFIGURED |
-| Hardware / camera integrations | FUTURE LAYER |
-| P2P / Nostr fallback | FUTURE LAYER |
-
-For the current state, the honest estimate is **~95% for a technical/private beta** and **~90% for a public macOS beta**; the remaining work is primarily Apple signing/notarization and real two-Mac/recovery validation. The remaining gap is mainly Developer ID signing/notarization plus two-Mac and upgrade/recovery validation, not the core desktop architecture.
+The native desktop is a development beta. Current local checks and unresolved
+release blockers are tracked in [PRODUCT_READINESS.md](PRODUCT_READINESS.md).
+Secure-key persistence errors, listener startup reporting and peer trust need
+the existing hardening proposals to be reconciled with current main before a
+public readiness claim. Real two-Mac, upgrade/recovery, signing/notarization
+and torrent interoperability checks remain separate validations.
 
 ## Runtime stack status
 
@@ -206,3 +191,7 @@ A peer is not considered geographically located merely because BLE RSSI is avail
 
 Run `python3 scripts/bootstrap_components.py` before Cargo commands after a fresh clone.
 The ten sibling libraries are pinned in `components.lock.json`; existing checkouts are preserved.
+
+## Продолжение разработки
+
+[Карта и описания всех проектов](docs/REPOSITORY_MAP.md) · [Порядок интеграции и проверок](docs/DESKTOP_DEVELOPMENT.md).
