@@ -159,6 +159,26 @@ impl Store {
         Ok(true)
     }
 
+    /// Persist a user statement and its graph node together. A statement is not a verified fact.
+    pub(crate) fn capture_user_message(&self, message: &str) -> Result<bool, String> {
+        use sha2::{Digest, Sha256};
+        let text: String = message.trim().chars().take(8192).collect();
+        if text.is_empty() { return Ok(false); }
+        let id = format!("user-message:{:x}", Sha256::digest(text.as_bytes()));
+        let tx = self.conn.unchecked_transaction().map_err(|e|e.to_string())?;
+        let time = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        let inserted = tx.execute("INSERT OR IGNORE INTO memories(id,time,text,source,importance) VALUES(?1,?2,?3,'USER_MESSAGE',0.5)",params![id,time,text]).map_err(|e|e.to_string())?;
+        tx.execute("INSERT OR IGNORE INTO graph_nodes(id,label,kind,x,y) VALUES('user-knowledge','Мои сообщения и заметки','USER',0,0)",[]).map_err(|e|e.to_string())?;
+        let index: i64 = tx.query_row("SELECT COUNT(*) FROM graph_nodes", [], |r|r.get(0)).map_err(|e|e.to_string())?;
+        let angle = index as f64 * 2.399963;
+        let radius = 120.0 + (index as f64).sqrt() * 30.0;
+        let label: String = text.chars().take(48).collect();
+        tx.execute("INSERT OR IGNORE INTO graph_nodes(id,label,kind,x,y) VALUES(?1,?2,'USER_MESSAGE',?3,?4)",params![id,label,angle.cos()*radius,angle.sin()*radius]).map_err(|e|e.to_string())?;
+        tx.execute("INSERT OR IGNORE INTO graph_links(from_id,to_id,relation) VALUES('user-knowledge',?1,'написал')",[id]).map_err(|e|e.to_string())?;
+        tx.commit().map_err(|e|e.to_string())?;
+        Ok(inserted != 0)
+    }
+
     pub(crate) fn add_memory(&self, memory: &Memory) {
         let _ = self.conn.execute(
             "INSERT OR IGNORE INTO memories(id,time,text,source,importance)
@@ -301,12 +321,12 @@ impl Store {
             .prepare(
                 "SELECT who,text,mine
                  FROM chat_messages
-                 ORDER BY rowid ASC
+                 ORDER BY rowid DESC
                  LIMIT 500",
             )
             .unwrap();
 
-        st.query_map([], |r| {
+        let mut messages: Vec<_> = st.query_map([], |r| {
             let who: String = r.get(0)?;
             let text: String = r.get(1)?;
             let mine: i64 = r.get(2)?;
@@ -314,7 +334,9 @@ impl Store {
         })
         .unwrap()
         .filter_map(Result::ok)
-        .collect()
+        .collect();
+        messages.reverse();
+        messages
     }
 
     pub(crate) fn add_chat_message(&self, who: &str, text: &str, mine: bool) {
@@ -482,6 +504,16 @@ mod tests {
         store.test_execute("DROP TRIGGER deny_prune;");
         assert!(store.accept_secure_message("id-new", "node-a", "body").unwrap());
         assert_eq!(store.conn.query_row("SELECT COUNT(*) FROM secure_message_ids", [], |r| r.get::<_, i64>(0)).unwrap(), 1024);
+    }
+
+    #[test]
+    fn chat_reopen_keeps_latest_messages_in_chronological_order() {
+        let store = Store::test_store(":memory:");
+        for i in 0..505 { store.add_chat_message("YOU", &format!("message-{i}"), true); }
+        let messages = store.chat_messages();
+        assert_eq!(messages.len(), 500);
+        assert_eq!(messages.first().unwrap().1, "message-5");
+        assert_eq!(messages.last().unwrap().1, "message-504");
     }
 
     #[test]

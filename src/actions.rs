@@ -14,7 +14,7 @@ impl CybOs {
     pub(crate) fn go(&mut self, page: Page) {
         if self.page != page {
             self.page = page;
-            self.notify(format!("OPENED {}", page.title()));
+            self.notify(format!("Открыто: {}", page.title()));
         }
     }
 
@@ -25,7 +25,6 @@ impl CybOs {
             return;
         }
         let pages = [
-            Page::Dashboard,
             Page::Robot,
             Page::Farm,
             Page::Chat,
@@ -43,7 +42,7 @@ impl CybOs {
             return;
         }
         if q.contains("event") || q.contains("log") {
-            self.go(Page::Dashboard);
+            self.go(Page::System);
             return;
         }
         self.notify(format!("NO MATCH FOR “{}”", self.search.trim()));
@@ -58,6 +57,10 @@ impl CybOs {
         let who = who.into();
         let message = message.into();
 
+        if mine {
+            let learned = crate::conversations::GroupMessage::decode(&message).map(|m| m.text).unwrap_or_else(|| message.clone());
+            self.capture_user_knowledge(&learned);
+        }
         self.store.add_chat_message(&who, &message, mine);
         self.chat.push((who, message, mine));
 

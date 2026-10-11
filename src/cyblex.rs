@@ -31,12 +31,14 @@ pub(crate) struct CybLexTorrent {
     pub(crate) paused: bool,
     pub(crate) state: String,
     pub(crate) error: Option<String>,
+    pub(crate) videos: Vec<(usize, String)>,
 }
 
 pub(crate) enum CybLexEvent {
     Snapshot(Vec<CybLexTorrent>),
     Status(String),
     Error(String),
+    StreamReady { url: String, native: bool },
 }
 
 enum CybLexCommand {
@@ -45,6 +47,8 @@ enum CybLexCommand {
     Pause { id: usize },
     Resume { id: usize },
     Forget { id: usize, delete_files: bool },
+    Play { id: usize, file: usize },
+    StopPlayback,
     Shutdown,
 }
 
@@ -92,6 +96,13 @@ impl CybLexRuntime {
         self.tx
             .send(CybLexCommand::SeedPath { path })
             .map_err(|_| "CybLex worker is not running".to_string())
+    }
+
+    pub(crate) fn play(&self, id: usize, file: usize) -> Result<(), String> {
+        self.tx.send(CybLexCommand::Play { id, file }).map_err(|_| "CybLex недоступен".into())
+    }
+    pub(crate) fn stop_playback(&self) -> Result<(), String> {
+        self.tx.send(CybLexCommand::StopPlayback).map_err(|_| "CybLex недоступен".into())
     }
 
     pub(crate) fn pause(&self, id: usize) -> Result<(), String> {
@@ -152,6 +163,7 @@ fn run_worker(command_rx: Receiver<CybLexCommand>, event_tx: Sender<CybLexEvent>
         let mut session: Option<Arc<Session>> = None;
         let mut last_snapshot = tokio::time::Instant::now() - SNAPSHOT_INTERVAL;
         let mut running = true;
+        let mut playback: Option<crate::media_stream::StreamLease> = None;
 
         while running {
             loop {
@@ -203,7 +215,10 @@ fn run_worker(command_rx: Receiver<CybLexCommand>, event_tx: Sender<CybLexEvent>
                     Ok(CybLexCommand::SeedPath { path }) => {
                         if session.is_none() {
                             session = Some(
-                                Session::new(download_dir.clone())
+                                Session::new_with_opts(download_dir.clone(), SessionOptions {
+                                    persistence: Some(SessionPersistenceConfig::Json { folder: Some(persistence_dir.clone()) }),
+                                    ..Default::default()
+                                })
                                     .await
                                     .map_err(|e| format!("CybLex session init: {e:#}"))?,
                             );
@@ -302,6 +317,25 @@ fn run_worker(command_rx: Receiver<CybLexCommand>, event_tx: Sender<CybLexEvent>
                             }
                         }
                     }
+                    Ok(CybLexCommand::Play { id, file }) => {
+                        let Some(handle) = session.as_ref().and_then(|s| s.get(id.into())) else {
+                            let _ = event_tx_inner.send(CybLexEvent::Error("Торрент не найден".into())); continue;
+                        };
+                        let media = handle.metadata.load_full().and_then(|m| m.file_infos.get(file).map(|f| f.relative_filename.clone()));
+                        let Some(path) = media else { let _ = event_tx_inner.send(CybLexEvent::Error("Ожидаем список файлов".into())); continue; };
+                        let Some(mime) = crate::media_stream::video_mime(&path) else { let _ = event_tx_inner.send(CybLexEvent::Error("Выбери видеофайл".into())); continue; };
+                        if handle.is_paused() { if let Some(active) = &session { let _ = active.unpause(&handle).await; } }
+                        match crate::media_stream::start(handle, file, mime).await {
+                            Ok(lease) => {
+                                let url = lease.url.clone();
+                                playback = Some(lease);
+                                let native = matches!(mime, "video/mp4" | "video/quicktime");
+                                let _ = event_tx_inner.send(CybLexEvent::StreamReady { url, native });
+                            }
+                            Err(e) => { let _ = event_tx_inner.send(CybLexEvent::Error(e)); }
+                        }
+                    }
+                    Ok(CybLexCommand::StopPlayback) => { playback.take(); }
                     Ok(CybLexCommand::Shutdown) => {
                         running = false;
                         break;
@@ -315,6 +349,7 @@ fn run_worker(command_rx: Receiver<CybLexCommand>, event_tx: Sender<CybLexEvent>
             }
 
             if !running {
+                playback.take();
                 if let Some(active) = session.as_ref() {
                     let _ = active.stop().await;
                 }
@@ -340,6 +375,7 @@ fn run_worker(command_rx: Receiver<CybLexCommand>, event_tx: Sender<CybLexEvent>
                                 paused: torrent.is_paused(),
                                 state: format!("{:?}", stats.state),
                                 error: stats.error,
+                                videos: torrent.metadata.load_full().map(|m| m.file_infos.iter().enumerate().filter(|(_, f)| crate::media_stream::video_mime(&f.relative_filename).is_some()).map(|(id, f)| (id, f.relative_filename.to_string_lossy().into_owned())).collect()).unwrap_or_default(),
                             }
                         }).collect::<Vec<_>>()
                     }),
@@ -405,6 +441,7 @@ fn expand_tilde(path: &str) -> String {
 }
 
 fn default_download_dir() -> PathBuf {
+    if let Ok(root) = std::env::var("CYBOS_DATA_DIR") { return PathBuf::from(root).join("CybLex/downloads"); }
     std::env::var("HOME")
         .map(PathBuf::from)
         .unwrap_or_else(|_| PathBuf::from("."))
@@ -413,6 +450,7 @@ fn default_download_dir() -> PathBuf {
 }
 
 fn default_persistence_dir() -> PathBuf {
+    if let Ok(root) = std::env::var("CYBOS_DATA_DIR") { return PathBuf::from(root).join("CybLex/rqbit"); }
     std::env::var("HOME")
         .map(PathBuf::from)
         .unwrap_or_else(|_| PathBuf::from("."))

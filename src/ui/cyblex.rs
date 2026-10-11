@@ -5,10 +5,21 @@ use egui::{Color32, RichText, Stroke};
 impl CybOs {
     pub(crate) fn cyblex(&mut self, ui: &mut egui::Ui) {
         self.poll_cyblex();
+        if let Some(source) = crate::movie_catalog::show(ui, &self.store) {
+            self.cyblex_source = source;
+            self.notify("Источник выбран. Открой «Добавить загрузку» и подтверди скачивание");
+        }
+        ui.separator();
+        ui.heading("Моя библиотека");
+        ui.label("Перетащи сюда свой фильм, музыку или папку, чтобы подготовить раздачу.");
+        let dropped = ui.input(|i| i.raw.dropped_files.first().map(|f| f.path().to_path_buf()));
+        if let Some(path) = dropped { self.cyblex_seed_path = path.to_string_lossy().into_owned(); }
+
 
         let neon = Self::neon();
         let dim = Color32::from_rgb(55, 145, 105);
 
+        ui.collapsing("＋ Добавить загрузку или поделиться своими файлами", |ui| {
         egui::Frame::new()
             .fill(Color32::from_rgb(4, 16, 11))
             .stroke(Stroke::new(1.0, Color32::from_rgb(24, 100, 64)))
@@ -123,9 +134,11 @@ impl CybOs {
 
         ui.add_space(12.0);
 
+        });
+
         ui.horizontal(|ui| {
             ui.label(
-                RichText::new(&self.cyblex_status)
+                RichText::new(if self.cyblex_torrents.is_empty() { "Библиотека готова" } else { "Загрузки и раздачи активны" })
                     .size(10.0)
                     .strong()
                     .color(neon),
@@ -137,6 +150,10 @@ impl CybOs {
             );
         });
 
+        ui.horizontal(|ui| {
+            if ui.button("Остановить просмотр").clicked() { let _ = self.cyblex.stop_playback(); }
+            ui.add(egui::Label::new(&self.cyblex_status).wrap());
+        });
         ui.add_space(6.0);
 
         if self.cyblex_torrents.is_empty() {
@@ -149,6 +166,30 @@ impl CybOs {
             );
         }
 
+        ui.horizontal_wrapped(|ui| {
+            for torrent in self.cyblex_torrents.clone() {
+                egui::Frame::group(ui.style()).corner_radius(12).inner_margin(12).show(ui, |ui| {
+                    ui.set_width(160.0);
+                    ui.label(RichText::new("▶").size(36.0).color(neon));
+                    ui.label(RichText::new(&torrent.name).strong());
+                    ui.small(if torrent.finished { "Готово к просмотру" } else { "Загружается" });
+                    for (file, name) in &torrent.videos {
+                        if ui.button("▶ Смотреть сейчас").on_hover_text(name).clicked() {
+                            if let Err(e) = self.cyblex.play(torrent.id, *file) { self.cyblex_status = e; }
+                        }
+                    }
+                    if ui.add_enabled(torrent.finished,egui::Button::new("Открыть папку")).clicked() {
+                        #[cfg(target_os="macos")]
+                        let _ = std::process::Command::new("open").arg(&torrent.output_folder).spawn();
+                        #[cfg(target_os="windows")]
+                        let _ = std::process::Command::new("explorer").arg(&torrent.output_folder).spawn();
+                        #[cfg(target_os="linux")]
+                        let _ = std::process::Command::new("xdg-open").arg(&torrent.output_folder).spawn();
+                    }
+                });
+            }
+        });
+        ui.collapsing("Загрузки и раздачи · подробности", |ui| {
         for torrent in self.cyblex_torrents.clone() {
             let progress = if torrent.total_bytes == 0 {
                 0.0
@@ -176,14 +217,14 @@ impl CybOs {
                         );
 
                         if torrent.paused {
-                            if ui.button("RESUME").clicked() {
+                            if ui.button("Продолжить").clicked() {
                                 let _ = self.cyblex.resume(torrent.id);
                             }
-                        } else if ui.button("PAUSE").clicked() {
+                        } else if ui.button("Пауза").clicked() {
                             let _ = self.cyblex.pause(torrent.id);
                         }
 
-                        if ui.button("REMOVE").clicked() {
+                        if ui.button("Убрать из списка").clicked() {
                             let _ = self.cyblex.forget(torrent.id, false);
                         }
                     });
@@ -191,7 +232,7 @@ impl CybOs {
                     ui.add(
                         egui::ProgressBar::new(progress)
                             .text(format!(
-                                "{:.1}% · {} / {} bytes",
+                                "{:.1}% · {} / {} байт",
                                 progress * 100.0,
                                 torrent.progress_bytes,
                                 torrent.total_bytes
@@ -201,7 +242,7 @@ impl CybOs {
 
                     ui.horizontal_wrapped(|ui| {
                         ui.label(
-                            RichText::new(format!("UPLOADED · {} bytes", torrent.uploaded_bytes))
+                            RichText::new(format!("Отдано · {} байт", torrent.uploaded_bytes))
                                 .size(9.0)
                                 .color(dim),
                         );
@@ -211,9 +252,9 @@ impl CybOs {
                                 .color(dim),
                         );
 
-                        if ui.button("COPY MAGNET").clicked() {
+                        if ui.button("Поделиться ссылкой").clicked() {
                             ui.ctx().copy_text(torrent.magnet_uri.clone());
-                            self.notify("CYBLEX MAGNET COPIED");
+                            self.notify("Ссылка скопирована");
                         }
                     });
 
@@ -225,7 +266,7 @@ impl CybOs {
 
                     if torrent.finished {
                         ui.label(
-                            RichText::new("SEEDING / COMPLETE")
+                            RichText::new("Загружено · раздаётся")
                                 .size(9.0)
                                 .strong()
                                 .color(neon),
@@ -234,7 +275,7 @@ impl CybOs {
 
                     if let Some(error) = &torrent.error {
                         ui.label(
-                            RichText::new(format!("ERROR · {error}"))
+                            RichText::new(format!("Ошибка · {error}"))
                                 .size(9.0)
                                 .color(Color32::from_rgb(220, 120, 110)),
                         );
@@ -243,5 +284,6 @@ impl CybOs {
 
             ui.add_space(6.0);
         }
+        });
     }
 }

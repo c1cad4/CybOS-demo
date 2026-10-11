@@ -14,11 +14,11 @@ const LIMIT: usize = 32;
 fn validate(node: &str, address: &str) -> Result<ManualPeer, String> {
     let node = node.trim();
     if node.is_empty() || node.len() > 128 || node.chars().any(char::is_control) {
-        return Err("Enter a node ID (up to 128 characters).".into());
+        return Err("Введи ID устройства: до 128 символов.".into());
     }
-    let ip: Ipv4Addr = address.trim().parse().map_err(|_| "Enter an IPv4 address, for example 192.168.1.20.")?;
+    let ip: Ipv4Addr = address.trim().parse().map_err(|_| "Введи IPv4-адрес, например 192.168.1.20.")?;
     if ip.is_unspecified() || ip.is_multicast() || ip.is_broadcast() {
-        return Err("Use an individual device address.".into());
+        return Err("Укажи адрес конкретного устройства.".into());
     }
     Ok(ManualPeer { node_id: node.into(), address: ip.to_string() })
 }
@@ -36,11 +36,11 @@ pub(crate) fn load(store: &Store) -> Result<Vec<ManualPeer>, String> {
 }
 pub(crate) fn save(store: &Store, peers: &[ManualPeer], local: &str, node: &str, address: &str) -> Result<Vec<ManualPeer>, String> {
     let peer = validate(node, address)?;
-    if peer.node_id == local { return Err("Choose another device's node ID.".into()); }
+    if peer.node_id == local { return Err("Укажи ID другого устройства.".into()); }
     let mut updated = peers.to_vec();
     if let Some(existing) = updated.iter_mut().find(|p| p.node_id == peer.node_id) { *existing = peer; }
     else {
-        if updated.len() >= LIMIT { return Err("At most 32 devices can be saved.".into()); }
+        if updated.len() >= LIMIT { return Err("Можно сохранить до 32 друзей.".into()); }
         updated.push(peer);
     }
     persist(store, &updated)?;

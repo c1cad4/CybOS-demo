@@ -4,7 +4,6 @@
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Page {
-    Dashboard,
     Robot,
     Farm,
     Chat,
@@ -22,7 +21,6 @@ pub(crate) enum Page {
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Icon {
-    Dashboard,
     Graph,
     Network,
     Brain,
@@ -43,38 +41,38 @@ pub(crate) enum Icon {
 impl Page {
     pub(crate) fn title(self) -> &'static str {
         match self {
-            Page::Dashboard => "Главная",
             Page::Graph => "Граф знаний",
             Page::Network => "Устройства",
             Page::Radar => "Поиск устройств",
             Page::Brain => "Мозг",
             Page::Farm => "CICADAFARM",
             Page::Robot => "Агенты",
-            Page::System => "Диагностика",
+            Page::System => "Cyb Диспетчер",
             Page::Chat => "CybChat",
-            Page::Assets => "ASSETS",
+            Page::Assets => "Токены",
             Page::Cameras => "FARM CAMERAS",
             Page::CybLex => "CybLex",
-            Page::CybDex => "CYBDEX · MARKET",
+            Page::CybDex => "CybDEX",
             Page::Browser => "Браузер",
         }
     }
 
     pub(crate) fn description(self) -> &'static str {
         match self {
-            Self::Dashboard => "Ваше пространство для общения, знаний и работы с интернетом.",
             Self::Chat => "Переписывайтесь с подключёнными устройствами через CybChat.",
             Self::Brain | Self::Graph => {
                 "Сохраняйте знания локально и исследуйте связи между ними."
             }
             Self::Browser => {
-                "Читайте веб-страницы внутри CybOS. Полная анонимность не гарантируется."
+                "Ищите информацию и открывайте сайты в CybBrowser."
             }
             Self::CybLex => "Музыка, фильмы и файлы: загрузка и раздача через BitTorrent.",
             Self::Robot => "Поручите задачу локальному ИИ-помощнику.",
             Self::Network | Self::Radar => {
                 "Найдите устройства и подготовьте защищённое соединение."
             }
+            Self::CybDex => "Торговые пары, цены и свечной график. Обмен через Jupiter.",
+            Self::Assets => "Токены проекта и публичные адреса.",
             Self::System => "Состояние приложения и технические сведения.",
             _ => "Дополнительный модуль CybOS.",
         }
@@ -82,7 +80,6 @@ impl Page {
 
     pub(crate) fn icon(self) -> Icon {
         match self {
-            Page::Dashboard => Icon::Dashboard,
             Page::Graph => Icon::Graph,
             Page::Network => Icon::Network,
             Page::Radar => Icon::Network,
@@ -101,7 +98,6 @@ impl Page {
 
     pub(crate) fn matches_query(self, q: &str) -> bool {
         let keys = match self {
-            Page::Dashboard => "dashboard home главная core sigma live node activity",
             Page::Robot => "robot robotcyb agent agents qwen ai робот агенты помощник",
             Page::Farm => "farm cicadafarm hive chicken goat honey eggs environment ферма улей пасека",
             Page::Chat => "chat cybchat message peer чат",
@@ -114,7 +110,7 @@ impl Page {
             Page::CybLex => "cyblex сайблекс музыка фильмы файлы библиотека torrent archive bittorrent magnet seed share download p2p files",
             Page::CybDex => "cybdex dex market tokens pairs pools ohlcv candlestick price liquidity volume swap solana",
             Page::Browser => "browser браузер cybbrowser web web2 http https ipfs ipns arweave ar decentralized browser",
-            Page::System => "system energy battery node database",
+            Page::System => "system energy battery node database диспетчер телеметрия диагностика процессы",
         };
 
         if q.is_empty() {

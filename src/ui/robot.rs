@@ -7,13 +7,7 @@ impl CybOs {
         ui.label(RichText::new("Личный помощник").size(24.0).strong());
         ui.label("Объяснит сложное, поможет сформулировать идею или разобрать текст. Для ответов нужна работающая локальная модель.");
         ui.add_space(10.0);
-        ui.collapsing("Модель и состояние", |ui| {
-            ui.label(format!("Qwen: {}", self.qwen_status));
-            ui.label(&self.robot_status);
-            if ui.button("Настройка локального ИИ").clicked() {
-                self.go(crate::Page::Brain);
-            }
-        });
+        if ui.button("Настройка локального ИИ").clicked() { self.go(crate::Page::Brain); }
         ui.add_space(16.0);
         ui.label("Что нужно сделать?");
         ui.add(

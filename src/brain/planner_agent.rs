@@ -215,6 +215,8 @@ TOOL RESULT:
 
         match receiver.try_recv() {
             Ok(Ok(answer)) => {
+                self.nodes = self.store.graph_nodes();
+                self.links = self.store.graph_links();
                 self.robot_job = None;
                 if let Some(contract) = self.robot_contract.take() {
                     contract.finish("READY");

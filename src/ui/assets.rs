@@ -5,20 +5,22 @@ use egui::{Color32, RichText, Stroke};
 
 impl CybOs {
     pub(crate) fn assets(&mut self, ui: &mut egui::Ui) {
-        self.token_matrix(ui);
+        ui.label("Токены проекта и публичные адреса. Кошелёк пока не подключён: показанные демо-балансы не являются твоими средствами.");
+        if ui.button("Открыть CybDEX · найти торговую пару").clicked() { self.go(crate::Page::CybDex); }
+        ui.collapsing("Демо экономики проекта", |ui| { self.token_matrix(ui); });
 
         ui.add_space(18.0);
         ui.separator();
         ui.add_space(10.0);
 
         ui.heading(
-            RichText::new("◇ PUBLIC IDENTIFIERS")
+            RichText::new("Адреса токенов")
                 .strong()
                 .color(Self::green()),
         );
 
-        self.asset(ui, "$CICADAFARM", CICADAFARM_MINT, "PHYSICAL WORLD");
-        self.asset(ui, "$ROBOTCYB", ROBOTCYB_MINT, "DIGITAL WORLD");
+        self.asset(ui, "$CICADAFARM", CICADAFARM_MINT, "CicadaFarm");
+        self.asset(ui, "$ROBOTCYB", ROBOTCYB_MINT, "RobotCYB");
     }
 
     pub(crate) fn asset(&mut self, ui: &mut egui::Ui, name: &str, mint: &str, desc: &str) {
@@ -32,7 +34,7 @@ impl CybOs {
                 ui.label(desc);
                 ui.horizontal_wrapped(|ui| {
                     ui.label(RichText::new(mint).small().color(Color32::GRAY));
-                    if ui.button("COPY").clicked() {
+                    if ui.button("Копировать адрес").clicked() {
                         ui.ctx().copy_text(mint.into());
                         self.notify(format!("{} MINT COPIED", name));
                     }

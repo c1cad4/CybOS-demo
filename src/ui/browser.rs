@@ -1,16 +1,11 @@
 use crate::CybOs;
-use eframe::egui;
-use egui::{Color32, RichText, Stroke, Vec2};
+use eframe::egui::{self, RichText};
 
 impl CybOs {
-    pub(crate) fn browser(&mut self, ui: &mut egui::Ui) {
-        self.poll_browser();
-
-        ui.label("CybBrowser: сайты с JavaScript открываются в отдельном браузерном окне CybOS.");
-        if ui.button("Открыть CybBrowser · поиск и сайты").clicked() {
-            #[cfg(target_os = "macos")]
-            {
-                let result = std::env::current_exe().map_err(|e| e.to_string()).and_then(|exe| {
+    fn launch_cybbrowser(&mut self) {
+        #[cfg(target_os = "macos")]
+        {
+            let result = std::env::current_exe().map_err(|e| e.to_string()).and_then(|exe| {
                     let dir = exe.parent().ok_or("Не найден каталог приложения")?;
                     let packaged = dir.parent().ok_or("Не найден каталог пакета")?.join("Resources/CybBrowser.app");
                     let development = dir.join("CybBrowser.app");
@@ -20,214 +15,77 @@ impl CybOs {
                         .args(["-n", "-a"]).arg(bundle).arg("--args")
                         .arg(self.browser_url.trim()).spawn().map(|_| ()).map_err(|e| e.to_string())
                 });
-                if let Err(error) = result { self.notify(format!("Не удалось открыть CybBrowser: {error}")); }
+            if let Err(error) = result {
+                self.notify(format!("Не удалось открыть CybBrowser: {error}"));
             }
-            #[cfg(not(target_os = "macos"))]
-            self.notify("Браузерный движок пока доступен на macOS");
         }
-        ui.add_space(12.0);
-        let neon = Self::neon();
-        let dim = Color32::from_rgb(55, 145, 105);
-
-        egui::Frame::new()
-            .fill(Color32::from_rgb(4, 16, 11))
-            .stroke(Stroke::new(1.0, Color32::from_rgb(24, 100, 64)))
-            .corner_radius(12)
-            .inner_margin(egui::Margin::same(14))
-            .show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    ui.label(
-                        RichText::new("CYBBROWSER")
-                            .size(14.0)
-                            .strong()
-                            .color(neon),
-                    );
-                    ui.label(
-                        RichText::new("Чтение веб-страниц · без поддержки всех функций сайтов")
-                            .size(9.0)
-                            .color(dim),
-                    );
-                });
-
-                ui.add_space(8.0);
-
-                ui.horizontal(|ui| {
-                    let response = ui.add_sized(
-                        [(ui.available_width() - 90.0).max(80.0), 32.0],
-                        egui::TextEdit::singleline(&mut self.browser_url)
-                            .hint_text("Поиск или адрес сайта…"),
-                    );
-
-                    let open = ui
-                        .add(egui::Button::new(
-                            RichText::new("◈ OPEN")
-                                .strong()
-                                .color(neon),
-                        ))
-                        .clicked();
-
-                    if (response.lost_focus()
-                        && ui.input(|i| i.key_pressed(egui::Key::Enter)))
-                        || open
-                    {
-                        self.navigate_browser();
-                    }
-                });
-
-                ui.add_space(6.0);
-
-
-            });
-
-        ui.add_space(10.0);
-
-        egui::Frame::new()
-            .fill(Color32::from_rgb(5, 18, 13))
-            .stroke(Stroke::new(1.0, Color32::from_rgb(22, 80, 52)))
-            .corner_radius(10)
-            .inner_margin(egui::Margin::same(12))
-            .show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    ui.label(
-                        RichText::new(format!("ROUTE · {}", self.browser_route))
-                            .size(10.0)
-                            .strong()
-                            .color(neon),
-                    );
-                    ui.label(
-                        RichText::new(format!("STATUS · {}", self.browser_status))
-                            .size(10.0)
-                            .color(dim),
-                    );
-                });
-
-                ui.label(
-                    RichText::new(
-                        "No remote JavaScript is executed by this backend. Web2, IPFS/IPNS and Arweave are resolved as explicit protocol routes.",
-                    )
-                    .size(9.0)
-                    .color(dim),
-                );
-            });
-
-        ui.add_space(10.0);
-
-        egui::Frame::new()
-            .fill(Color32::from_rgb(3, 14, 10))
-            .stroke(Stroke::new(1.0, Color32::from_rgb(24, 90, 58)))
-            .corner_radius(12)
-            .inner_margin(egui::Margin::same(14))
-            .show(ui, |ui| {
-                let title = if self.browser_title.is_empty() {
-                    "NO DOCUMENT LOADED"
-                } else {
-                    self.browser_title.as_str()
-                };
-
-                ui.label(
-                    RichText::new(title)
-                        .size(16.0)
-                        .strong()
-                        .color(neon),
-                );
-
-                if !self.browser_resolved_url.is_empty() {
-                    ui.label(
-                        RichText::new(&self.browser_resolved_url)
-                            .size(9.0)
-                            .color(dim),
-                    );
-                }
-
-                ui.add_space(10.0);
-
-                if self.browser_text.is_empty() {
-                    ui.label(
-                        RichText::new(
-                            "Enter an address to load a document into the native CybBrowser backend.",
-                        )
-                        .size(11.0)
-                        .color(dim),
-                    );
-                } else {
-                    egui::ScrollArea::vertical()
-                        .max_height(420.0)
-                        .show(ui, |ui| {
-                            ui.label(
-                                RichText::new(&self.browser_text)
-                                    .size(11.0)
-                                    .color(Color32::from_rgb(195, 235, 212)),
-                            );
-                        });
-                }
-            });
-
-        if !self.browser_links.is_empty() {
-            ui.add_space(10.0);
-
-            egui::Frame::new()
-                .fill(Color32::from_rgb(4, 16, 11))
-                .stroke(Stroke::new(1.0, Color32::from_rgb(22, 72, 48)))
-                .corner_radius(10)
-                .inner_margin(egui::Margin::same(12))
-                .show(ui, |ui| {
-                    ui.label(
-                        RichText::new("LINKS · NATIVE ROUTER")
-                            .size(11.0)
-                            .strong()
-                            .color(neon),
-                    );
-                    ui.add_space(6.0);
-
-                    for link in self.browser_links.clone() {
-                        ui.horizontal(|ui| {
-                            if ui
-                                .add(egui::Button::new(
-                                    RichText::new(&link.label)
-                                        .size(9.0)
-                                        .color(neon),
-                                ))
-                                .clicked()
-                            {
-                                self.browser_url = link.url.clone();
-                                self.navigate_browser();
-                            }
-
-                            ui.label(
-                                RichText::new(link.url)
-                                    .size(8.0)
-                                    .color(dim),
-                            );
-                        });
-                        ui.add_space(3.0);
-                    }
-                });
-        }
-
-        ui.add_space(10.0);
-
-        ui.horizontal_wrapped(|ui| {
-            ui.label(
-                RichText::new(format!(
-                    "BROWSER CELL · {} · {}",
-                    self.browser_status,
-                    self.browser_document_bytes
-                        .map(|n| format!("{} bytes", n))
-                        .unwrap_or_else(|| "NO BODY".into())
-                ))
-                .size(9.0)
-                .color(neon),
+        #[cfg(not(target_os = "macos"))]
+        self.notify("Браузерный движок пока доступен на macOS");
+    }
+    pub(crate) fn browser(&mut self, ui: &mut egui::Ui) {
+        self.poll_browser();
+        ui.set_max_width(1100.0);
+        ui.add_space(22.0);
+        ui.label(
+            RichText::new("Куда отправимся сегодня?")
+                .size(30.0)
+                .strong()
+                .color(Self::neon()),
+        );
+        ui.label("Введи вопрос или адрес сайта — CybBrowser откроет результаты.");
+        ui.add_space(18.0);
+        ui.horizontal(|ui| {
+            let input = ui.add_sized(
+                [(ui.available_width() - 120.0).max(120.0), 42.0],
+                egui::TextEdit::singleline(&mut self.browser_url)
+                    .hint_text("Поиск или адрес сайта…"),
             );
-
-            ui.label(
-                RichText::new(
-                    "VPN status is reported honestly from the network layer; this browser does not fabricate a WireGuard connection.",
-                )
-                .size(8.0)
-                .color(dim),
-            );
+            if ui
+                .add_sized([110.0, 42.0], egui::Button::new("Найти"))
+                .clicked()
+                || (input.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)))
+            {
+                self.launch_cybbrowser();
+            }
         });
-
-        let _ = Vec2::ZERO;
+        ui.add_space(12.0);
+        ui.horizontal_wrapped(|ui| {
+            for (label, url) in [
+                ("Поиск", "https://duckduckgo.com"),
+                ("Википедия", "https://ru.wikipedia.org"),
+                ("Видео", "https://www.youtube.com"),
+            ] {
+                if ui.button(label).clicked() {
+                    self.browser_url = url.into();
+                    self.launch_cybbrowser();
+                }
+            }
+        });
+        ui.add_space(22.0);
+        ui.collapsing("Режим чтения внутри CybOS", |ui| {
+            ui.label("Только текст и ссылки. Для интерактивных сайтов используй кнопку «Найти».");
+            if ui.button("Прочитать страницу").clicked() {
+                self.navigate_browser();
+            }
+            ui.label(&self.browser_status);
+            if !self.browser_text.is_empty() {
+                ui.heading(&self.browser_title);
+                egui::ScrollArea::vertical()
+                    .max_height(300.0)
+                    .show(ui, |ui| {
+                        ui.label(&self.browser_text);
+                    });
+                ui.collapsing("Ссылки на странице", |ui| {
+                    for link in self.browser_links.clone() {
+                        if ui.button(&link.label).clicked() {
+                            self.browser_url = link.url;
+                            self.navigate_browser();
+                        }
+                    }
+                });
+            }
+        });
+        ui.add_space(18.0);
+        ui.small("Сеанс CybBrowser не сохраняет cookies между запусками. Сеть и система могут видеть активность.");
     }
 }

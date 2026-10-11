@@ -34,7 +34,7 @@ impl CybOs {
             return "Запомнил. Данные обработаны и сохранены в Knowledge Graph и локальной памяти cybOS.".into();
         }
 
-        let conversation = self.conversation_context(q);
+        let conversation = format!("{}\n{}", self.conversation_context(q), self.build_brain_context(q));
 
         // ----------------------------------------------------
         // Direct web path:

@@ -1,4 +1,3 @@
-pub mod dashboard;
 pub mod cyblex;
 pub mod cybdex;
 pub mod browser;
@@ -12,3 +11,7 @@ pub mod cameras;
 pub mod assets;
 pub mod system;
 pub mod shell;
+
+mod telemetry;
+
+mod technical_chart;
