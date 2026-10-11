@@ -46,6 +46,15 @@ impl CybOs {
             return;
         }
         let delivered = job.results.iter().filter(|(_, r)| r.is_ok()).count();
+        if delivered > 0 && delivered == job.results.len() {
+            let conversation = format!("group:{}", job.message.group.id);
+            if let Some(mut view) = ctx.data(|d| d.get_temp::<ChatView>(view_id())) {
+                if view.draft_for == conversation && self.chat_input.trim() == job.message.text { self.chat_input.clear(); }
+                if view.drafts.get(&conversation).is_some_and(|draft| draft.trim() == job.message.text) { view.drafts.remove(&conversation); }
+                ctx.data_mut(|d| d.insert_temp(view_id(), view));
+            }
+        }
+
         if delivered > 0 {
             if let Ok(wire) = job.message.encode() {
                 self.push_chat_message(format!("YOU → GROUP:{}", job.message.group.id), wire, true);
@@ -330,14 +339,14 @@ impl CybOs {
                 });
                 ui.add(egui::TextEdit::multiline(&mut self.chat_input).desired_rows(2).desired_width(f32::INFINITY).hint_text("Напиши сообщение…"));
                 let group_busy = ui.ctx().data(|d| d.get_temp::<GroupDelivery>(delivery_id()).is_some());
-                let busy = group_busy || self.secure_send_task.is_some() || (peer.is_none() && group.is_none() && self.robot_job.is_some());
+                let busy = (group.is_some() && group_busy) || (peer.is_some() && self.secure_send_task.is_some()) || (peer.is_none() && group.is_none() && self.robot_job.is_some());
                 let route_ready = peer.as_ref().is_none_or(|id| self.chat_peers().iter().any(|p| &p.node_id == id));
                 let transport_ready = (peer.is_none() && group.is_none()) || self.secure_startup_error.is_none();
                 ui.horizontal(|ui| {
                     if ui.add_enabled(!busy && route_ready && transport_ready && !self.chat_input.trim().is_empty(), egui::Button::new(if busy { "Отправляется…" } else { "Отправить" })).clicked() {
                         let text = self.chat_input.trim().to_owned();
                         if let Some(group) = &group {
-                            match self.send_group_message(ui.ctx(), group, &text) { Ok(()) => { self.chat_input.clear(); view.error.clear(); }, Err(e) => view.error = e }
+                            match self.send_group_message(ui.ctx(), group, &text) { Ok(()) => { view.error.clear(); }, Err(e) => view.error = e }
                         } else if peer.is_some() { self.send_secure_chat(&text); }
                         else { self.push_chat_message("YOU", text.clone(), true); let _ = self.start_robot_job(text); self.chat_input.clear(); }
                     }
