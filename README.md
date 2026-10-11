@@ -214,3 +214,7 @@ The ten sibling libraries are pinned in `components.lock.json`; existing checkou
 ### Workspace and device chat
 
 The home screen provides direct links to chat, network, assistant, knowledge and diagnostics, with current runtime and database status. Farm counters are demonstration data, not live sensor readings. CybChat supports saved IPv4 addresses, explicit key approval, connection checks without sending message content, and separate assistant/device actions. See [secure chat](docs/SECURE_CHAT.md).
+
+### Private device network preparation
+
+Network now prepares separate WireGuard device identities, imports public server invitations, validates private-subnet routing and exports private client profiles for the official WireGuard app. This stage does not activate a VPN. Read-only CLI diagnostics check matching public identities and handshake ages; App Store tunnels are not monitored. See [setup and validation](docs/WIREGUARD_DEVICE_NETWORK.md).

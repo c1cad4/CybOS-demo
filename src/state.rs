@@ -88,6 +88,7 @@ pub(crate) struct CybOs {
 
     // Directed LAN communication
     pub(crate) last_scan: Option<Instant>,
+    pub(crate) vpn_setup: crate::network::vpn::Setup,
     pub(crate) manual_peers: Vec<crate::network::manual_peers::ManualPeer>,
     pub(crate) manual_node_input: String,
     pub(crate) manual_address_input: String,
@@ -165,6 +166,7 @@ impl Default for CybOs {
             Ok(peers) => (peers, String::new()),
             Err(error) => (Vec::new(), error),
         };
+        let vpn_setup = crate::network::vpn::Setup::load(&store);
         let mut app = Self {
             store,
             page: Page::Dashboard,
@@ -234,6 +236,7 @@ impl Default for CybOs {
             search_focus: false,
 
             last_scan: None,
+            vpn_setup,
             manual_peers,
             manual_node_input: String::new(),
             manual_address_input: String::new(),

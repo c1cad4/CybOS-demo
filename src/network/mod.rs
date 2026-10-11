@@ -24,3 +24,5 @@ pub mod browser;
 pub(crate) mod peer_trust;
 
 pub(crate) mod manual_peers;
+
+pub(crate) mod vpn_diagnostics;
