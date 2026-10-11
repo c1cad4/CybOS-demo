@@ -15,7 +15,7 @@
 - ИИ: durable run lifecycle с UUID/хешем запроса и отсутствие автоматического replay после прерывания. Не полный LangGraph runtime; инструменты майнинга, переводов средств и изменения маршрутов агенту не добавлены.
 - Cyb Диспетчер: собственная read-only таблица процессов, CPU/RSS, фильтр, ограниченный фоновый сбор. В sandbox ps запрещён; приложение отображает ошибку, а не фиктивные данные.
 - CybRadar: реальный формат dump1090 aircraft.json, ручной импорт/opt-in loopback fetch, source timestamp, age и проверка координат. SDR hardware, Stratux и AIS ещё не подключены.
-- Рыночная аналитика: отдельный CCXT public-data exporter и tests OHLCV. Existing DEX candles остаются на текущем provider. Cross-chain сделки CybHero ещё не работают: сети и ликвидности нет.
+- Рыночная аналитика: отдельный CCXT public-data exporter и tests OHLCV. Проверен экспорт 200 BTC/USD свечей Kraken без ключей и сделок; existing DEX candles остаются на текущем provider. Cross-chain сделки CybHero ещё не работают: сети и ликвидности нет.
 - CybHero: отдельный development scaffold, фиксированный исходник Monero, mining launch policy и документ постквантовой миграции. Mainnet, собственные consensus patches, wallet и реальный miner ещё не созданы.
 
 ## Общая архитектура
@@ -209,7 +209,7 @@ Client Marzban/Xray с process manager и собственной GPLv3 attributi
 
 ### 28. [ccxt/ccxt](https://github.com/ccxt/ccxt) — Read-only market data adapter
 
-MIT; public OHLCV через exchange adapters, rate limiting и нормализация market identity. Добавлен отдельный Python tools/read_only_markets.py с optional pin 4.5.85, allowlist бирж и строгой проверкой свечей. Кошельки и orders не подключаются. CCXT не листит CybHero автоматически и не заменяет on-chain ликвидность. Live exchange API и импорт его данных в график ещё не проверены.
+MIT; public OHLCV через exchange adapters, rate limiting и нормализация market identity. Добавлен отдельный Python tools/read_only_markets.py с optional pin 4.5.85, allowlist бирж и строгой проверкой свечей. Кошельки и orders не подключаются. CCXT не листит CybHero автоматически и не заменяет on-chain ликвидность. Проверен live экспорт 200 часовых свечей BTC/USD через Kraken public API; импорт в текущий график и другие exchange adapters ещё не проверены.
 
 Лицензия: MIT. Архив: False. Ревизия дерева/снимка: `f0aca06eb7482f083bed8406fadfcc0c05e45b1c`. Просмотренные файлы: `LICENSE.txt`, `README.md`, `package.json`, `pyproject.toml`, `go/v4/exchange.go`, `dist/ccxt.browser.js`, `go/v4/exchange_io.go`, `ts/src/base/Exchange.ts`.
 
