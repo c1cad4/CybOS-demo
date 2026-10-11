@@ -1,9 +1,6 @@
 use crate::CybOs;
-use crate::models::Memory;
-use chrono::Local;
 use eframe::egui;
 use egui::{Color32, RichText, Stroke, Vec2};
-use uuid::Uuid;
 use std::process::Command;
 
 impl CybOs {
@@ -18,13 +15,6 @@ impl CybOs {
         );
         if ui.button("Открыть граф знаний").clicked() { self.go(crate::Page::Graph); }
         ui.add_space(10.0);
-        egui::Grid::new("brain").num_columns(4).spacing([10.0, 8.0]).show(ui, |ui| {
-            self.card(ui, "MEMORY", &format!("{}", memories.len()));
-            self.card(ui, "GRAPH", &format!("{}N", self.nodes.len()));
-            self.card(ui, "QWEN", if self.qwen_status.contains("ONLINE") { "ONLINE" } else { "STANDBY" });
-            self.card(ui, "EVENTS", &format!("{}", self.events.len()));
-            ui.end_row();
-        });
         ui.add_space(12.0);
         if !self.qwen_status.contains("ONLINE") {
             egui::Frame::new()
@@ -62,39 +52,34 @@ impl CybOs {
             .corner_radius(12)
             .inner_margin(egui::Margin::same(12))
             .show(ui, |ui| {
-                ui.label(RichText::new("WRITE TO LOCAL MEMORY").size(11.0).strong().color(neon));
+                ui.label(RichText::new("Добавить знание").size(11.0).strong().color(neon));
                 ui.add_space(6.0);
                 ui.horizontal(|ui| {
                     ui.add(
                         egui::TextEdit::singleline(&mut self.remember_note)
-                            .hint_text("A fact cybOS should keep…")
+                            .hint_text("Что стоит запомнить…")
                             .desired_width(ui.available_width() - 130.0),
                     );
                     if ui
-                        .add(egui::Button::new(RichText::new("STORE").strong().color(neon)).min_size(Vec2::new(110.0, 30.0)))
+                        .add(egui::Button::new(RichText::new("Запомнить").strong().color(neon)).min_size(Vec2::new(110.0, 30.0)))
                         .clicked()
                     {
                         let note = self.remember_note.trim().to_string();
                         if !note.is_empty() {
-                            self.store.add_memory(&Memory {
-                                id: Uuid::new_v4().to_string(),
-                                time: Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
-                                text: note.clone(),
-                                source: "BRAIN".into(),
-                                importance: 0.7,
-                            });
+                            self.capture_user_knowledge(&note);
+
                             self.remember_note.clear();
                             self.add_event("BRAIN", format!("Stored memory: {}", note));
-                            self.notify("MEMORY STORED");
+                            self.notify("MEMORY ЗапомнитьD");
                         }
                     }
                 });
             });
         ui.add_space(10.0);
-        ui.label(RichText::new("RECENT MEMORY").size(11.0).strong().color(neon));
+        ui.label(RichText::new("Недавние знания").size(11.0).strong().color(neon));
         egui::ScrollArea::vertical().max_height(280.0).show(ui, |ui| {
             if memories.is_empty() {
-                ui.label(RichText::new("No stored memories yet. Write one above.").color(dim));
+                ui.label(RichText::new("Пока пусто. Добавь заметку или напиши сообщение в чате.").color(dim));
             }
             for m in memories.iter().take(40) {
                 egui::Frame::new()

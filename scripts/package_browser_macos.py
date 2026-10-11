@@ -4,6 +4,7 @@ import argparse
 from pathlib import Path
 import plistlib
 import shutil
+from build_app_icon import build as build_icon
 
 
 def package(binary, output):
@@ -14,8 +15,10 @@ def package(binary, output):
     executable.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(binary, executable)
     executable.chmod(0o755)
+    build_icon(output / 'Contents/Resources/CybOS.icns')
     (output / 'Contents/Info.plist').write_bytes(plistlib.dumps({
         'CFBundleIdentifier': 'to.cicada.cybos.browser',
+        'CFBundleIconFile': 'CybOS.icns',
         'CFBundleName': 'CybBrowser',
         'CFBundleDisplayName': 'CybBrowser',
         'CFBundleExecutable': 'cybos-browser',

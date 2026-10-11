@@ -1,5 +1,10 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod brand;
+mod conversations;
+mod movie_catalog;
+mod media_stream;
+mod torrent_indexer;
 mod models;
 mod store;
 
@@ -23,6 +28,7 @@ mod shell;
 mod state;
 mod stacks;
 mod theme;
+mod technical_analysis;
 mod ui;
 
 #[cfg(test)]
@@ -37,6 +43,8 @@ fn main() -> eframe::Result {
     let opts = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title("CybOS — личное пространство")
+            .with_fullscreen(true)
+            .with_icon(brand::window_icon())
             .with_inner_size([1320.0, 840.0])
             .with_min_inner_size([1000.0, 680.0]),
         ..Default::default()

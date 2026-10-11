@@ -1,3 +1,8 @@
 target/
 cybOS.app
 .DS_Store
+
+# Local verification artifacts and Python bytecode
+work/
+__pycache__/
+*.py[cod]

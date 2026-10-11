@@ -4,6 +4,14 @@ use crate::CybOs;
 use crate::models::{GraphLink, GraphNode};
 
 impl CybOs {
+    pub(crate) fn capture_user_knowledge(&mut self, message: &str) {
+        match self.store.capture_user_message(message) {
+            Ok(true) => { self.nodes = self.store.graph_nodes(); self.links = self.store.graph_links(); },
+            Ok(false) => {},
+            Err(error) => self.notify(format!("Не удалось сохранить знание: {error}")),
+        }
+    }
+
 pub(crate) fn add_graph_node(&mut self, id: &str, label: &str, kind: &str) -> bool {
         if self.nodes.iter().any(|n| n.id == id) {
             return false;

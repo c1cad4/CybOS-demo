@@ -2063,6 +2063,7 @@ version = "0.1.0"
 name = "cybos"
 version = "0.7.2"
 dependencies = [
+ "axum",
  "base64 0.22.1",
  "chrono",
  "corebluetooth",
@@ -2077,7 +2078,9 @@ dependencies = [
  "eframe",
  "egui",
  "embedded-hal",
+ "image",
  "immunocybchain",
+ "libc",
  "librqbit",
  "robotcyb-core",
  "rppal",
@@ -2089,6 +2092,7 @@ dependencies = [
  "snow",
  "switchboard-on-demand",
  "tokio",
+ "tokio-util",
  "ureq",
  "uuid",
 ]
@@ -3949,6 +3953,8 @@ dependencies = [
  "num-traits",
  "png",
  "tiff",
+ "zune-core",
+ "zune-jpeg",
 ]
 
 [[package]]
@@ -10590,6 +10596,7 @@ dependencies = [
  "bytes",
  "futures-core",
  "futures-sink",
+ "futures-util",
  "libc",
  "pin-project-lite",
  "tokio",

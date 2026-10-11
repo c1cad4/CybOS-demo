@@ -570,6 +570,30 @@ mod tests {
     }
 
     #[test]
+    fn group_invitation_is_transported_and_committed_with_authenticated_sender() {
+        let sender = Builder::new(PATTERN.parse().unwrap()).generate_keypair().unwrap();
+        let receiver = Builder::new(PATTERN.parse().unwrap()).generate_keypair().unwrap();
+        let store = crate::store::Store::test_store(":memory:");
+        store.approve_secure_peer("alice", &sender.public).unwrap();
+        let group = crate::conversations::Group { id: uuid::Uuid::new_v4().to_string(), title: "Друзья".into(), creator: "alice".into(), members: vec!["alice".into(), "bob".into()] };
+        let message = crate::conversations::GroupMessage { id: uuid::Uuid::new_v4().to_string(), group: group.clone(), text: "Привет группе".into() }.encode().unwrap();
+        let socket = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let port = socket.local_addr().unwrap().port();
+        let listener = spawn_listener_socket("bob".into(), receiver.private, Ok(socket)).unwrap();
+        let task = thread::spawn(move || send_on_port("alice", "bob", "127.0.0.1", port, &sender.private, Some(&receiver.public), &message));
+        let SecureEvent::Received { message_id, node_id, message, public_key, reply, .. } = listener.events.recv_timeout(Duration::from_secs(3)).unwrap();
+        assert!(super::super::peer_trust::check_peer(&store, &node_id, &public_key).unwrap());
+        let decoded = crate::conversations::GroupMessage::decode(&message).unwrap();
+        assert!(decoded.invitation("bob", &node_id));
+        assert!(decoded.accepted(&group, "bob", &node_id));
+        assert!(store.accept_secure_message(&message_id, &node_id, &message).unwrap());
+        reply.send(SecureReply::Ack).unwrap();
+        assert!(matches!(task.join().unwrap(), SecureSendStatus::Delivered { .. }));
+        assert_eq!(store.chat_messages()[0].0, "CYB:alice");
+        assert_eq!(crate::conversations::GroupMessage::decode(&store.chat_messages()[0].1).unwrap().text, "Привет группе");
+    }
+
+    #[test]
     fn trickling_frame_cannot_extend_absolute_deadline() {
         use std::io::Write;
         let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();

@@ -5,8 +5,8 @@ use std::collections::HashMap;
 
 impl CybOs {
     pub(crate) fn graph(&mut self, ui: &mut egui::Ui) {
-        ui.heading("CYBERGRAPH");
-        ui.label("Local-first knowledge topology · nodes · links · events · queries");
+        ui.heading("Мой граф знаний");
+        ui.label("Твои сообщения и заметки создают новые узлы. ИИ использует эту память в ответах.");
         ui.horizontal(|ui| {
             if ui
                 .add(
@@ -19,14 +19,14 @@ impl CybOs {
                 self.graph_pan = Vec2::ZERO;
             }
 
-            ui.add(egui::Slider::new(&mut self.graph_zoom, 0.4..=2.5).text("zoom"));
+            ui.add(egui::Slider::new(&mut self.graph_zoom, 0.4..=2.5).text("Масштаб"));
 
             let pulse = ((ui.input(|i| i.time) * 2.5).sin() * 0.5 + 0.5) as f32;
 
             ui.separator();
 
             ui.label(
-                RichText::new("• LIVE GRAPH")
+                RichText::new("• МОИ ЗНАНИЯ")
                     .strong()
                     .color(Color32::from_rgb(
                         70 + (pulse * 80.0) as u8,
@@ -37,12 +37,12 @@ impl CybOs {
 
             ui.separator();
 
-            ui.label(RichText::new(format!("NODES {}", self.nodes.len())).strong());
+            ui.label(RichText::new(format!("Знаний: {}", self.nodes.len())).strong());
 
-            ui.label(RichText::new(format!("LINKS {}", self.links.len())).strong());
+            ui.label(RichText::new(format!("Связей: {}", self.links.len())).strong());
 
             ui.label(RichText::new(format!(
-                "DENSITY {:.2}",
+                "Связность {:.2}",
                 if self.nodes.len() > 1 {
                     self.links.len() as f32 / self.nodes.len() as f32
                 } else {
@@ -50,7 +50,7 @@ impl CybOs {
                 }
             )));
         });
-        let desired = Vec2::new(ui.available_width(), ui.available_height().max(460.0));
+        let desired = Vec2::new(ui.available_width(), ui.available_height().max(220.0));
         let (rect, resp) = ui.allocate_exact_size(desired, egui::Sense::click_and_drag());
         if resp.dragged() {
             self.graph_pan += resp.drag_delta();
@@ -107,7 +107,7 @@ impl CybOs {
                 painter.text(
                     *p,
                     egui::Align2::CENTER_CENTER,
-                    &n.label,
+                    n.label.chars().take(16).collect::<String>(),
                     egui::FontId::proportional(10.0),
                     if selected {
                         Color32::BLACK
@@ -140,7 +140,7 @@ impl CybOs {
                             ui.label(format!("type: {}", n.kind));
                             ui.label(format!("id: {}", n.id));
                             ui.separator();
-                            ui.label("Relationships");
+                            ui.label("Связи");
                             for l in &self.links {
                                 if l.from == n.id || l.to == n.id {
                                     ui.label(format!(

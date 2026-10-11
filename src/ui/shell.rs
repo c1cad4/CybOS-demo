@@ -8,6 +8,10 @@ use std::time::Duration;
 
 impl CybOs {
     pub(crate) fn shell_ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        if ui.input(|i| i.key_pressed(egui::Key::Q) && i.modifiers.command) {
+            ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
+            return;
+        }
         self.runtime.tick();
         if let Some(answer) = self.poll_robot_job() {
             self.robot_output = answer.clone();
@@ -18,6 +22,7 @@ impl CybOs {
         self.poll_lan_scan();
         self.poll_secure_events();
         self.poll_secure_send();
+        self.poll_group_chat(ui.ctx());
         self.vpn_setup.poll_diagnostics();
         self.poll_lan_send();
         self.poll_lan_events();
@@ -25,6 +30,11 @@ impl CybOs {
         self.poll_cybdex();
         self.poll_browser();
         self.neon_theme(ui.ctx());
+        super::telemetry::record_process(ui.ctx());
+        super::telemetry::record(ui.ctx(), "Устройства рядом", self.lan_peers.iter().filter(|p| p.last_seen.elapsed().as_secs() <= 20).count() as f32);
+        super::telemetry::record(ui.ctx(), "Активные торренты", self.cyblex_torrents.iter().filter(|t| !t.paused).count() as f32);
+        super::telemetry::record(ui.ctx(), "Размер страницы в режиме чтения", self.browser_document_bytes.unwrap_or(0) as f32 / 1024.0);
+        super::telemetry::record(ui.ctx(), "Узлы графа знаний", self.nodes.len() as f32);
 
         let neon = Self::neon();
         let dim = Color32::from_rgb(105, 185, 145);
@@ -45,7 +55,12 @@ impl CybOs {
             )
             .show(ui, |ui| {
                 ui.horizontal_centered(|ui| {
+                    crate::brand::show(ui, 40.0);
                     ui.label(RichText::new("CybOS").size(20.0).strong().color(neon));
+                    if ui.small_button("Окно / полный экран").clicked() {
+                        let full = ui.ctx().input(|i| i.viewport().fullscreen.unwrap_or(false));
+                        ui.ctx().send_viewport_cmd(egui::ViewportCommand::Fullscreen(!full));
+                    }
                     ui.add_space(10.0);
                     ui.add_space(18.0);
 
@@ -83,18 +98,22 @@ impl CybOs {
                     ui.label(RichText::new("ЛИЧНОЕ ПРОСТРАНСТВО").size(10.0).color(dim));
                     ui.add_space(16.0);
                     for (page, label) in [
-                        (Page::Dashboard, "Главная"),
+                        (Page::Graph, "Граф знаний"),
                         (Page::Chat, "CybChat"),
                         (Page::Brain, "Мозг"),
                         (Page::Browser, "Браузер"),
                         (Page::CybLex, "CybLex"),
                         (Page::Robot, "Агенты"),
                         (Page::Network, "Устройства"),
+                        (Page::Assets, "Токены"),
+                        (Page::CybDex, "CybDEX"),
+                        (Page::System, "Cyb Диспетчер"),
                     ] {
                         if ui
                             .add_sized(
                                 [ui.available_width(), 38.0],
-                                egui::Button::new(label).selected(self.page == page),
+                                egui::Button::new(label).selected(self.page == page)
+                                    .fill(if page == Page::Graph { Color32::from_rgb(20, 58, 44) } else if self.page == page { Color32::from_rgb(16, 45, 33) } else { panel }),
                             )
                             .clicked()
                         {
@@ -105,13 +124,9 @@ impl CybOs {
                     ui.add_space(20.0);
                     ui.collapsing("Дополнительно", |ui| {
                         for (page, label) in [
-                            (Page::Graph, "Граф знаний"),
                             (Page::Radar, "Поиск устройств"),
-                            (Page::System, "Диагностика"),
-                            (Page::CybDex, "Рынок"),
                             (Page::Farm, "Демо фермы"),
                             (Page::Cameras, "Камеры"),
-                            (Page::Assets, "Токены · демо"),
                         ] {
                             if ui.selectable_label(self.page == page, label).clicked() {
                                 self.go(page);
@@ -171,11 +186,6 @@ impl CybOs {
                     ui.add_space(8.0);
                     match self.page {
                         Page::Graph => self.graph(ui),
-                        Page::Dashboard => {
-                            egui::ScrollArea::vertical()
-                                .auto_shrink([false, false])
-                                .show(ui, |ui| self.dashboard(ui));
-                        }
                         Page::Robot => {
                             egui::ScrollArea::vertical()
                                 .auto_shrink([false, false])

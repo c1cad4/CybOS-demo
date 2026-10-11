@@ -213,7 +213,7 @@ The ten sibling libraries are pinned in `components.lock.json`; existing checkou
 
 ### Workspace and device chat
 
-The home screen provides direct links to chat, network, assistant, knowledge and diagnostics, with current runtime and database status. Farm counters are demonstration data, not live sensor readings. CybChat supports saved IPv4 addresses, explicit key approval, connection checks without sending message content, and separate assistant/device actions. See [secure chat](docs/SECURE_CHAT.md).
+Navigation starts with the knowledge graph and includes chat, network, assistant, knowledge and Cyb Dispatcher. Farm counters are demonstration data, not live sensor readings. CybChat supports saved IPv4 addresses, explicit key approval, connection checks without sending message content, and separate assistant/device conversations. See [secure chat](docs/SECURE_CHAT.md).
 
 ### Private device network preparation
 
@@ -221,6 +221,28 @@ Network now prepares separate WireGuard device identities, imports public server
 
 ### Current desktop workspace
 
-The home screen presents CybChat, CybBrowser, CybLex, knowledge, the local assistant and devices. Planned global synchronization, agent teams and encrypted USB profiles are not implemented.
+Navigation includes CybChat, CybBrowser, CybLex, knowledge, the local assistant, devices, tokens, CybDEX and Cyb Dispatcher. Planned global synchronization, agent teams and encrypted USB profiles are not implemented.
 
 For a development macOS build, run `bash scripts/build_browser_macos.sh` after building Rust to package the WebKit companion next to the executable. Release packaging includes it automatically. CybBrowser opens in its own application window.
+
+### Обновлённый интерфейс CybOS
+
+Приложение начинает работу на весь экран; кнопка «Окно / полный экран» в шапке возвращает оконный режим. Знак CybOS виден во всех разделах и включён в macOS-пакеты.
+
+Граф знаний находится первым в меню. Отправленные сообщения и личные заметки атомарно сохраняются в SQLite как пользовательские высказывания, создают узлы графа и используются в контексте локального ИИ. Повторы не создают новые узлы. Это накопление памяти, а не обучение весов модели; данные не синхронизируются с глобальным мозгом.
+
+CybLex показывает каталог фильмов TMDB и личную torrent-библиотеку. В разделе «Подключить каталог TMDB» можно ввести **API Read Access Token**: он сохраняется только в памяти до закрытия приложения. Для автоматического подключения при запуске поддерживается переменная окружения `CYBOS_TMDB_TOKEN`. Каталог обновляется при открытой вкладке раз в шесть часов; ручное обновление доступно сразу. TMDB поставляет описания и обложки, а не сами фильмы. Загрузки запускаются пользователем по magnet/torrent-ссылке; собственные файлы можно перетащить в CybLex для подготовки раздачи. Без токена личная библиотека продолжает работать.
+
+CybDEX показывает реальные пары Solana и свечи, позволяет копировать точные адреса токенов и перейти к обмену в Jupiter через системный браузер. Кошелёк, котировка и подтверждение сделки выполняются в Jupiter; встроенного подписания транзакций в CybOS пока нет. Раздел «Токены» отделяет адреса проекта от демонстрационных балансов.
+
+Открытый Jellyfin рассмотрен как возможный будущий адаптер для личного медиасервера; его серверный код не включён в приложение. Текущий каталог реализован напрямую через TMDB API.
+
+Технический анализ CybDEX: SMA (20), EMA (50) с настраиваемыми периодами; полосы Боллинджера (20, 2σ, стандартное отклонение генеральной совокупности); RSI (14, сглаживание Уайлдера); MACD (12/26/9, SMA-инициализация EMA); объём OHLCV. Индикаторы вычисляются по всей загруженной истории перед масштабированием. Значения до окончания периода прогрева не рисуются. Доступны курсор OHLC/цена/время UTC, масштаб по числу свечей, перемещение по истории, горизонтальные уровни, линии тренда и сетка Фибоначчи. Настройки и разметка сохраняются в SQLite отдельно для каждого адреса пула; незавершённую линию отменяет Esc, последнюю — «Отменить линию». Быстрые кнопки: SOL, USDC, ROBOTCYB и CICADAFARM; поиск выполняется по mint-адресам. Это инструменты анализа, без автоматической торговли или сигналов покупки.
+
+### CybLex streaming prototype and conversations
+
+CybLex can now pass rqbit's seekable, piece-aware file stream to a token-protected loopback HTTP Range server. MP4/MOV use the bundled macOS AVKit helper (`bash scripts/build_player_macos.sh`); other video containers use an installed VLC. Choosing a catalog source never starts a download automatically. TMDB metadata and posters are cached locally; favorites, movie/TV shelves, genres, and an opt-in local Prowlarr magnet search adapter are included. Provider keys are session-only. Real provider integration, subtitle support, in-window codec-capable playback, and playback against remote peers still require validation/work. See [the detailed architecture](docs/CYBLEX_STREAMING_ARCHITECTURE_RU.md).
+
+CybChat now has separate conversations, friends with local names, per-conversation drafts, and small groups with explicit invitations. Group messages fan out over existing authenticated Noise connections to members whose keys have been approved; per-peer delivery results are shown. There is no offline queue or membership-changing protocol yet. All members need compatible clients and direct reachable addresses.
+
+The home menu entry was removed; startup opens the knowledge graph. Application measurements now appear in **Cyb Диспетчер**, including process CPU/RSS on supported systems and real module counters. These measurements exclude separate browser, model, and player processes.

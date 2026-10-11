@@ -133,12 +133,12 @@ impl Default for CybOs {
         if chat.is_empty() {
             chat.push((
                 "ROBOTCYB".into(),
-                "Local cybOS node initialized. Qwen availability is detected separately.".into(),
+                "Привет! Здесь можно общаться с друзьями и локальным ИИ-помощником. Добавь друга или напиши свой вопрос.".into(),
                 false,
             ));
             store.add_chat_message(
                 "ROBOTCYB",
-                "Local cybOS node initialized. Qwen availability is detected separately.",
+                "Привет! Здесь можно общаться с друзьями и локальным ИИ-помощником. Добавь друга или напиши свой вопрос.",
                 false,
             );
         }
@@ -169,7 +169,7 @@ impl Default for CybOs {
         let vpn_setup = crate::network::vpn::Setup::load(&store);
         let mut app = Self {
             store,
-            page: Page::Dashboard,
+            page: Page::Graph,
             search: String::new(),
             robot_input: String::new(),
             robot_output: String::from("ROBOTCYB READY\n\nLOCAL AGENT · AWAITING QWEN\nAwaiting request..."),
@@ -426,6 +426,7 @@ impl CybOs {
 
 impl CybOs {
     pub(crate) fn cyblex_default_download_path() -> String {
+        if let Ok(root) = std::env::var("CYBOS_DATA_DIR") { return std::path::PathBuf::from(root).join("CybLex/downloads").to_string_lossy().into_owned(); }
         std::env::var("HOME")
             .map(|home| format!("{home}/Downloads/CybLex"))
             .unwrap_or_else(|_| "Downloads/CybLex".into())
@@ -445,6 +446,12 @@ impl CybOs {
                     self.cyblex_status = status;
                     self.runtime.set_status("CYBLEX", "READY");
                     self.add_event("CYBLEX", self.cyblex_status.clone());
+                }
+                crate::cyblex::CybLexEvent::StreamReady { url, native } => {
+                    match crate::media_stream::launch_player(&url, native) {
+                        Ok(()) => self.cyblex_status = "Плеер открыт. Ожидание нужных частей файла…".into(),
+                        Err(e) => { self.cyblex_status = e; let _ = self.cyblex.stop_playback(); }
+                    }
                 }
                 crate::cyblex::CybLexEvent::Error(error) => {
                     self.cyblex_status = format!("CYBLEX · ERROR · {error}");
@@ -590,7 +597,7 @@ impl CybOs {
             Ok(peers) => {
                 self.manual_peers = peers;
                 if self.lan_target.as_deref() == Some(node) { self.lan_target = None; }
-                self.manual_peer_status = "Saved address removed. Identity approval retained.".into();
+                self.manual_peer_status = "Друг удалён из списка. Проверенный ключ устройства сохранён.".into();
             }
             Err(error) => self.manual_peer_status = error,
         }

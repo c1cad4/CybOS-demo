@@ -15,20 +15,6 @@ impl CybOs {
     pub(crate) fn paint_icon(painter: &egui::Painter, c: egui::Pos2, icon: Icon, color: Color32, s: f32) {
         let st = Stroke::new((s * 0.09).clamp(1.1, 2.4), color);
         match icon {
-            Icon::Dashboard => {
-                painter.line_segment(
-                    [c + egui::vec2(-s * 0.42, -s * 0.28), c + egui::vec2(s * 0.42, -s * 0.28)],
-                    st,
-                );
-                painter.line_segment(
-                    [c + egui::vec2(-s * 0.42, s * 0.28), c + egui::vec2(s * 0.42, s * 0.28)],
-                    st,
-                );
-                painter.line_segment(
-                    [c + egui::vec2(-s * 0.18, -s * 0.28), c + egui::vec2(s * 0.18, s * 0.28)],
-                    st,
-                );
-            }
             Icon::Graph => {
                 let mut pts = Vec::new();
                 for i in 0..=16 {
@@ -218,6 +204,13 @@ impl CybOs {
         visuals.widgets.active.bg_fill = Color32::from_rgb(25, 75, 52);
         visuals.widgets.active.weak_bg_fill = Color32::from_rgb(25, 75, 52);
         ctx.set_visuals(visuals);
+        ctx.style_mut_of(egui::Theme::Dark, |style| {
+            style.text_styles.insert(egui::TextStyle::Body, egui::FontId::proportional(16.0));
+            style.text_styles.insert(egui::TextStyle::Button, egui::FontId::proportional(15.0));
+            style.text_styles.insert(egui::TextStyle::Heading, egui::FontId::proportional(24.0));
+            style.spacing.item_spacing = Vec2::new(10.0, 8.0);
+            style.spacing.button_padding = Vec2::new(10.0, 6.0);
+        });
     }
 
     pub(crate) fn card(&self, ui: &mut egui::Ui, title: &str, value: &str) {

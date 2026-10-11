@@ -41,15 +41,8 @@ impl CybOs {
         let neon = Self::neon();
         let dim = Color32::from_rgb(55, 145, 105);
 
-        ui.label(
-            RichText::new("ONE NODE IDENTITY · DISCOVERY · DIRECT DELIVERY · NO FAKE CONNECTIONS")
-                .size(11.0)
-                .color(dim),
-        );
-
-        self.wireguard_setup_panel(ui);
+        ui.collapsing("Защищённая сеть · настройка VPN", |ui| { self.wireguard_setup_panel(ui); });
         ui.add_space(10.0);
-
         egui::Frame::new()
             .fill(Color32::from_rgb(4, 16, 11))
             .stroke(Stroke::new(1.0, Color32::from_rgb(24, 90, 58)))
@@ -57,19 +50,19 @@ impl CybOs {
             .inner_margin(egui::Margin::same(12))
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new("RADAR VISIBILITY").size(11.0).strong().color(neon));
-                    let label = if self.radar_visible { "VISIBLE" } else { "HIDDEN" };
+                    ui.label(RichText::new("Показывать меня другим").size(11.0).strong().color(neon));
+                    let label = if self.radar_visible { "Включено" } else { "Выключено" };
                     let button = egui::Button::new(RichText::new(label).strong().color(neon));
                     if ui.add(button).clicked() {
                         self.radar_visible = !self.radar_visible;
                         self.radar_visibility.store(self.radar_visible, std::sync::atomic::Ordering::Relaxed);
                         self.store.set("radar_visible", if self.radar_visible { "true" } else { "false" });
-                        self.notify(if self.radar_visible { "CYB RADAR: VISIBLE" } else { "CYB RADAR: HIDDEN" });
+                        self.notify(if self.radar_visible { "CYB RADAR: Включено" } else { "CYB RADAR: Выключено" });
                         self.sync_ble_advertiser();
                     }
                 });
                 ui.label(RichText::new(
-                    "OFF by default. VISIBLE enables LAN discovery and native BLE advertising. BLE exposes only a short node identifier; no GPS coordinates are broadcast."
+                    "OFF by default. Включено enables LAN discovery and native BLE advertising. BLE exposes only a short node identifier; no GPS coordinates are broadcast."
                 ).size(9.0).color(dim));
             });
 
@@ -88,7 +81,7 @@ impl CybOs {
                             .color(neon),
                     );
 
-                    if ui.button("COPY ID").clicked() {
+                    if ui.button("Копировать мой ID").clicked() {
                         ui.ctx().copy_text(self.node_id.clone());
                         self.notify("NODE ID COPIED");
                     }
@@ -96,9 +89,9 @@ impl CybOs {
                     let scanning = self.lan_scan.is_some();
 
                     let scan_label = if scanning {
-                        "SCANNING…"
+                        "Поиск…"
                     } else {
-                        "SCAN LAN"
+                        "Найти устройства"
                     };
 
                     if ui
@@ -111,7 +104,7 @@ impl CybOs {
 
                     let ble_scanning = self.ble_scan.is_some();
                     if ui
-                        .add_enabled(!ble_scanning, egui::Button::new(if ble_scanning { "BLE SCANNING…" } else { "SCAN BLE" }))
+                        .add_enabled(!ble_scanning, egui::Button::new(if ble_scanning { "BLE Поиск…" } else { "Поиск Bluetooth" }))
                         .clicked()
                     {
                         self.ble_scan = Some(crate::network::ble::start_scan());
@@ -155,7 +148,7 @@ impl CybOs {
             .inner_margin(egui::Margin::same(12))
             .show(ui, |ui| {
                 ui.label(
-                    RichText::new("LAN PEERS · DIRECT ADDRESSING")
+                    RichText::new("Устройства рядом")
                         .size(11.0)
                         .strong()
                         .color(neon),
@@ -165,14 +158,14 @@ impl CybOs {
 
                 if self.lan_scan.is_some() {
                     ui.label(
-                        RichText::new("Listening for cybOS discovery responses…")
+                        RichText::new("Ищем устройства…")
                             .size(10.0)
                             .color(dim),
                     );
                 } else if self.lan_peers.is_empty() {
                     ui.label(
                         RichText::new(
-                            "No other cybOS nodes discovered on the local broadcast network.",
+                            "Других устройств пока нет. Запусти CybOS на втором компьютере и включи видимость.",
                         )
                         .size(10.0)
                         .color(dim),
@@ -214,7 +207,7 @@ impl CybOs {
                             if ui
                                 .add(
                                     egui::Button::new(
-                                        RichText::new(if selected { "TARGET" } else { "SELECT" })
+                                        RichText::new(if selected { "Выбрано" } else { "Выбрать" })
                                             .size(8.0)
                                             .strong()
                                             .color(neon),
@@ -224,7 +217,7 @@ impl CybOs {
                                 .clicked()
                             {
                                 self.lan_target = Some(peer.node_id.clone());
-                                self.notify(format!("LAN TARGET: {}", peer.node_id));
+                                self.notify(format!("LAN Выбрано: {}", peer.node_id));
                             }
                         });
 
@@ -242,16 +235,16 @@ impl CybOs {
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
                     ui.label(RichText::new("CYB RADAR").size(13.0).strong().color(neon));
-                    ui.label(RichText::new("LOCAL PROXIMITY DISCOVERY").size(9.0).color(dim));
+                    ui.label(RichText::new("Устройства в локальной сети").size(9.0).color(dim));
                 });
                 ui.label(RichText::new(
-                    "LAN gives node presence. BLE adds measured RSSI from the radio; no GPS and no invented meter values."
+                    "Радар показывает обнаруженные устройства. Расстояние по локальной сети неизвестно."
                 ).size(9.0).color(dim));
                 ui.label(RichText::new(&self.ble_status).size(9.0).color(dim));
                 ui.add_space(8.0);
 
                 let available = ui.available_width().min(560.0);
-                let size = Vec2::new(available, 310.0);
+                let size = Vec2::new(available, 140.0);
                 let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
                 let painter = ui.painter_at(rect);
                 let center = rect.center();
@@ -297,80 +290,29 @@ impl CybOs {
 
         ui.add_space(10.0);
 
-        for (name, status, live) in [
-            ("LOCAL LOOPBACK", "READY", true),
-            ("LAN DISCOVERY", "ACTIVE · UDP BROADCAST · DISCOVERY ONLY", true),
-            ("SECURE CHAT", "DIRECT TCP · NOISE XX · ENCRYPTED + ACK", true),
-            ("BLUETOOTH RADAR", if self.ble_advertiser.is_some() { "ADVERTISING · OPT-IN · RSSI DISCOVERY" } else { "READY · ENABLE WITH RADAR VISIBLE" }, self.ble_advertiser.is_some()),
-            ("P2P", "ADAPTER ONLY · NOT CONNECTED", false),
-            ("NOSTR FALLBACK", "AVAILABLE · NOT CONNECTED", false),
-        ] {
-            egui::Frame::new()
-                .fill(Color32::from_rgb(4, 16, 11))
-                .stroke(Stroke::new(
-                    1.0,
-                    if live {
-                        Color32::from_rgb(30, 110, 70)
-                    } else {
-                        Color32::from_rgb(18, 48, 34)
-                    },
-                ))
-                .corner_radius(9)
-                .inner_margin(egui::Margin::same(10))
-                .show(ui, |ui| {
-                    ui.horizontal(|ui| {
-                        let (rect, _) =
-                            ui.allocate_exact_size(Vec2::splat(28.0), egui::Sense::hover());
 
-                        Self::paint_icon(
-                            ui.painter(),
-                            rect.center(),
-                            Icon::Network,
-                            if live { neon } else { dim },
-                            16.0,
-                        );
-
-                        ui.vertical(|ui| {
-                            ui.label(
-                                RichText::new(name)
-                                    .size(12.0)
-                                    .strong()
-                                    .color(if live {
-                                        neon
-                                    } else {
-                                        Color32::from_rgb(160, 200, 175)
-                                    }),
-                            );
-
-                            ui.label(RichText::new(status).size(10.0).color(dim));
-                        });
-                    });
-                });
-
-            ui.add_space(6.0);
-        }
     }
 }
 
 impl CybOs {
     fn wireguard_setup_panel(&mut self, ui: &mut egui::Ui) {
         ui.group(|ui| {
-            ui.heading("Private device network · WireGuard");
-            ui.hyperlink_to("Official WireGuard installation", "https://www.wireguard.com/install/");
+            ui.heading("Защищённая сеть устройств");
+            ui.hyperlink_to("Установить WireGuard", "https://www.wireguard.com/install/");
             ui.label("Prepare a device profile and activate it in WireGuard. CLI diagnostics provide manual snapshots; App Store tunnels are not monitored.");
             ui.label("This profile routes only the private device subnet; it does not set a default internet route or DNS.");
             ui.separator();
-            if ui.button("Create / load device identity").clicked() { self.vpn_setup.create_identity(&self.store); }
+            if ui.button("Подготовить это устройство").clicked() { self.vpn_setup.create_identity(&self.store); }
             if let Some(key) = &self.vpn_setup.public_key {
                 ui.label("Device public key — add this on the server");
                 ui.add(egui::Label::new(key).selectable(true).wrap());
-                if ui.button("Copy public key").clicked() { ui.ctx().copy_text(key.clone()); }
+                if ui.button("Копировать публичный ключ").clicked() { ui.ctx().copy_text(key.clone()); }
             }
-            ui.collapsing("Import public device invitation", |ui| {
+            ui.collapsing("Добавить приглашение", |ui| {
                 ui.add(egui::TextEdit::multiline(&mut self.vpn_setup.invitation_input).desired_rows(3).desired_width(f32::INFINITY).hint_text("Paste device-invitation.json; never paste private keys"));
                 if ui.button("Load public invitation").clicked() { self.vpn_setup.import_invitation(); }
             });
-            ui.collapsing("Configure server and device", |ui| {
+            ui.collapsing("Настроить сервер", |ui| {
                 ui.label("Server endpoint (IP:UDP-port)");
                 let mut changed = ui.add(egui::TextEdit::singleline(&mut self.vpn_setup.profile.endpoint).hint_text("203.0.113.10:51820").desired_width(f32::INFINITY)).changed();
                 ui.label("Server public key — verify with the administrator");
@@ -393,7 +335,7 @@ impl CybOs {
                 if ui.add_enabled(self.vpn_setup.diagnostic_task.is_none(), egui::Button::new("Refresh WireGuard diagnostics")).clicked() { self.vpn_setup.start_diagnostics(); }
                 ui.add(egui::Label::new(&self.vpn_setup.diagnostic_status).wrap());
             });
-            ui.label("No server yet? Create your device identity now; fill in the server fields later.");
+            ui.label("Если сервера ещё нет, можно подготовить устройство сейчас, а сервер добавить позже.");
         });
     }
 }

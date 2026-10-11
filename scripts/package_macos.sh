@@ -29,6 +29,12 @@ swiftc -target x86_64-apple-macos11 macos/CybOSBrowser.swift -o "$BUILD/browser-
 lipo -create "$BUILD/browser-arm64" "$BUILD/browser-intel" -output "$APP/Contents/MacOS/cybos-browser"
 python3 scripts/package_browser_macos.py --binary "$APP/Contents/MacOS/cybos-browser" --output "$APP/Contents/Resources/CybBrowser.app"
 
+mkdir -p "$BUILD/swift-module-cache"
+swiftc -module-cache-path "$BUILD/swift-module-cache" -target arm64-apple-macos11 macos/CybOSPlayer.swift -o "$BUILD/player-arm64" -framework AppKit -framework AVKit -framework AVFoundation
+swiftc -module-cache-path "$BUILD/swift-module-cache" -target x86_64-apple-macos11 macos/CybOSPlayer.swift -o "$BUILD/player-intel" -framework AppKit -framework AVKit -framework AVFoundation
+lipo -create "$BUILD/player-arm64" "$BUILD/player-intel" -output "$BUILD/cybos-player"
+python3 scripts/package_player_macos.py --binary "$BUILD/cybos-player" --output "$APP/Contents/Resources/CybPlayer.app"
+
 echo "Creating universal cybOS binary..."
 lipo -create "target/aarch64-apple-darwin/release/cybos" "target/x86_64-apple-darwin/release/cybos" -output "$APP/Contents/MacOS/cybos"
 chmod +x "$APP/Contents/MacOS/cybos"
@@ -38,6 +44,8 @@ swiftc -arch arm64 macos/CybOSBLEAdvertiser.swift -o "$BUILD/cybOS-ble-arm64" -f
 swiftc -arch x86_64 macos/CybOSBLEAdvertiser.swift -o "$BUILD/cybOS-ble-x86_64" -framework CoreBluetooth
 lipo -create "$BUILD/cybOS-ble-arm64" "$BUILD/cybOS-ble-x86_64" -output "$APP/Contents/MacOS/cybOS-ble-advertiser"
 chmod +x "$APP/Contents/MacOS/cybOS-ble-advertiser"
+
+python3 scripts/build_app_icon.py --output "$APP/Contents/Resources/CybOS.icns"
 
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -50,6 +58,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <string>cybos</string>
     <key>CFBundleIdentifier</key>
     <string>to.cicada.cybos</string>
+    <key>CFBundleIconFile</key>
+    <string>CybOS.icns</string>
     <key>CFBundleName</key>
     <string>cybOS</string>
     <key>CFBundlePackageType</key>
