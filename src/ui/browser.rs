@@ -6,6 +6,20 @@ impl CybOs {
     pub(crate) fn browser(&mut self, ui: &mut egui::Ui) {
         self.poll_browser();
 
+        ui.label("CybBrowser: сайты с JavaScript открываются в отдельном браузерном окне CybOS.");
+        if ui.button("Открыть CybBrowser · поиск и сайты").clicked() {
+            #[cfg(target_os = "macos")]
+            {
+                let result = std::env::current_exe().map_err(|e| e.to_string()).and_then(|exe| {
+                    std::process::Command::new(exe.parent().unwrap().join("cybos-browser"))
+                        .arg(self.browser_url.trim()).spawn().map(|_| ()).map_err(|e| e.to_string())
+                });
+                if let Err(error) = result { self.notify(format!("Не удалось открыть CybBrowser: {error}")); }
+            }
+            #[cfg(not(target_os = "macos"))]
+            self.notify("Браузерный движок пока доступен на macOS");
+        }
+        ui.add_space(12.0);
         let neon = Self::neon();
         let dim = Color32::from_rgb(55, 145, 105);
 
@@ -35,7 +49,7 @@ impl CybOs {
                     let response = ui.add_sized(
                         [(ui.available_width() - 90.0).max(80.0), 32.0],
                         egui::TextEdit::singleline(&mut self.browser_url)
-                            .hint_text("https://… · ipfs://… · ipns://… · ar://… · cyb://ipfs/…"),
+                            .hint_text("Поиск или адрес сайта…"),
                     );
 
                     let open = ui

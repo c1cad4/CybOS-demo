@@ -24,6 +24,10 @@ cargo build --release --target aarch64-apple-darwin
 echo "Building cybOS for Intel..."
 cargo build --release --target x86_64-apple-darwin
 
+swiftc -target arm64-apple-macos11 macos/CybOSBrowser.swift -o "$BUILD/browser-arm64" -framework AppKit -framework WebKit
+swiftc -target x86_64-apple-macos11 macos/CybOSBrowser.swift -o "$BUILD/browser-intel" -framework AppKit -framework WebKit
+lipo -create "$BUILD/browser-arm64" "$BUILD/browser-intel" -output "$APP/Contents/MacOS/cybos-browser"
+
 echo "Creating universal cybOS binary..."
 lipo -create "target/aarch64-apple-darwin/release/cybos" "target/x86_64-apple-darwin/release/cybos" -output "$APP/Contents/MacOS/cybos"
 chmod +x "$APP/Contents/MacOS/cybos"
