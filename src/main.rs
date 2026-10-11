@@ -36,7 +36,7 @@ use eframe::egui;
 fn main() -> eframe::Result {
     let opts = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_title("cybOS — CicadaFarm + RobotCYB")
+            .with_title("CybOS — личное пространство")
             .with_inner_size([1320.0, 840.0])
             .with_min_inner_size([1000.0, 680.0]),
         ..Default::default()
