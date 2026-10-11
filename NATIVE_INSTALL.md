@@ -28,7 +28,7 @@ The current `main` branch contains universal ARM64 + Intel packaging, replay pro
 ## Build locally
 
 First restore the pinned sibling libraries with `python3 scripts/bootstrap_components.py`.
-The script clones missing components beside this checkout and preserves existing directories.
+The script restores missing components beside this checkout using temporary staging directories. It rejects mismatched existing HEADs while preserving local changes. The macOS launcher and packaging script also run this setup automatically.
 Use `--verify` to check their revisions against `components.lock.json`.
 
 For Linux development, run `cargo build --locked` and `cargo test --locked`.

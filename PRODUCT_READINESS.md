@@ -1,43 +1,37 @@
 # cybOS product readiness
 
-## Technical beta
-READY for technical macOS users.
+## Verified development baseline
 
-Core desktop scope currently implemented:
-- native Rust/egui shell and SQLite persistence;
-- asynchronous RobotCYB worker with one 90-second end-to-end deadline;
-- local Qwen runtime with internal HTTP timeout;
-- opt-in LAN + macOS BLE CYB RADAR and unified proximity;
-- Noise XX encrypted CYBChat with delivery ACK;
-- TOFU peer identity persistence and changed-key rejection;
-- Cybergraph secure-peer persistence;
-- stoppable LAN and secure listeners;
-- bounded HTTP workers for Qwen, web, Solana balances and market data;
-- macOS app packaging and release workflow;
-- native CybLex P2P archive powered by embedded librqbit 9.0.1.
+The native macOS-first desktop compiles and its 28 current Rust tests pass on
+macOS ARM64 (11 October 2026, Rust 1.99.0). Ten pinned sibling libraries pass
+24 unit tests. Setup/launcher regression tests verify recovery from failed
+fetches, preserved local work, pinned HEAD checks, fresh-clone builds, sibling
+source rebuilds and bundle-version consistency.
 
-## Public macOS beta
-Estimated readiness: **90–95%**.
+These checks validate the local development baseline. They do not establish
+public-beta or production readiness percentages.
 
-Remaining blockers are mostly productization and real-device validation:
-- signed/notarized distribution;
-- two-Mac interoperability test of RADAR + Secure CYBChat + TOFU;
-- upgrade/reinstall and recovery testing;
-- complete real-device interoperability validation;
-- verify CybLex two-node download/seed interoperability with authorized test content.
+## Release blockers
 
-## CybDEX
-The first market-data phase is implemented as a read-only native terminal. Swap routing, wallet signing and an own on-chain AMM remain separate future layers.
+- Secure-chat identity writes ignore SQLite failures in current main.
+- Secure-listener bind/setup failures are not surfaced to the caller.
+- Peer fingerprints still use FNV; cryptographic fingerprints and explicit
+  first-contact approval are proposed in existing PRs.
+- Two-Mac LAN/BLE/Noise interoperability, restart/recovery and upgrade tests
+  remain necessary.
+- Developer ID signing/notarization requires the owner's configured Apple
+  credentials; it was not exercised in this verification.
+- CybLex download/seed needs an actual two-node interoperability test.
 
-## Production 1.0
-Estimated readiness: **75–80%**.
+[Development order](docs/DESKTOP_DEVELOPMENT.md) maps the existing PR chains
+onto the current desktop. Passing unit tests must not be reported as evidence
+that these outstanding failures have been fixed.
 
-Remaining work includes security review, cross-version interoperability,
-configuration migration, diagnostics/recovery, signed updates and operational
-release/support workflows.
+## Product boundaries
 
-The v0.7.1 macOS ZIP is published through the companion `c1cad4/cybOS` release repository. Main contains replay protection, recovery diagnostics, truthful listener errors, cached database diagnostics, WAL persistence hardening, and universal ARM64 + Intel packaging for v0.7.2.
-Physical RobotCYB hardware and farm sensor/camera integrations remain future product layers. CybLex is now part of the desktop beta; two-node interoperability still needs real-device validation.
-
-
-Verification note: current main contains the runtime hardening, replay cache, recovery diagnostics and universal packaging used for the v0.7.2 release line.
+The native desktop and SQLite state are local-first. RobotCYB requires a
+separately configured local Qwen server for model answers. CybDEX is read-only;
+no swap is signed or submitted. Farm sensors, cameras and physical actuators
+require real adapters and device validation. The browser prototype remains a
+visual experiment. The optional Python CybCore has its own API and test suite;
+it is not a mandatory service for opening the desktop.

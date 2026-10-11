@@ -21,17 +21,20 @@ jobs:
       - name: Restore pinned ecosystem components
         run: python3 scripts/bootstrap_components.py
 
+      - name: Test component setup
+        run: python3 -m unittest discover -s scripts/tests -v
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@1.99.0
 
       - name: Cargo check
-        run: cargo check
+        run: cargo check --locked
 
       - name: Cargo test
-        run: cargo test
+        run: cargo test --locked
 
       - name: Validate macOS packaging script
-        run: bash -n scripts/package_macos.sh
+        run: bash -n scripts/package_macos.sh && bash -n START_cybOS.command
 
       - name: Diff whitespace check
         run: git diff --check
@@ -46,6 +49,9 @@ jobs:
       - name: Restore pinned ecosystem components
         run: python3 scripts/bootstrap_components.py
 
+      - name: Test component setup
+        run: python3 -m unittest discover -s scripts/tests -v
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@1.99.0
 
@@ -53,16 +59,16 @@ jobs:
         run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
 
       - name: Cargo check
-        run: cargo check
+        run: cargo check --locked
 
       - name: Cargo test
-        run: cargo test
+        run: cargo test --locked
 
       - name: macOS ARM64 release build
-        run: cargo build --release --target aarch64-apple-darwin
+        run: cargo build --locked --release --target aarch64-apple-darwin
 
       - name: macOS Intel release build
-        run: cargo build --release --target x86_64-apple-darwin
+        run: cargo build --locked --release --target x86_64-apple-darwin
 
       - name: Compile CoreBluetooth advertiser ARM64
         run: swiftc -arch arm64 macos/CybOSBLEAdvertiser.swift -o /tmp/cybOS-ble-arm64 -framework CoreBluetooth

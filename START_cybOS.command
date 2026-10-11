@@ -18,18 +18,35 @@ if ! command -v cargo >/dev/null 2>&1; then
   fi
 fi
 
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "Python 3 is required to restore pinned cybOS components."
+  exit 1
+fi
+python3 scripts/bootstrap_components.py
+VERSION="$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -n 1)"
+
 need_build=0
 if [ ! -x "$BIN" ]; then
   need_build=1
 elif find src macos -type f -newer "$BIN" -print -quit | grep -q .; then
   need_build=1
-elif [ "Cargo.toml" -nt "$BIN" ] || [ "Cargo.lock" -nt "$BIN" ]; then
+elif [ "Cargo.toml" -nt "$BIN" ] || [ "Cargo.lock" -nt "$BIN" ] || [ "components.lock.json" -nt "$BIN" ]; then
   need_build=1
+fi
+
+# Cargo tracks sibling sources, but it must run when those sources change.
+if [ "$need_build" = "0" ]; then
+  while IFS= read -r component; do
+    if find "../$component" -type f \( -name '*.rs' -o -name 'Cargo.toml' -o -name 'Cargo.lock' \) -newer "$BIN" -print -quit | grep -q .; then
+      need_build=1
+      break
+    fi
+  done < <(python3 -c 'import json; print("\n".join(r["name"] for r in json.load(open("components.lock.json"))["repositories"]))')
 fi
 
 if [ "$need_build" = "1" ]; then
   echo "Building cybOS release..."
-  cargo build --release
+  cargo build --locked --release
 fi
 
 if [ ! -x "$BIN" ]; then
@@ -59,8 +76,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <key>CFBundleName</key><string>cybOS</string>
 <key>CFBundleDisplayName</key><string>cybOS — CicadaFarm + RobotCYB</string>
 <key>CFBundleIdentifier</key><string>to.cicada.cybos</string>
-<key>CFBundleVersion</key><string>0.7.1</string>
-<key>CFBundleShortVersionString</key><string>0.7.1</string>
+<key>CFBundleVersion</key><string>${VERSION}</string>
+<key>CFBundleShortVersionString</key><string>${VERSION}</string>
 <key>CFBundleExecutable</key><string>cybOS</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>LSMinimumSystemVersion</key><string>11.0</string>

@@ -4,6 +4,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
+python3 scripts/bootstrap_components.py
+
 VERSION="$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -n 1)"
 VERSION="${VERSION:-0.7.2}"
 export MACOSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET:-11.0}"
@@ -19,10 +21,10 @@ echo "Installing Rust targets..."
 rustup target add aarch64-apple-darwin x86_64-apple-darwin
 
 echo "Building cybOS for Apple Silicon..."
-cargo build --release --target aarch64-apple-darwin
+cargo build --locked --release --target aarch64-apple-darwin
 
 echo "Building cybOS for Intel..."
-cargo build --release --target x86_64-apple-darwin
+cargo build --locked --release --target x86_64-apple-darwin
 
 echo "Creating universal cybOS binary..."
 lipo -create "target/aarch64-apple-darwin/release/cybos" "target/x86_64-apple-darwin/release/cybos" -output "$APP/Contents/MacOS/cybos"
