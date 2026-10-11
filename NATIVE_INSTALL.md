@@ -11,7 +11,7 @@ cybOS is a working native macOS technical beta. Repository CI verifies:
 - macOS packaging-script validation;
 - whitespace validation.
 
-The current native runtime includes local SQLite state with WAL/busy-timeout hardening, RobotCYB/Qwen integration, CYB RADAR, unified LAN+BLE proximity, Noise XX secure CYBChat, replay protection, TOFU peer identity and Cybergraph persistence.
+The current native runtime includes local SQLite state with WAL/busy-timeout hardening, RobotCYB/Qwen integration, CYB RADAR, unified LAN+BLE proximity, Noise XX secure CYBChat, replay protection, explicit peer approval and Cybergraph persistence.
 
 ## Download the macOS beta
 
@@ -76,7 +76,7 @@ CYB RADAR is opt-in.
 
 LAN discovery uses the local network. macOS BLE discovery uses CoreBluetooth. Hidden mode disables CYB visibility and BLE advertising.
 
-Secure CYBChat uses Noise XX encrypted transport and stores first-seen peer public keys locally as TOFU.
+Secure CYBChat uses Noise XX encrypted transport and requires explicit approval of each peer public key after comparing its full SHA-256 fingerprint. Existing TOFU pins require approval once after upgrade. See [the first-contact guide](docs/SECURE_CHAT.md).
 
 ## What is not bundled yet
 

@@ -338,6 +338,10 @@ TOOL RESULT:
             secure_send_task: None,
             secure_send_contract: None,
             secure_status: "SECURE CHAT · WORKER CONTEXT".into(),
+            secure_outgoing_message: None,
+            local_secure_fingerprint: None,
+            secure_startup_error: Some("worker context has no secure listener".into()),
+            pending_secure_trust: Vec::new(),
             remember_note: String::new(),
         })
     }

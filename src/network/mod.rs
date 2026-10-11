@@ -20,3 +20,5 @@ pub mod ble;
 pub mod mesh;
 pub mod vpn;
 pub mod browser;
+
+pub(crate) mod peer_trust;

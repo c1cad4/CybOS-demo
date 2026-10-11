@@ -28,7 +28,7 @@ For the native desktop installation path, see [NATIVE_INSTALL.md](NATIVE_INSTALL
 - RobotCYB local Qwen runtime
 - CYB RADAR LAN + macOS BLE proximity discovery
 - Noise XX secure CYBChat with delivery ACK
-- TOFU peer identity persistence
+- Explicit peer approval with SHA-256 fingerprints and persistent Noise identity pins
 - Cybergraph secure-peer relationships
 - Native CybLex P2P archive powered by embedded librqbit 9.0.1
 
@@ -191,7 +191,7 @@ The current native stack is organized as bounded local-first cells:
 - **CYB RADAR:** opt-in LAN discovery + macOS BLE RSSI discovery; no GPS and no fabricated meter distances.
 - **Unified proximity:** LAN and BLE observations are correlated into one peer projection.
 - **CYBChat:** direct TCP transport protected by Noise XX with encrypted frames and delivery ACKs.
-- **Identity:** the first authenticated Noise public key for a peer is persisted as TOFU; a changed key is rejected.
+- **Identity:** each peer key requires explicit approval after fingerprint comparison; legacy TOFU pins require approval once after upgrade. Changed or malformed keys are rejected.
 - **Cybergraph:** secure peers and secure-chat relationships are persisted as graph nodes/links.
 - **Bounded execution:** discovery and secure transport use explicit time windows, I/O deadlines and connection limits.
 
@@ -206,3 +206,7 @@ A peer is not considered geographically located merely because BLE RSSI is avail
 
 Run `python3 scripts/bootstrap_components.py` before Cargo commands after a fresh clone.
 The ten sibling libraries are pinned in `components.lock.json`; existing checkouts are preserved.
+
+## Secure CybChat approval
+
+[First contact, upgrade and durable delivery](docs/SECURE_CHAT.md). Unknown receivers receive no message body until their key is approved; incoming messages are acknowledged only after SQLite commit.

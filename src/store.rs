@@ -1,5 +1,5 @@
 use chrono::Local;
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 use std::{fs, path::PathBuf, time::Duration};
 use uuid::Uuid;
 
@@ -84,6 +84,18 @@ impl Store {
         .expect("cannot initialize database");
         Self { path, conn }
     }
+    #[cfg(test)]
+    pub(crate) fn test_store(path: &str) -> Self {
+        let conn = Connection::open(path).unwrap();
+        conn.execute_batch("CREATE TABLE IF NOT EXISTS kv(key TEXT PRIMARY KEY, value TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS secure_message_ids(message_id TEXT PRIMARY KEY, time TEXT NOT NULL, sender TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS chat_messages(id TEXT PRIMARY KEY,time TEXT NOT NULL,who TEXT NOT NULL,text TEXT NOT NULL,mine INTEGER NOT NULL);").unwrap();
+        Self { path: PathBuf::from(path), conn }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn test_execute(&self, sql: &str) { self.conn.execute_batch(sql).unwrap(); }
+
     pub(crate) fn get(&self, key: &str) -> Option<String> {
         self.conn
             .query_row("SELECT value FROM kv WHERE key=?1", [key], |r| r.get(0))
@@ -92,6 +104,62 @@ impl Store {
     pub(crate) fn set(&self, key: &str, value: &str) {
         let _ = self.conn.execute("INSERT INTO kv(key,value) VALUES(?1,?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value", params![key,value]);
     }
+    pub(crate) fn get_checked(&self, key: &str) -> Result<Option<String>, String> {
+        self.conn.query_row("SELECT value FROM kv WHERE key=?1", [key], |r| r.get(0))
+            .optional().map_err(|e| format!("read identity: {e}"))
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_checked(&self, key: &str, value: &str) -> Result<(), String> {
+        self.conn.execute("INSERT INTO kv(key,value) VALUES(?1,?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value", params![key, value])
+            .map(|_| ()).map_err(|e| format!("persist identity: {e}"))
+    }
+
+    pub(crate) fn persist_node_identity(&self, generated: &str) -> Result<String, String> {
+        self.conn.execute("INSERT OR IGNORE INTO kv(key,value) VALUES('node_id',?1)", [generated])
+            .map_err(|e| format!("persist node identity: {e}"))?;
+        self.get_checked("node_id")?.ok_or_else(|| "persisted node identity missing".into())
+    }
+
+    pub(crate) fn persist_noise_identity(&self, generated: &str) -> Result<String, String> {
+        // Two starting processes must converge on the existing key, never replace it.
+        self.conn.execute("INSERT OR IGNORE INTO kv(key,value) VALUES('noise_static_private_hex',?1)", [generated])
+            .map_err(|e| format!("persist Noise identity: {e}"))?;
+        self.get_checked("noise_static_private_hex")?
+            .ok_or_else(|| "persisted Noise identity missing".into())
+    }
+
+    pub(crate) fn approve_secure_peer(&self, node_id: &str, key: &[u8]) -> Result<(), String> {
+        crate::network::peer_trust::validate_peer(node_id, key)?;
+        let encoded = key.iter().map(|b| format!("{b:02x}")).collect::<String>();
+        let pin_name = format!("noise_peer_key:{node_id}");
+        let tx = self.conn.unchecked_transaction().map_err(|e| e.to_string())?;
+        tx.execute("INSERT OR IGNORE INTO kv(key,value) VALUES(?1,?2)", params![pin_name, encoded]).map_err(|e| e.to_string())?;
+        let existing: String = tx.query_row("SELECT value FROM kv WHERE key=?1", [&pin_name], |r| r.get(0)).map_err(|e| e.to_string())?;
+        if crate::network::secure_chat::decode_key(&existing)? != key {
+            return Err("Noise identity key changed; existing pin preserved".into());
+        }
+        tx.execute("INSERT INTO kv(key,value) VALUES(?1,?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value", params![format!("noise_peer_approved:{node_id}"), encoded]).map_err(|e| e.to_string())?;
+        tx.commit().map_err(|e| format!("persist peer approval: {e}"))
+    }
+
+    /// Commit replay protection and chat history together before delivery ACK.
+    pub(crate) fn accept_secure_message(&self, message_id: &str, sender: &str, text: &str) -> Result<bool, String> {
+        immunocybchain::validate_message_identity(message_id, sender)
+            .map_err(|e| format!("invalid message identity: {e:?}"))?;
+        let tx = self.conn.unchecked_transaction().map_err(|e| e.to_string())?;
+        let time = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        let inserted = tx.execute("INSERT OR IGNORE INTO secure_message_ids(message_id,time,sender) VALUES(?1,?2,?3)", params![message_id, time, sender])
+            .map_err(|e| format!("persist replay identity: {e}"))?;
+        if inserted == 0 { return Ok(false); }
+        tx.execute("INSERT INTO chat_messages(id,time,who,text,mine) VALUES(?1,?2,?3,?4,0)", params![Uuid::new_v4().to_string(), time, format!("CYB:{sender}"), text])
+            .map_err(|e| format!("persist secure message: {e}"))?;
+        tx.execute("DELETE FROM secure_message_ids WHERE message_id NOT IN (SELECT message_id FROM secure_message_ids ORDER BY rowid DESC LIMIT 1024)", [])
+            .map_err(|e| format!("prune replay identities: {e}"))?;
+        tx.commit().map_err(|e| format!("commit secure message: {e}"))?;
+        Ok(true)
+    }
+
     pub(crate) fn add_memory(&self, memory: &Memory) {
         let _ = self.conn.execute(
             "INSERT OR IGNORE INTO memories(id,time,text,source,importance)
@@ -382,6 +450,39 @@ mod tests {
         assert!(store.claim_secure_message_id("message-1", "node-a"));
         assert!(!store.claim_secure_message_id("message-1", "node-a"));
         assert!(store.claim_secure_message_id("message-2", "node-a"));
+    }
+
+    #[test]
+    fn competing_identity_writes_preserve_the_first_key() {
+        let store = Store::test_store(":memory:");
+        let first = "07".repeat(32);
+        let second = "08".repeat(32);
+        assert_eq!(store.persist_noise_identity(&first).unwrap(), first);
+        assert_eq!(store.persist_noise_identity(&second).unwrap(), first);
+    }
+
+    #[test]
+    fn secure_history_and_replay_claim_roll_back_together() {
+        let store = Store::test_store(":memory:");
+        store.test_execute("CREATE TRIGGER deny_chat BEFORE INSERT ON chat_messages BEGIN SELECT RAISE(ABORT, 'disk full fixture'); END;");
+        assert!(store.accept_secure_message("message-1", "node-a", "body").is_err());
+        assert_eq!(store.conn.query_row("SELECT COUNT(*) FROM secure_message_ids", [], |r| r.get::<_, i64>(0)).unwrap(), 0);
+        store.test_execute("DROP TRIGGER deny_chat;");
+        assert!(store.accept_secure_message("message-1", "node-a", "body").unwrap());
+        assert!(!store.accept_secure_message("message-1", "node-a", "body").unwrap());
+        assert_eq!(store.chat_messages().len(), 1);
+    }
+
+    #[test]
+    fn replay_pruning_failure_also_rolls_back_chat_history() {
+        let store = Store::test_store(":memory:");
+        for i in 0..1024 { store.accept_secure_message(&format!("id-{i}"), "node-a", "body").unwrap(); }
+        store.test_execute("CREATE TRIGGER deny_prune BEFORE DELETE ON secure_message_ids BEGIN SELECT RAISE(ABORT, 'prune failed'); END;");
+        assert!(store.accept_secure_message("id-new", "node-a", "body").is_err());
+        assert_eq!(store.conn.query_row("SELECT COUNT(*) FROM chat_messages", [], |r| r.get::<_, i64>(0)).unwrap(), 1024);
+        store.test_execute("DROP TRIGGER deny_prune;");
+        assert!(store.accept_secure_message("id-new", "node-a", "body").unwrap());
+        assert_eq!(store.conn.query_row("SELECT COUNT(*) FROM secure_message_ids", [], |r| r.get::<_, i64>(0)).unwrap(), 1024);
     }
 
     #[test]

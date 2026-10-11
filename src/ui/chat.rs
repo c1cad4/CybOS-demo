@@ -29,6 +29,57 @@ impl CybOs {
             );
 
             ui.add_space(14.0);
+            if let Some(fp) = &self.local_secure_fingerprint {
+                ui.label("YOUR NOISE IDENTITY · SHA-256");
+                ui.add(egui::Label::new(fp).selectable(true).wrap());
+            }
+
+            if !self.pending_secure_trust.is_empty() {
+                let pending = self.pending_secure_trust.clone();
+                egui::Frame::NONE
+                    .fill(Color32::from_rgb(32, 22, 8))
+                    .stroke(egui::Stroke::new(1.0, Color32::from_rgb(235, 165, 60)))
+                    .corner_radius(egui::CornerRadius::same(10))
+                    .inner_margin(12.0)
+                    .show(ui, |ui| {
+                        ui.label(
+                            RichText::new("⚠  VERIFY NEW SECURE PEER")
+                                .size(12.0)
+                                .strong()
+                                .color(Color32::from_rgb(255, 190, 70)),
+                        );
+                        ui.label(
+                            RichText::new("The first message from an unknown key is rejected and not delivered. Compare the full SHA-256 fingerprint over a separate trusted channel, approve the key, then ask the peer to retry. Noise encryption alone does not verify who is on the other end.")
+                                .size(9.0)
+                                .color(Color32::from_rgb(240, 220, 185)),
+                        );
+                        ui.add_space(6.0);
+                        egui::ScrollArea::vertical()
+                            .id_salt("secure-peer-approvals")
+                            .max_height(170.0)
+                            .show(ui, |ui| {
+                                for (index, item) in pending.iter().enumerate().rev() {
+                                    ui.separator();
+                                    ui.label(RichText::new(format!("PEER · {}", item.node_id)).size(10.0).strong().color(neon));
+                                    ui.add(egui::Label::new(format!("SHA-256 · {}", item.fingerprint)).selectable(true).wrap());
+                                    ui.horizontal(|ui| {
+                                        let trust = ui.button(RichText::new("TRUST KEY").strong().color(neon))
+                                            .on_hover_text("Persist this exact public key only after you have verified the fingerprint out of band. The sender must retry the message after approval.")
+                                            .clicked();
+                                        let reject = ui.button(RichText::new("REJECT").strong().color(Color32::from_rgb(255, 110, 110)))
+                                            .on_hover_text("Reject this peer without trusting or persisting the new key.")
+                                            .clicked();
+                                        if trust {
+                                            self.approve_pending_secure_peer(index);
+                                        } else if reject {
+                                            self.pending_secure_trust.remove(index);
+                                        }
+                                    });
+                                }
+                            });
+                    });
+                ui.add_space(10.0);
+            }
 
             ui.horizontal(|ui| {
                 egui::Frame::NONE
@@ -156,7 +207,7 @@ impl CybOs {
 
                         ui.label(
                             RichText::new(
-                                "Discovery: UDP broadcast. Direct chat: TCP + Noise XX authenticated encryption.",
+                                "Compare full SHA-256 fingerprints through a trusted channel before approving either peer. Noise encrypts transport; peer identity requires approval.",
                             )
                             .size(8.0)
                             .color(dim),
@@ -247,7 +298,7 @@ impl CybOs {
                             .clicked();
 
                         let can_send_secure =
-                            self.lan_target.is_some() && self.secure_send_task.is_none();
+                            self.secure_startup_error.is_none() && self.lan_target.is_some() && self.secure_send_task.is_none();
 
                         let send_secure = ui
                             .add_enabled(
@@ -285,27 +336,15 @@ impl CybOs {
                             let t = self.chat_input.trim().to_string();
 
                             if !t.is_empty() {
-                                let target = self
-                                    .lan_target
-                                    .as_deref()
-                                    .unwrap_or("selected peer")
-                                    .to_string();
-
-                                self.push_chat_message(
-                                    format!("YOU → {}", target),
-                                    t.clone(),
-                                    true,
-                                );
                                 self.send_secure_chat(&t);
-                                self.chat_input.clear();
                             }
                         }
 
                         ui.label(
                             RichText::new(if local_busy {
-                                "LOCAL-FIRST · ROBOT WORKER RUNNING · SECURE CHAT READY"
+                                "LOCAL-FIRST · ROBOT WORKER RUNNING · PEER APPROVAL REQUIRED"
                             } else {
-                                "LOCAL-FIRST · ROBOT WORKER BOUNDED · CHAT ENCRYPTED · ACKNOWLEDGED"
+                                "LOCAL-FIRST · NOISE ENCRYPTION · ACK AFTER PERSISTENCE"
                             })
                                 .size(8.0)
                                 .color(dim),

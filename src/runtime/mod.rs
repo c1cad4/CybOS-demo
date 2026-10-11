@@ -122,12 +122,15 @@ pub(crate) fn open_store() -> Store {
     Store::open()
 }
 
-pub(crate) fn load_or_create_node_id(store: &Store) -> String {
-    store.get("node_id").unwrap_or_else(|| {
-        let value = format!("cyb-{}", &Uuid::new_v4().to_string()[..8]);
-        store.set("node_id", &value);
-        value
-    })
+pub(crate) fn load_or_create_node_id(store: &Store) -> Result<String, String> {
+    let value = match store.get_checked("node_id")? {
+        Some(value) => value,
+        None => store.persist_node_identity(&format!("cyb-{}", &Uuid::new_v4().to_string()[..8]))?,
+    };
+    if value.is_empty() || value.len() > 128 || value.chars().any(char::is_control) {
+        return Err("stored node identity is malformed; refusing to replace it".into());
+    }
+    Ok(value)
 }
 
 pub(crate) fn load_events(store: &Store) -> Vec<crate::models::Event> {
@@ -144,6 +147,19 @@ pub(crate) fn load_events(store: &Store) -> Vec<crate::models::Event> {
 #[cfg(test)]
 mod tests {
     use super::Runtime;
+
+    #[test]
+    fn node_identity_is_stable_and_errors_never_create_temporary_identity() {
+        let store = crate::store::Store::test_store(":memory:");
+        store.test_execute("CREATE TRIGGER deny_node BEFORE INSERT ON kv BEGIN SELECT RAISE(ABORT, 'write denied'); END;");
+        assert!(super::load_or_create_node_id(&store).is_err());
+        store.test_execute("DROP TRIGGER deny_node;");
+        let node = super::load_or_create_node_id(&store).unwrap();
+        assert_eq!(super::load_or_create_node_id(&store).unwrap(), node);
+        store.set_checked("node_id", "\n").unwrap();
+        assert!(super::load_or_create_node_id(&store).is_err());
+        assert_eq!(store.get_checked("node_id").unwrap(), Some("\n".into()));
+    }
 
     #[test]
     fn all_core_cells_have_contracts() {
