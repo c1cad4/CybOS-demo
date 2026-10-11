@@ -220,15 +220,15 @@ impl CybOs {
         ui.horizontal_top(|ui| {
             ui.vertical(|ui| {
                 ui.set_width((width * 0.28).clamp(200.0, 310.0));
-                ui.add(egui::TextEdit::singleline(&mut view.search).hint_text("Найти чат или друга…").desired_width(f32::INFINITY));
+                ui.add(egui::TextEdit::singleline(&mut view.search).hint_text(crate::i18n::tr(ui.ctx(), "Найти чат или друга…")).desired_width(f32::INFINITY));
                 ui.horizontal(|ui| {
                     for (index, label) in ["Чаты", "Друзья", "Группы"].iter().enumerate() {
-                        if ui.selectable_label(view.tab == index, *label).clicked() { view.tab = index; }
+                        if ui.selectable_label(view.tab == index, crate::i18n::tr(ui.ctx(), label)).clicked() { view.tab = index; }
                     }
                 });
                 ui.horizontal(|ui| {
-                    if ui.small_button("+ Друг").clicked() { view.add_friend = !view.add_friend; }
-                    if ui.small_button("+ Группа").clicked() { view.create_group = !view.create_group; }
+                    if ui.small_button(crate::i18n::tr(ui.ctx(), "+ Друг")).clicked() { view.add_friend = !view.add_friend; }
+                    if ui.small_button(crate::i18n::tr(ui.ctx(), "+ Группа")).clicked() { view.create_group = !view.create_group; }
                 });
                 ui.separator();
                 if view.tab == 0 && ui.selectable_label(view.selected == "ai", "ИИ-помощник").clicked() { view.selected = "ai".into(); }
@@ -294,7 +294,7 @@ impl CybOs {
                     ui.collapsing("Контакт и безопасность", |ui| {
                         ui.label(format!("ID: {peer}"));
                         let mut name = book.names.get(peer).cloned().unwrap_or_default();
-                        let changed = ui.add(egui::TextEdit::singleline(&mut name).hint_text("Имя друга")).changed();
+                        let changed = ui.add(egui::TextEdit::singleline(&mut name).hint_text(crate::i18n::tr(ui.ctx(), "Имя друга"))).changed();
                         if changed && name.chars().count() <= 64 {
                             let mut edited = book.clone(); edited.names.insert(peer.clone(), name);
                             match edited.save(&self.store) { Ok(()) => book = edited, Err(e) => view.error = e }
@@ -337,7 +337,7 @@ impl CybOs {
                     }
                     if count == 0 { ui.label("Здесь появится ваша переписка."); }
                 });
-                ui.add(egui::TextEdit::multiline(&mut self.chat_input).desired_rows(2).desired_width(f32::INFINITY).hint_text("Напиши сообщение…"));
+                ui.add(egui::TextEdit::multiline(&mut self.chat_input).desired_rows(2).desired_width(f32::INFINITY).hint_text(crate::i18n::tr(ui.ctx(), "Напиши сообщение…")));
                 let group_busy = ui.ctx().data(|d| d.get_temp::<GroupDelivery>(delivery_id()).is_some());
                 let busy = (group.is_some() && group_busy) || (peer.is_some() && self.secure_send_task.is_some()) || (peer.is_none() && group.is_none() && self.robot_job.is_some());
                 let route_ready = peer.as_ref().is_none_or(|id| self.chat_peers().iter().any(|p| &p.node_id == id));
@@ -360,11 +360,11 @@ impl CybOs {
         });
         if view.add_friend {
             egui::Window::new("Добавить друга").default_width(420.0).anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO).collapsible(false).show(ui.ctx(), |ui| {
-                ui.label("Имя"); ui.text_edit_singleline(&mut view.name);
+                ui.label(crate::i18n::tr(ui.ctx(), "Имя")); ui.text_edit_singleline(&mut view.name);
                 ui.label("ID устройства друга"); ui.text_edit_singleline(&mut self.manual_node_input);
                 ui.label("IPv4-адрес устройства"); ui.text_edit_singleline(&mut self.manual_address_input);
                 ui.small("Имя используется только на твоём устройстве. Перед перепиской сверь код безопасности.");
-                if ui.button("Сохранить друга").clicked() {
+                if ui.button(crate::i18n::tr(ui.ctx(), "Сохранить друга")).clicked() {
                     let node = self.manual_node_input.trim().to_owned();
                     self.save_manual_chat_peer();
                     if self.manual_peers.iter().any(|p| p.node_id == node) {
@@ -373,12 +373,12 @@ impl CybOs {
                     }
                 }
                 ui.label(&self.manual_peer_status);
-                if ui.button("Закрыть").clicked() { view.add_friend = false; }
+                if ui.button(crate::i18n::tr(ui.ctx(), "Закрыть")).clicked() { view.add_friend = false; }
             });
         }
         if view.create_group {
             egui::Window::new("Новая группа").default_width(420.0).anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO).collapsible(false).show(ui.ctx(), |ui| {
-                ui.add(egui::TextEdit::singleline(&mut view.group_title).hint_text("Название группы"));
+                ui.add(egui::TextEdit::singleline(&mut view.group_title).hint_text(crate::i18n::tr(ui.ctx(), "Название группы")));
                 ui.label("Кого добавить?");
                 for peer in &self.manual_peers {
                     let mut chosen = view.members.contains(&peer.node_id);
@@ -387,13 +387,13 @@ impl CybOs {
                     }
                 }
                 ui.small("Первое сообщение станет приглашением. Друг должен принять его. Для отправки нужны проверенные ключи и адреса всех участников.");
-                if ui.button("Создать группу").clicked() {
+                if ui.button(crate::i18n::tr(ui.ctx(), "Создать группу")).clicked() {
                     let mut members = view.members.clone(); members.retain(|m| m != &self.node_id); members.insert(0, self.node_id.clone());
                     let group = Group { id: uuid::Uuid::new_v4().to_string(), title: view.group_title.trim().into(), creator: self.node_id.clone(), members };
                     let mut edited = book.clone(); edited.groups.push(group.clone());
                     match edited.save(&self.store) { Ok(()) => { view.selected = format!("group:{}", group.id); view.create_group = false; view.members.clear(); view.group_title.clear(); view.error.clear(); }, Err(e) => view.error = e }
                 }
-                if ui.button("Отмена").clicked() { view.create_group = false; }
+                if ui.button(crate::i18n::tr(ui.ctx(), "Отмена")).clicked() { view.create_group = false; }
             });
         }
         ui.ctx().data_mut(|d| d.insert_temp(view_id(), view));

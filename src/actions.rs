@@ -33,6 +33,8 @@ impl CybOs {
             Page::Browser,
             Page::CybLex,
             Page::Network,
+            Page::Vpn,
+            Page::CybDex,
             Page::Assets,
             Page::Cameras,
             Page::System,

@@ -9,12 +9,17 @@ impl CybOs {
         if ui.button("Открыть CybDEX · найти торговую пару").clicked() { self.go(crate::Page::CybDex); }
         ui.collapsing("Демо экономики проекта", |ui| { self.token_matrix(ui); });
 
+        ui.collapsing("CybHero · разработка собственной сети", |ui| {
+            ui.label("CYBH: сеть ещё не запущена, монеты и награды не выпускаются. Основа протокола — Monero; CPU-майнинг RandomX — первый кандидат. GPU и постквантовая приватность требуют отдельного исследования.");
+            ui.label("Награды будут зависеть от принятой сетью работы, а не от владения токеном или заявленной мощности. Майнинг не запускается автоматически.");
+            ui.hyperlink_to("Репозиторий CybHero", "https://github.com/c1cad4/cybhero");
+        });
         ui.add_space(18.0);
         ui.separator();
         ui.add_space(10.0);
 
         ui.heading(
-            RichText::new("Адреса токенов")
+            RichText::new(crate::i18n::tr(ui.ctx(), "Адреса токенов"))
                 .strong()
                 .color(Self::green()),
         );
@@ -34,7 +39,7 @@ impl CybOs {
                 ui.label(desc);
                 ui.horizontal_wrapped(|ui| {
                     ui.label(RichText::new(mint).small().color(Color32::GRAY));
-                    if ui.button("Копировать адрес").clicked() {
+                    if ui.button(crate::i18n::tr(ui.ctx(), "Копировать адрес")).clicked() {
                         ui.ctx().copy_text(mint.into());
                         self.notify(format!("{} MINT COPIED", name));
                     }

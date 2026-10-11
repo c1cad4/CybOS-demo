@@ -41,7 +41,7 @@ impl CybOs {
         let neon = Self::neon();
         let dim = Color32::from_rgb(55, 145, 105);
 
-        ui.collapsing("Защищённая сеть · настройка VPN", |ui| { self.wireguard_setup_panel(ui); });
+        if ui.button(crate::i18n::tr(ui.ctx(), "CybVPN")).clicked() { self.go(crate::Page::Vpn); }
         ui.add_space(10.0);
         egui::Frame::new()
             .fill(Color32::from_rgb(4, 16, 11))
@@ -295,24 +295,24 @@ impl CybOs {
 }
 
 impl CybOs {
-    fn wireguard_setup_panel(&mut self, ui: &mut egui::Ui) {
+    pub(crate) fn wireguard_setup_panel(&mut self, ui: &mut egui::Ui) {
         ui.group(|ui| {
-            ui.heading("Защищённая сеть устройств");
+            ui.heading(crate::i18n::tr(ui.ctx(), "Защищённая сеть устройств"));
             ui.hyperlink_to("Установить WireGuard", "https://www.wireguard.com/install/");
             ui.label("Prepare a device profile and activate it in WireGuard. CLI diagnostics provide manual snapshots; App Store tunnels are not monitored.");
             ui.label("This profile routes only the private device subnet; it does not set a default internet route or DNS.");
             ui.separator();
-            if ui.button("Подготовить это устройство").clicked() { self.vpn_setup.create_identity(&self.store); }
+            if ui.button(crate::i18n::tr(ui.ctx(), "Подготовить это устройство")).clicked() { self.vpn_setup.create_identity(&self.store); }
             if let Some(key) = &self.vpn_setup.public_key {
                 ui.label("Device public key — add this on the server");
                 ui.add(egui::Label::new(key).selectable(true).wrap());
-                if ui.button("Копировать публичный ключ").clicked() { ui.ctx().copy_text(key.clone()); }
+                if ui.button(crate::i18n::tr(ui.ctx(), "Копировать публичный ключ")).clicked() { ui.ctx().copy_text(key.clone()); }
             }
-            ui.collapsing("Добавить приглашение", |ui| {
+            ui.collapsing(crate::i18n::tr(ui.ctx(), "Добавить приглашение"), |ui| {
                 ui.add(egui::TextEdit::multiline(&mut self.vpn_setup.invitation_input).desired_rows(3).desired_width(f32::INFINITY).hint_text("Paste device-invitation.json; never paste private keys"));
                 if ui.button("Load public invitation").clicked() { self.vpn_setup.import_invitation(); }
             });
-            ui.collapsing("Настроить сервер", |ui| {
+            ui.collapsing(crate::i18n::tr(ui.ctx(), "Настроить сервер"), |ui| {
                 ui.label("Server endpoint (IP:UDP-port)");
                 let mut changed = ui.add(egui::TextEdit::singleline(&mut self.vpn_setup.profile.endpoint).hint_text("203.0.113.10:51820").desired_width(f32::INFINITY)).changed();
                 ui.label("Server public key — verify with the administrator");

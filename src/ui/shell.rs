@@ -57,7 +57,8 @@ impl CybOs {
                 ui.horizontal_centered(|ui| {
                     crate::brand::show(ui, 40.0);
                     ui.label(RichText::new("CybOS").size(20.0).strong().color(neon));
-                    if ui.small_button("Окно / полный экран").clicked() {
+                    crate::i18n::selector(ui, &self.store);
+                    if ui.small_button(crate::i18n::tr(ui.ctx(), "Окно / полный экран")).clicked() {
                         let full = ui.ctx().input(|i| i.viewport().fullscreen.unwrap_or(false));
                         ui.ctx().send_viewport_cmd(egui::ViewportCommand::Fullscreen(!full));
                     }
@@ -71,7 +72,7 @@ impl CybOs {
                     let search = ui.add_sized(
                         [ui.available_width().min(300.0).max(100.0) - 80.0, 30.0],
                         egui::TextEdit::singleline(&mut self.search)
-                            .hint_text("⌘K  Найти раздел…")
+                            .hint_text(crate::i18n::tr(ui.ctx(), "⌘K  Найти раздел…"))
                             .id(egui::Id::new("cybos_search")),
                     );
                     if self.search_focus {
@@ -81,7 +82,7 @@ impl CybOs {
                     if (search.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)))
                         || ui
                             .add(egui::Button::new(
-                                RichText::new("Найти").strong().color(neon),
+                                RichText::new(crate::i18n::tr(ui.ctx(), "Найти")).strong().color(neon),
                             ))
                             .clicked()
                     {
@@ -95,7 +96,7 @@ impl CybOs {
             .frame(egui::Frame::NONE.fill(panel).inner_margin(10))
             .show(ui, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| {
-                    ui.label(RichText::new("ЛИЧНОЕ ПРОСТРАНСТВО").size(10.0).color(dim));
+                    ui.label(RichText::new(crate::i18n::tr(ui.ctx(), "ЛИЧНОЕ ПРОСТРАНСТВО")).size(10.0).color(dim));
                     ui.add_space(16.0);
                     for (page, label) in [
                         (Page::Graph, "Граф знаний"),
@@ -105,6 +106,7 @@ impl CybOs {
                         (Page::CybLex, "CybLex"),
                         (Page::Robot, "Агенты"),
                         (Page::Network, "Устройства"),
+                        (Page::Vpn, "CybVPN"),
                         (Page::Assets, "Токены"),
                         (Page::CybDex, "CybDEX"),
                         (Page::System, "Cyb Диспетчер"),
@@ -112,7 +114,7 @@ impl CybOs {
                         if ui
                             .add_sized(
                                 [ui.available_width(), 38.0],
-                                egui::Button::new(label).selected(self.page == page)
+                                egui::Button::new(crate::i18n::tr(ui.ctx(), label)).selected(self.page == page)
                                     .fill(if page == Page::Graph { Color32::from_rgb(20, 58, 44) } else if self.page == page { Color32::from_rgb(16, 45, 33) } else { panel }),
                             )
                             .clicked()
@@ -122,13 +124,13 @@ impl CybOs {
                         ui.add_space(4.0);
                     }
                     ui.add_space(20.0);
-                    ui.collapsing("Дополнительно", |ui| {
+                    ui.collapsing(crate::i18n::tr(ui.ctx(), "Дополнительно"), |ui| {
                         for (page, label) in [
-                            (Page::Radar, "Поиск устройств"),
+                            (Page::Radar, "CybRadar"),
                             (Page::Farm, "Демо фермы"),
                             (Page::Cameras, "Камеры"),
                         ] {
-                            if ui.selectable_label(self.page == page, label).clicked() {
+                            if ui.selectable_label(self.page == page, crate::i18n::tr(ui.ctx(), label)).clicked() {
                                 self.go(page);
                             }
                         }
@@ -148,7 +150,7 @@ impl CybOs {
                     );
                     ui.separator();
                     ui.label(
-                        RichText::new("Общение · знания · исследование")
+                        RichText::new(crate::i18n::tr(ui.ctx(), "Общение · знания · исследование"))
                             .size(11.0)
                             .color(dim),
                     );
@@ -174,7 +176,7 @@ impl CybOs {
                             18.0,
                         );
                         ui.label(
-                            RichText::new(self.page.title())
+                            RichText::new(crate::i18n::tr(ui.ctx(), self.page.title()))
                                 .size(18.0)
                                 .strong()
                                 .color(neon),
@@ -185,6 +187,7 @@ impl CybOs {
                     ui.separator();
                     ui.add_space(8.0);
                     match self.page {
+                        Page::Vpn => { egui::ScrollArea::vertical().show(ui, |ui| self.vpn_page(ui)); }
                         Page::Graph => self.graph(ui),
                         Page::Robot => {
                             egui::ScrollArea::vertical()
@@ -206,7 +209,14 @@ impl CybOs {
                                 .auto_shrink([false, false])
                                 .show(ui, |ui| self.brain(ui));
                         }
-                        Page::Network | Page::Radar => {
+                        Page::Radar => {
+                            egui::ScrollArea::vertical().show(ui, |ui| {
+                                super::radio_radar::show(ui);
+                                ui.separator();
+                                ui.collapsing("Устройства CybOS рядом", |ui| self.network(ui));
+                            });
+                        }
+                        Page::Network => {
                             egui::ScrollArea::vertical()
                                 .auto_shrink([false, false])
                                 .show(ui, |ui| self.network(ui));

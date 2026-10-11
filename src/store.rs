@@ -238,6 +238,17 @@ impl Store {
             return Vec::new();
         }
 
+        // Indexed retrieval covers old memories too; UI history remains capped at 200.
+        // Treat user text as quoted terms, never as an FTS query language or SQL.
+        if self.ensure_memory_search().is_ok() {
+            let expression = words.iter().take(12).map(|word| format!("\"{}\"*", word.replace('"', "\"\""))).collect::<Vec<_>>().join(" OR ");
+            if let Ok(mut statement) = self.conn.prepare("SELECT m.id,m.time,m.text,m.source,m.importance FROM memory_search s JOIN memories m ON m.rowid=s.rowid WHERE memory_search MATCH ?1 ORDER BY bm25(memory_search),m.rowid DESC LIMIT 8") {
+                if let Ok(rows) = statement.query_map([expression], |r| Ok(Memory {id:r.get(0)?,time:r.get(1)?,text:r.get(2)?,source:r.get(3)?,importance:r.get(4)?})) {
+                    return rows.filter_map(Result::ok).collect();
+                }
+            }
+        }
+
         self.memories()
             .into_iter()
             .filter(|m| {
@@ -246,6 +257,18 @@ impl Store {
             })
             .take(8)
             .collect()
+    }
+
+    fn ensure_memory_search(&self) -> Result<(), String> {
+        if self.get_checked("memory_search_v1")?.is_some() { return Ok(()); }
+        let tx=self.conn.unchecked_transaction().map_err(|e|e.to_string())?;
+        tx.execute_batch("CREATE VIRTUAL TABLE IF NOT EXISTS memory_search USING fts5(text,content='memories',content_rowid='rowid',tokenize='unicode61');
+            CREATE TRIGGER IF NOT EXISTS memory_search_insert AFTER INSERT ON memories BEGIN INSERT INTO memory_search(rowid,text) VALUES(new.rowid,new.text); END;
+            CREATE TRIGGER IF NOT EXISTS memory_search_delete AFTER DELETE ON memories BEGIN INSERT INTO memory_search(memory_search,rowid,text) VALUES('delete',old.rowid,old.text); END;
+            CREATE TRIGGER IF NOT EXISTS memory_search_update AFTER UPDATE ON memories BEGIN INSERT INTO memory_search(memory_search,rowid,text) VALUES('delete',old.rowid,old.text); INSERT INTO memory_search(rowid,text) VALUES(new.rowid,new.text); END;
+            INSERT INTO memory_search(memory_search) VALUES('rebuild');
+            INSERT OR REPLACE INTO kv(key,value) VALUES('memory_search_v1','1');").map_err(|e|e.to_string())?;
+        tx.commit().map_err(|e|e.to_string())
     }
 
     pub(crate) fn graph_nodes(&self) -> Vec<GraphNode> {

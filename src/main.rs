@@ -1,6 +1,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod brand;
+mod i18n;
+mod agent_run;
 mod conversations;
 mod movie_catalog;
 mod media_stream;
@@ -53,6 +55,6 @@ fn main() -> eframe::Result {
     eframe::run_native(
         "cybOS",
         opts,
-        Box::new(|_cc| Ok(Box::new(CybOs::default()))),
+        Box::new(|cc| { i18n::install_fonts(&cc.egui_ctx); Ok(Box::new(CybOs::default())) }),
     )
 }

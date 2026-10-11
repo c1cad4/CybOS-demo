@@ -9,6 +9,7 @@ impl CybOs {
     pub(crate) fn system(&mut self, ui: &mut egui::Ui) {
         ui.label("Что сейчас делает CybOS: соединения, загрузки, локальный ИИ и состояние данных.");
         ui.add_space(12.0);
+        super::processes::show(ui);
         let (cpu, ram) = super::telemetry::record_process(ui.ctx());
         ui.columns(2, |columns| {
             if let Some(value) = cpu {
@@ -59,8 +60,8 @@ impl CybOs {
             .min_col_width(220.0)
             .spacing([24.0, 10.0])
             .show(ui, |ui| {
-                ui.strong("Модуль");
-                ui.strong("Состояние");
+                ui.strong(crate::i18n::tr(ui.ctx(), "Модуль"));
+                ui.strong(crate::i18n::tr(ui.ctx(), "Состояние"));
                 ui.end_row();
                 for (name, value) in [
                     ("ИИ-помощник", if self.qwen_status.contains("ONLINE") { "Локальная модель готова".into() } else { "Модель недоступна — проверь настройки".into() }),

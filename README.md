@@ -246,3 +246,11 @@ CybLex can now pass rqbit's seekable, piece-aware file stream to a token-protect
 CybChat now has separate conversations, friends with local names, per-conversation drafts, and small groups with explicit invitations. Group messages fan out over existing authenticated Noise connections to members whose keys have been approved; per-peer delivery results are shown. There is no offline queue or membership-changing protocol yet. All members need compatible clients and direct reachable addresses.
 
 The home menu entry was removed; startup opens the knowledge graph. Application measurements now appear in **Cyb Диспетчер**, including process CPU/RSS on supported systems and real module counters. These measurements exclude separate browser, model, and player processes.
+
+## Platform foundations: current development stage
+
+CybVPN is now a separate page with private-subnet and full-internet WireGuard profile preparation. Export is not activation; there is no integrated kill switch or verified internet tunnel yet. The navigation and common controls have local translations for ten widely used languages plus Russian; internal copy and native Swift helpers are not fully localized. CybMind uses SQLite FTS5 to retrieve older memories. The assistant records durable run lifecycle metadata without replaying tools automatically.
+
+CybRadar has an opt-in dump1090 JSON adapter, distinct from CybChat peers. Cyb Dispatcher has an original read-only process snapshot; sandboxed runs may prohibit process enumeration. The browser helper adds HTTPS-only, session reset and default media-capture denial; it does not claim Tor/Mullvad fingerprint protection. Optional `tools/read_only_markets.py` exports CCXT public spot OHLCV; it neither trades nor lists CYBH.
+
+See [upstream integration review](docs/UPSTREAM_INTEGRATION_RU.md) for every requested source, license observations, implementation boundaries and the development sequence. [CybHero](https://github.com/c1cad4/cybhero) is an unlaunched protocol development project; no mining reward or post-quantum transaction privacy is claimed.
