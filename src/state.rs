@@ -109,6 +109,10 @@ pub(crate) struct CybOs {
     pub(crate) secure_send_task: Option<std::sync::mpsc::Receiver<crate::network::secure_chat::SecureSendStatus>>,
     pub(crate) secure_send_contract: Option<crate::runtime::WorkerContract>,
     pub(crate) secure_status: String,
+    pub(crate) local_secure_fingerprint: Option<String>,
+    pub(crate) secure_outgoing_message: Option<String>,
+    pub(crate) secure_startup_error: Option<String>,
+    pub(crate) pending_secure_trust: Vec<crate::network::peer_trust::PendingPeer>,
 
     pub(crate) remember_note: String,
 }
@@ -116,7 +120,8 @@ pub(crate) struct CybOs {
 impl Default for CybOs {
     fn default() -> Self {
         let store = crate::runtime::open_store();
-        let node_id = crate::runtime::load_or_create_node_id(&store);
+        let node_identity = crate::runtime::load_or_create_node_id(&store);
+        let node_id = node_identity.as_ref().cloned().unwrap_or_else(|_| "identity-unavailable".into());
         let events = crate::runtime::load_events(&store);
 
         let mut chat = store.chat_messages();
@@ -133,16 +138,24 @@ impl Default for CybOs {
             );
         }
 
-        let radar_visible = store.get("radar_visible").map(|v| v == "true").unwrap_or(false);
+        let radar_visible = node_identity.is_ok() && store.get("radar_visible").map(|v| v == "true").unwrap_or(false);
         let database_integrity = store.database_integrity();
         let radar_visibility = Arc::new(AtomicBool::new(radar_visible));
-        let lan_events = crate::network::lan::spawn_listener(node_id.clone(), radar_visibility.clone());
-        let noise_private_key = crate::network::secure_chat::load_or_create_static_key(&store)
-            .unwrap_or_default();
-        let secure_listener = crate::network::secure_chat::spawn_listener(
-            node_id.clone(),
-            noise_private_key.clone(),
-        );
+        let lan_events = if node_identity.is_ok() {
+            crate::network::lan::spawn_listener(node_id.clone(), radar_visibility.clone())
+        } else { crate::network::lan::Listener::empty() };
+        let (noise_private_key, secure_listener, secure_startup_error) =
+            match node_identity.and_then(|_| crate::network::secure_chat::load_or_create_static_key(&store)) {
+                Ok(key) => match crate::network::secure_chat::spawn_listener(node_id.clone(), key.clone()) {
+                    Ok(listener) => (key, listener, None),
+                    Err(error) => (key, crate::network::secure_chat::Listener::empty(), Some(error)),
+                },
+                Err(error) => (Vec::new(), crate::network::secure_chat::Listener::empty(), Some(error)),
+            };
+        let local_secure_fingerprint = crate::network::secure_chat::local_fingerprint(&noise_private_key).ok();
+        let secure_status = secure_startup_error.as_ref()
+            .map(|e| format!("SECURE CHAT · UNAVAILABLE · {e}"))
+            .unwrap_or_else(|| "SECURE CHAT · LISTENING · APPROVAL REQUIRED FOR NEW PEERS".into());
 
         let mut app = Self {
             store,
@@ -232,11 +245,16 @@ impl Default for CybOs {
             secure_listener,
             secure_send_task: None,
             secure_send_contract: None,
-            secure_status: "SECURE CHAT · READY".into(),
+            secure_status,
+            local_secure_fingerprint,
+            secure_outgoing_message: None,
+            secure_startup_error,
+            pending_secure_trust: Vec::new(),
 
             remember_note: String::new(),
         };
 
+        if app.secure_startup_error.is_some() { app.runtime.set_status("CYBCHAT", "ERROR"); }
         app.initialize_graph();
         app
     }
@@ -431,6 +449,7 @@ impl CybOs {
 
 impl CybOs {
     pub(crate) fn poll_secure_events(&mut self) {
+        if self.secure_startup_error.is_some() { return; }
         loop {
             let event = match self.secure_listener.try_recv() {
                 Ok(event) => event,
@@ -451,65 +470,42 @@ impl CybOs {
                     public_key,
                     reply,
                 } => {
-                    let trust_key = format!("noise_peer_key:{}", node_id);
-                    let stored = self.store.get(&trust_key).and_then(|value| {
-                        if value.len() % 2 != 0 {
-                            return None;
+                    let approval = crate::network::peer_trust::check_peer(&self.store, &node_id, &public_key);
+                    let failure = match approval {
+                        Ok(true) => None,
+                        Ok(false) => {
+                            let reason = self.queue_secure_peer(node_id.clone(), public_key)
+                                .err().unwrap_or_else(|| "peer approval required; verify fingerprint and retry".into());
+                            Some(reason)
                         }
-                        (0..value.len())
-                            .step_by(2)
-                            .map(|i| u8::from_str_radix(&value[i..i + 2], 16).ok())
-                            .collect::<Option<Vec<u8>>>()
-                    });
-
-                    let trusted = match stored {
-                        Some(known) if known == public_key => true,
-                        Some(_) => {
-                            self.secure_status =
-                                format!("SECURE CHAT · IDENTITY CHANGED · {}", node_id);
-                            self.runtime.set_status("CYBCHAT", "ERROR");
-                            let _ = reply.send(crate::network::secure_chat::SecureReply::Reject(
-                                "Noise identity key changed".into(),
-                            ));
-                            self.add_event(
-                                "SECURITY",
-                                format!(
-                                    "Rejected secure message from {}: Noise identity key changed",
-                                    node_id
-                                ),
-                            );
-                            self.notify("SECURE IDENTITY CHANGE REJECTED");
-                            continue;
-                        }
-                        None => {
-                            let encoded = public_key
-                                .iter()
-                                .map(|b| format!("{b:02x}"))
-                                .collect::<String>();
-                            self.store.set(&trust_key, &encoded);
-                            false
-                        }
+                        Err(error) => Some(error),
                     };
-
-                    if !self.store.claim_secure_message_id(&message_id, &node_id) {
-                        self.secure_status =
-                            format!("SECURE CHAT · REPLAY REJECTED · {}", node_id);
-                        let _ = reply.send(crate::network::secure_chat::SecureReply::Reject(
-                            "replayed message id".into(),
-                        ));
-                        self.add_event(
-                            "SECURITY",
-                            format!(
-                                "Rejected replayed secure message {} from {}",
-                                message_id, node_id
-                            ),
-                        );
-                        self.notify("SECURE REPLAY REJECTED");
+                    if let Some(reason) = failure {
+                        self.secure_status = format!("SECURE CHAT · REJECTED · {reason}");
+                        self.runtime.set_status("CYBCHAT", "ERROR");
+                        let _ = reply.send(crate::network::secure_chat::SecureReply::Reject(reason));
                         continue;
                     }
-
-                    self.upsert_secure_peer(&node_id, &fingerprint, trusted);
-                    self.push_chat_message(format!("CYB:{}", node_id), message.clone(), false);
+                    match self.store.accept_secure_message(&message_id, &node_id, &message) {
+                        Ok(true) => {}
+                        result => {
+                            let reason = match result {
+                                Ok(false) => "replayed message id".into(),
+                                Err(error) => error,
+                                _ => unreachable!(),
+                            };
+                            self.secure_status = format!("SECURE CHAT · REJECTED · {reason}");
+                            self.runtime.set_status("CYBCHAT", "ERROR");
+                            let _ = reply.send(crate::network::secure_chat::SecureReply::Reject(reason));
+                            continue;
+                        }
+                    }
+                    // History is already durable; avoid a second best-effort INSERT.
+                    self.chat.push((format!("CYB:{node_id}"), message, false));
+                    if self.chat.len() > 500 { self.chat.drain(0..self.chat.len() - 500); }
+                    // Optional graph/log work must not delay the durable delivery ACK.
+                    let _ = reply.send(crate::network::secure_chat::SecureReply::Ack);
+                    self.upsert_secure_peer(&node_id, &fingerprint, true);
                     self.add_event(
                         "CHAT",
                         format!(
@@ -517,22 +513,45 @@ impl CybOs {
                             node_id,
                             message_id,
                             fingerprint,
-                            if trusted { "TRUSTED" } else { "TOFU" }
+                            "APPROVED"
                         ),
                     );
                     self.secure_status = format!(
                         "SECURE CHAT · RECEIVED · {} · {}",
                         node_id,
-                        if trusted { "TRUSTED" } else { "TOFU FIRST SEEN" }
+                        "APPROVED"
                     );
-                    let _ = reply.send(crate::network::secure_chat::SecureReply::Ack);
                     self.runtime.set_status("CYBCHAT", "READY");
                 }
             }
         }
     }
 
+    pub(crate) fn queue_secure_peer(&mut self, node_id: String, key: Vec<u8>) -> Result<(), String> {
+        // Never offer to approve a replacement for an existing pin.
+        crate::network::peer_trust::check_peer(&self.store, &node_id, &key)?;
+        crate::network::peer_trust::queue_peer(&mut self.pending_secure_trust, node_id, key)
+    }
+
+    pub(crate) fn approve_pending_secure_peer(&mut self, index: usize) {
+        let Some(peer) = self.pending_secure_trust.get(index).cloned() else { return; };
+        match self.store.approve_secure_peer(&peer.node_id, &peer.public_key) {
+            Ok(()) => {
+                self.pending_secure_trust.remove(index);
+                self.secure_status = format!("SECURE CHAT · KEY APPROVED · {} · RETRY MESSAGE", peer.node_id);
+            }
+            Err(error) => {
+                self.secure_status = format!("SECURE CHAT · APPROVAL FAILED · {error}");
+                self.runtime.set_status("CYBCHAT", "ERROR");
+            }
+        }
+    }
+
     pub(crate) fn send_secure_chat(&mut self, message: &str) {
+        if let Some(error) = &self.secure_startup_error {
+            self.secure_status = format!("SECURE CHAT · UNAVAILABLE · {error}");
+            return;
+        }
         if self.secure_send_task.is_some() {
             self.notify("SECURE DELIVERY ALREADY IN PROGRESS");
             return;
@@ -553,8 +572,17 @@ impl CybOs {
             return;
         };
 
+        let expected_key = match crate::network::peer_trust::approved_key(&self.store, &target_id) {
+            Ok(key) => key,
+            Err(error) => {
+                self.secure_status = format!("SECURE CHAT · IDENTITY ERROR · {error}");
+                self.runtime.set_status("CYBCHAT", "ERROR");
+                return;
+            }
+        };
         let (tx, rx) = std::sync::mpsc::channel();
         self.secure_send_task = Some(rx);
+        self.secure_outgoing_message = Some(message.clone());
         let contract = crate::runtime::WorkerContract::new("CYBCHAT", std::time::Duration::from_secs(12));
         let worker_contract = contract.clone();
         self.secure_send_contract = Some(contract);
@@ -575,11 +603,13 @@ impl CybOs {
                 &peer.node_id,
                 &peer.address,
                 &private_key,
+                expected_key.as_deref(),
                 &message,
             );
             worker_contract.finish(match status {
                 crate::network::secure_chat::SecureSendStatus::Delivered { .. } => "READY",
                 crate::network::secure_chat::SecureSendStatus::Failed { .. } => "ERROR",
+                crate::network::secure_chat::SecureSendStatus::NeedsTrust { .. } => "ERROR",
             });
             let _ = tx.send(status);
         });
@@ -593,6 +623,7 @@ impl CybOs {
         if let Some(contract) = self.secure_send_contract.clone() {
             if contract.expired() {
                 self.secure_send_task = None;
+                self.secure_outgoing_message = None;
                 self.secure_send_contract = None;
                 contract.finish("TIMEOUT");
                 self.secure_status = "SECURE CHAT · TIMEOUT".into();
@@ -603,14 +634,26 @@ impl CybOs {
 
         match rx.try_recv() {
             Ok(status) => {
+                let outgoing = self.secure_outgoing_message.take();
                 self.secure_send_task = None;
                 self.secure_send_contract = None;
                 match status {
                     crate::network::secure_chat::SecureSendStatus::Delivered { message_id, peer_id } => {
+                        if let Some(message) = outgoing {
+                            if self.chat_input.trim() == message { self.chat_input.clear(); }
+                            self.push_chat_message(format!("YOU → {peer_id}"), message, true);
+                        }
                         self.secure_status = format!("SECURE CHAT · DELIVERED · {}", peer_id);
                         self.add_event("CHAT", format!("Encrypted message delivered to {} · {}", peer_id, message_id));
                         self.runtime.set_status("CYBCHAT", "READY");
                         self.notify("ENCRYPTED MESSAGE DELIVERED");
+                    }
+                    crate::network::secure_chat::SecureSendStatus::NeedsTrust { peer_id, public_key } => {
+                        self.secure_status = match self.queue_secure_peer(peer_id, public_key) {
+                            Ok(()) => "SECURE CHAT · APPROVAL REQUIRED · MESSAGE NOT SENT".into(),
+                            Err(error) => format!("SECURE CHAT · IDENTITY ERROR · {error}"),
+                        };
+                        self.runtime.set_status("CYBCHAT", "ERROR");
                     }
                     crate::network::secure_chat::SecureSendStatus::Failed { message_id, peer_id, reason } => {
                         self.secure_status = format!("SECURE CHAT · FAILED · {}", reason);
@@ -623,6 +666,7 @@ impl CybOs {
             Err(std::sync::mpsc::TryRecvError::Empty) => {}
             Err(std::sync::mpsc::TryRecvError::Disconnected) => {
                 self.secure_send_task = None;
+                self.secure_outgoing_message = None;
                 if let Some(contract) = self.secure_send_contract.take() {
                     contract.finish("ERROR");
                 }
