@@ -69,9 +69,28 @@ or LANs. Choose another private subnet in the GUI if 10.77.0.0/24 is in use;
 the first-server helper currently fixes that subnet, so its configuration must
 be reviewed and adjusted consistently in that case.
 
-The first configuration contains one client. To enroll another, retain the
-server key and add a `[Peer]` with that device's public key and unique `/32`
-address. Client-to-client routing through the server additionally requires
+The first configuration contains one client. Prepare a second without changing
+that server's keys or the original files:
+
+```sh
+python3 scripts/add_wireguard_peer.py \
+  --server-dir ./cybos-server \
+  --output-dir ./cybos-server-next \
+  --endpoint SERVER_PUBLIC_IPV4:51820 \
+  --device-public-key SECOND_DEVICE_PUBLIC_KEY \
+  --device-address 10.77.0.3/32
+```
+
+The new folder contains a full server configuration retaining all existing peers
+and an invitation for the new device only. Duplicate addresses and keys, the
+server's own key, changed listen ports, permissive source files and unsupported
+configuration settings are rejected. This helper accepts the minimal format
+created by the first-server helper; it rejects customized configurations rather
+than silently discarding policy. Review and deploy the new configuration through
+your existing server maintenance process; nothing is applied automatically. For
+later devices, use the latest folder as `--server-dir` and a new output folder.
+
+Client-to-client routing through the server additionally requires
 IPv4 forwarding and firewall rules allowing the intended device subnet.
 Those policy changes are not performed by the helper. No internet NAT or
 exit-node routing is configured.
