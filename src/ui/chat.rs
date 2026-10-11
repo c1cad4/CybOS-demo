@@ -1,3 +1,4 @@
+/Users/pussy/.zprofile:6: no such file or directory: /opt/homebrew/bin/brew
 use crate::{
     CybOs,
     conversations::{Book, Group, GroupMessage},
@@ -198,12 +199,9 @@ impl CybOs {
         }
         for group in invitations {
             ui.horizontal(|ui| {
-                ui.label(format!(
-                    "Приглашение в «{}» от {}",
-                    group.title,
-                    book.name(&group.creator)
-                ));
-                if ui.button("Присоединиться").clicked() {
+                let invitation = crate::i18n::tr(ui.ctx(), "Приглашение в «{}» от {}");
+                ui.label(invitation.replacen("{}", &group.title, 1).replacen("{}", &book.name(&group.creator), 1));
+                if ui.button(crate::i18n::tr(ui.ctx(), "Присоединиться")).clicked() {
                     let mut changed = book.clone();
                     changed.groups.push(group.clone());
                     match changed.save(&self.store) {
@@ -231,11 +229,11 @@ impl CybOs {
                     if ui.small_button(crate::i18n::tr(ui.ctx(), "+ Группа")).clicked() { view.create_group = !view.create_group; }
                 });
                 ui.separator();
-                if view.tab == 0 && ui.selectable_label(view.selected == "ai", "ИИ-помощник").clicked() { view.selected = "ai".into(); }
+                if view.tab == 0 && ui.selectable_label(view.selected == "ai", crate::i18n::tr(ui.ctx(), "ИИ-помощник")).clicked() { view.selected = "ai".into(); }
                 let query = view.search.trim().to_lowercase();
                 egui::ScrollArea::vertical().id_salt("cybchat-sidebar").max_height(520.0).show(ui, |ui| {
                     if view.tab != 2 {
-                        if self.manual_peers.is_empty() { ui.label("Добавь друга по ID и адресу его устройства."); }
+                        if self.manual_peers.is_empty() { ui.label(crate::i18n::tr(ui.ctx(), "Добавь друга по ID и адресу его устройства.")); }
                         let mut contact_ids: Vec<_> = self.manual_peers.iter().map(|p| p.node_id.clone()).collect();
                         if view.tab == 0 {
                             for (who, raw, _) in &self.chat {
@@ -253,7 +251,7 @@ impl CybOs {
                             if ui.selectable_label(view.selected == id, format!("{}  {name}", if online { "●" } else { "○" })).clicked() {
                                 view.selected = id; self.lan_target = Some(node);
                             }
-                            ui.small(if online { "В сети рядом" } else { "Доступность неизвестна" });
+                            ui.small(if online { crate::i18n::tr(ui.ctx(), "В сети рядом") } else { crate::i18n::tr(ui.ctx(), "Доступность неизвестна") });
                             ui.add_space(6.0);
                         }
                     }
@@ -261,16 +259,16 @@ impl CybOs {
                         for group in &book.groups {
                             if !group.title.to_lowercase().contains(&query) { continue; }
                             let id = format!("group:{}", group.id);
-                            if ui.selectable_label(view.selected == id, format!("Группа: {}", group.title)).clicked() { view.selected = id; }
-                            ui.small(format!("{} участников", group.members.len()));
+                            if ui.selectable_label(view.selected == id, format!("{}: {}", crate::i18n::tr(ui.ctx(), "Группа"), group.title)).clicked() { view.selected = id; }
+                            ui.small(format!("{} {}", group.members.len(), crate::i18n::tr(ui.ctx(), "участников")));
                         }
-                        if view.tab == 2 && book.groups.is_empty() { ui.label("Создай группу и выбери друзей."); }
+                        if view.tab == 2 && book.groups.is_empty() { ui.label(crate::i18n::tr(ui.ctx(), "Создай группу и выбери друзей.")); }
                     }
                 });
-                ui.collapsing("Найти рядом", |ui| {
-                    if ui.add_enabled(self.lan_scan.is_none(), egui::Button::new("Найти пользователей")).clicked() { self.start_lan_scan(); }
+                ui.collapsing(crate::i18n::tr(ui.ctx(), "Найти рядом"), |ui| {
+                    if ui.add_enabled(self.lan_scan.is_none(), egui::Button::new(crate::i18n::tr(ui.ctx(), "Найти пользователей"))).clicked() { self.start_lan_scan(); }
                     for peer in self.lan_peers.clone().into_iter().filter(|p| p.last_seen.elapsed().as_secs() <= 20) {
-                        if ui.button(format!("Добавить {}", peer.node_id)).clicked() {
+                        if ui.button(format!("{} {}", crate::i18n::tr(ui.ctx(), "Добавить"), peer.node_id)).clicked() {
                             self.manual_node_input = peer.node_id; self.manual_address_input = peer.address;
                             view.add_friend = true;
                         }
@@ -282,16 +280,16 @@ impl CybOs {
                 ui.set_width((width - (width * 0.28).clamp(200.0, 310.0) - 30.0).max(240.0));
                 let peer = view.selected.strip_prefix("peer:").map(str::to_owned);
                 let group = view.selected.strip_prefix("group:").and_then(|id| book.groups.iter().find(|g| g.id == id)).cloned();
-                let title = if let Some(group) = &group { group.title.clone() } else if let Some(peer) = &peer { book.name(peer).into() } else { "ИИ-помощник".into() };
+                let title = if let Some(group) = &group { group.title.clone() } else if let Some(peer) = &peer { book.name(peer).into() } else { crate::i18n::tr(ui.ctx(), "ИИ-помощник").into() };
                 ui.heading(title);
                 if let Some(group) = &group {
-                    ui.collapsing(format!("Участники · {}", group.members.len()), |ui| {
+                    ui.collapsing(format!("{} · {}", crate::i18n::tr(ui.ctx(), "Участники"), group.members.len()), |ui| {
                         for member in &group.members { ui.label(book.name(member)); }
-                        ui.small("Защищённая прямая доставка каждому участнику. Недоступные участники не получают сообщения позже автоматически.");
+                        ui.small(crate::i18n::tr(ui.ctx(), "Защищённая прямая доставка каждому участнику. Недоступные участники не получают сообщения позже автоматически."));
                     });
                 } else if let Some(peer) = &peer {
                     self.lan_target = Some(peer.clone());
-                    ui.collapsing("Контакт и безопасность", |ui| {
+                    ui.collapsing(crate::i18n::tr(ui.ctx(), "Контакт и безопасность"), |ui| {
                         ui.label(format!("ID: {peer}"));
                         let mut name = book.names.get(peer).cloned().unwrap_or_default();
                         let changed = ui.add(egui::TextEdit::singleline(&mut name).hint_text(crate::i18n::tr(ui.ctx(), "Имя друга"))).changed();
@@ -299,12 +297,12 @@ impl CybOs {
                             let mut edited = book.clone(); edited.names.insert(peer.clone(), name);
                             match edited.save(&self.store) { Ok(()) => book = edited, Err(e) => view.error = e }
                         }
-                        if ui.add_enabled(self.secure_send_task.is_none(), egui::Button::new("Проверить соединение и ключ")).clicked() { self.check_secure_connection(); }
+                        if ui.add_enabled(self.secure_send_task.is_none(), egui::Button::new(crate::i18n::tr(ui.ctx(), "Проверить соединение и ключ"))).clicked() { self.check_secure_connection(); }
                         if let Ok(Some(key)) = crate::network::peer_trust::approved_key(&self.store, peer) { ui.label(crate::network::secure_chat::fingerprint(&key)); }
                         ui.label(&self.secure_status);
-                        if ui.button("Удалить из друзей").clicked() { self.remove_manual_chat_peer(peer); view.selected = "ai".into(); }
+                        if ui.button(crate::i18n::tr(ui.ctx(), "Удалить из друзей")).clicked() { self.remove_manual_chat_peer(peer); view.selected = "ai".into(); }
                     });
-                } else { ui.small("Локальный помощник использует твою память и граф знаний."); }
+                } else { ui.small(crate::i18n::tr(ui.ctx(), "Локальный помощник использует твою память и граф знаний.")); }
                 if view.draft_for != view.selected {
                     if !view.draft_for.is_empty() { view.drafts.insert(view.draft_for.clone(), self.chat_input.clone()); }
                     self.chat_input = view.drafts.get(&view.selected).cloned().unwrap_or_default();
@@ -330,12 +328,12 @@ impl CybOs {
                         if !show { continue; }
                         count += 1;
                         egui::Frame::NONE.fill(if *mine { Color32::from_rgb(16, 57, 43) } else { Color32::from_rgb(12, 29, 25) }).corner_radius(10).inner_margin(10.0).show(ui, |ui| {
-                            ui.label(RichText::new(if *mine { "Ты" } else { book.name(who.strip_prefix("CYB:").unwrap_or(who)) }).small().color(Color32::from_rgb(100, 220, 165)));
+                            ui.label(RichText::new(if *mine { crate::i18n::tr(ui.ctx(), "Ты") } else { book.name(who.strip_prefix("CYB:").unwrap_or(who)).to_owned() }).small().color(Color32::from_rgb(100, 220, 165)));
                             ui.add(egui::Label::new(body).selectable(true).wrap());
                         });
                         ui.add_space(7.0);
                     }
-                    if count == 0 { ui.label("Здесь появится ваша переписка."); }
+                    if count == 0 { ui.label(crate::i18n::tr(ui.ctx(), "Здесь появится ваша переписка.")); }
                 });
                 ui.add(egui::TextEdit::multiline(&mut self.chat_input).desired_rows(2).desired_width(f32::INFINITY).hint_text(crate::i18n::tr(ui.ctx(), "Напиши сообщение…")));
                 let group_busy = ui.ctx().data(|d| d.get_temp::<GroupDelivery>(delivery_id()).is_some());
@@ -343,27 +341,27 @@ impl CybOs {
                 let route_ready = peer.as_ref().is_none_or(|id| self.chat_peers().iter().any(|p| &p.node_id == id));
                 let transport_ready = (peer.is_none() && group.is_none()) || self.secure_startup_error.is_none();
                 ui.horizontal(|ui| {
-                    if ui.add_enabled(!busy && route_ready && transport_ready && !self.chat_input.trim().is_empty(), egui::Button::new(if busy { "Отправляется…" } else { "Отправить" })).clicked() {
+                    if ui.add_enabled(!busy && route_ready && transport_ready && !self.chat_input.trim().is_empty(), egui::Button::new(if busy { crate::i18n::tr(ui.ctx(), "Отправляется…") } else { crate::i18n::tr(ui.ctx(), "Отправить") })).clicked() {
                         let text = self.chat_input.trim().to_owned();
                         if let Some(group) = &group {
                             match self.send_group_message(ui.ctx(), group, &text) { Ok(()) => { view.error.clear(); }, Err(e) => view.error = e }
                         } else if peer.is_some() { self.send_secure_chat(&text); }
                         else { self.push_chat_message("YOU", text.clone(), true); let _ = self.start_robot_job(text); self.chat_input.clear(); }
                     }
-                    ui.small("История хранится на этом устройстве");
+                    ui.small(crate::i18n::tr(ui.ctx(), "История хранится на этом устройстве"));
                 });
                 if group.is_some() { ui.add(egui::Label::new(&self.secure_status).wrap()); }
-                if !transport_ready { ui.colored_label(Color32::LIGHT_RED, "Соединение недоступно. Подробности — в Cyb Диспетчере. Проверь, не запущена ли другая копия CybOS."); }
-                if !route_ready { ui.label("Добавь адрес этого собеседника через кнопку «+ Друг»."); }
-                if peer.is_some() && self.secure_status.contains("DELIVERED") { ui.small("Последнее сообщение доставлено"); }
+                if !transport_ready { ui.colored_label(Color32::LIGHT_RED, crate::i18n::tr(ui.ctx(), "Соединение недоступно. Подробности — в Cyb Диспетчере. Проверь, не запущена ли другая копия CybOS.")); }
+                if !route_ready { ui.label(crate::i18n::tr(ui.ctx(), "Добавь адрес этого собеседника через кнопку «+ Друг».")); }
+                if peer.is_some() && self.secure_status.contains("DELIVERED") { ui.small(crate::i18n::tr(ui.ctx(), "Последнее сообщение доставлено")); }
             });
         });
         if view.add_friend {
-            egui::Window::new("Добавить друга").default_width(420.0).anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO).collapsible(false).show(ui.ctx(), |ui| {
+            egui::Window::new(crate::i18n::tr(ui.ctx(), "Добавить друга")).default_width(420.0).anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO).collapsible(false).show(ui.ctx(), |ui| {
                 ui.label(crate::i18n::tr(ui.ctx(), "Имя")); ui.text_edit_singleline(&mut view.name);
-                ui.label("ID устройства друга"); ui.text_edit_singleline(&mut self.manual_node_input);
-                ui.label("IPv4-адрес устройства"); ui.text_edit_singleline(&mut self.manual_address_input);
-                ui.small("Имя используется только на твоём устройстве. Перед перепиской сверь код безопасности.");
+                ui.label(crate::i18n::tr(ui.ctx(), "ID устройства друга")); ui.text_edit_singleline(&mut self.manual_node_input);
+                ui.label(crate::i18n::tr(ui.ctx(), "IPv4-адрес устройства")); ui.text_edit_singleline(&mut self.manual_address_input);
+                ui.small(crate::i18n::tr(ui.ctx(), "Имя используется только на твоём устройстве. Перед перепиской сверь код безопасности."));
                 if ui.button(crate::i18n::tr(ui.ctx(), "Сохранить друга")).clicked() {
                     let node = self.manual_node_input.trim().to_owned();
                     self.save_manual_chat_peer();
@@ -377,16 +375,16 @@ impl CybOs {
             });
         }
         if view.create_group {
-            egui::Window::new("Новая группа").default_width(420.0).anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO).collapsible(false).show(ui.ctx(), |ui| {
+            egui::Window::new(crate::i18n::tr(ui.ctx(), "Новая группа")).default_width(420.0).anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO).collapsible(false).show(ui.ctx(), |ui| {
                 ui.add(egui::TextEdit::singleline(&mut view.group_title).hint_text(crate::i18n::tr(ui.ctx(), "Название группы")));
-                ui.label("Кого добавить?");
+                ui.label(crate::i18n::tr(ui.ctx(), "Кого добавить?"));
                 for peer in &self.manual_peers {
                     let mut chosen = view.members.contains(&peer.node_id);
                     if ui.checkbox(&mut chosen, book.name(&peer.node_id)).changed() {
                         if chosen { view.members.push(peer.node_id.clone()); } else { view.members.retain(|m| m != &peer.node_id); }
                     }
                 }
-                ui.small("Первое сообщение станет приглашением. Друг должен принять его. Для отправки нужны проверенные ключи и адреса всех участников.");
+                ui.small(crate::i18n::tr(ui.ctx(), "Первое сообщение станет приглашением. Друг должен принять его. Для отправки нужны проверенные ключи и адреса всех участников."));
                 if ui.button(crate::i18n::tr(ui.ctx(), "Создать группу")).clicked() {
                     let mut members = view.members.clone(); members.retain(|m| m != &self.node_id); members.insert(0, self.node_id.clone());
                     let group = Group { id: uuid::Uuid::new_v4().to_string(), title: view.group_title.trim().into(), creator: self.node_id.clone(), members };
@@ -400,7 +398,7 @@ impl CybOs {
     }
 
     fn chat_trust_panel(&mut self, ui: &mut egui::Ui) {
-        ui.collapsing("Мой ID и код безопасности", |ui| {
+        ui.collapsing(crate::i18n::tr(ui.ctx(), "Мой ID и код безопасности"), |ui| {
             ui.add(egui::Label::new(&self.node_id).selectable(true));
             if let Some(fp) = &self.local_secure_fingerprint {
                 ui.add(egui::Label::new(fp).selectable(true).wrap());
@@ -408,12 +406,12 @@ impl CybOs {
         });
         for (index, item) in self.pending_secure_trust.clone().iter().enumerate().rev() {
             ui.group(|ui| {
-                ui.colored_label(Color32::GOLD, format!("Проверь устройство {}", item.node_id));
-                ui.label("Сверь весь код с другом по другому каналу связи. После подтверждения повтори отправку.");
+                ui.colored_label(Color32::GOLD, crate::i18n::tr(ui.ctx(), "Проверь устройство {}").replacen("{}", &item.node_id, 1));
+                ui.label(crate::i18n::tr(ui.ctx(), "Сверь весь код с другом по другому каналу связи. После подтверждения повтори отправку."));
                 ui.add(egui::Label::new(&item.fingerprint).selectable(true).wrap());
                 ui.horizontal(|ui| {
-                    if ui.button("Коды совпадают").clicked() { self.approve_pending_secure_peer(index); }
-                    if ui.button("Отклонить").clicked() { self.pending_secure_trust.remove(index); }
+                    if ui.button(crate::i18n::tr(ui.ctx(), "Коды совпадают")).clicked() { self.approve_pending_secure_peer(index); }
+                    if ui.button(crate::i18n::tr(ui.ctx(), "Отклонить")).clicked() { self.pending_secure_trust.remove(index); }
                 });
             });
         }

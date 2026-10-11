@@ -1,3 +1,4 @@
+/Users/pussy/.zprofile:6: no such file or directory: /opt/homebrew/bin/brew
 //! Local, deterministic UI translations. User content is never sent for translation.
 use eframe::egui;
 use std::sync::OnceLock;
@@ -126,6 +127,25 @@ mod tests {
             }
         }
     }
+    #[test]
+    fn cybchat_copy_is_complete_and_keeps_format_placeholders() {
+        let catalog: serde_json::Value =
+            serde_json::from_str(include_str!("../locales/interface.json")).unwrap();
+        for key in [
+            "Чаты", "Друзья", "Группы", "ИИ-помощник", "Добавить друга",
+            "Новая группа", "Найти рядом", "Контакт и безопасность",
+            "Проверить соединение и ключ", "Приглашение в «{}» от {}",
+            "Проверь устройство {}",
+        ] {
+            let row = catalog.get(key).expect(key);
+            for (code, _) in LANGUAGES {
+                let value = row.get(code).and_then(|v| v.as_str()).expect(key);
+                assert!(!value.trim().is_empty(), "{key}: {code}");
+                assert_eq!(value.matches("{}").count(), key.matches("{}").count(), "{key}: {code}");
+            }
+        }
+    }
+
     #[test]
     fn unknown_language_and_content_are_safe() {
         let ctx = egui::Context::default();

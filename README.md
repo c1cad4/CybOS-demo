@@ -1,3 +1,4 @@
+/Users/pussy/.zprofile:6: no such file or directory: /opt/homebrew/bin/brew
 # cybOS 0.7.2 — CicadaFarm · RobotCYB · CybChat
 
 This repository contains both the browser prototype and the native macOS-first Rust/egui application. The browser layer is the visual prototype; the native layer is the real desktop runtime.
@@ -257,4 +258,4 @@ See [upstream integration review](docs/UPSTREAM_INTEGRATION_RU.md) for every req
 
 ### Localization and Stratux follow-up
 
-The local interface catalog now contains 128 keys in ten widely used languages plus Russian. Browser actions, VPN guidance, WireGuard profile fields, and technical chart controls for SMA/EMA, Bollinger bands, RSI, MACD and drawing tools are localized. Backend errors and native Swift helpers remain partially localized. The aircraft radar imports a recorded Stratux `/traffic` JSON frame or an array of frames using the upstream TrafficInfo schema. It rejects stale/invalid positions and labels imported snapshots; live Stratux WebSocket and AIS reception are not implemented. No radio hardware or VPN server is assumed.
+The local interface catalog now contains 163 keys in ten widely used languages plus Russian. Browser actions, VPN guidance, WireGuard profile fields, CybChat tabs, friends/groups, discovery, security prompts and message states, and technical chart controls are localized. Backend errors and native Swift helpers remain partially localized. The aircraft radar imports a recorded Stratux `/traffic` JSON frame or an array of frames using the upstream TrafficInfo schema. It rejects stale/invalid positions and labels imported snapshots; live Stratux WebSocket and AIS reception are not implemented. No radio hardware or VPN server is assumed.
