@@ -8,8 +8,8 @@ impl CybOs {
             "System status:
 Node ID: {}
 Status: {}
-Temperature: {:.1} C
-Battery: {:.0}%",
+Demo temperature (no sensor): {:.1} C
+Demo battery (not measured): {:.0}%",
             self.node_id, self.status, self.temperature, self.battery
         )
     }

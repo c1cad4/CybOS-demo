@@ -13,8 +13,8 @@ impl CybOs {
         ui.add_space(10.0);
         egui::Grid::new("sys").num_columns(3).spacing([10.0, 8.0]).show(ui, |ui| {
             self.card(ui, "VERSION", APP_VERSION);
-            self.card(ui, "BATTERY", &format!("{:.0}%", self.battery));
-            self.card(ui, "TEMP", &format!("{:.1}°C", self.temperature));
+            self.card(ui, "DATABASE", &self.database_integrity);
+            self.card(ui, "RUNTIME", &format!("{} / {} ready", self.runtime.healthy_count(), self.runtime.cells.len()));
             ui.end_row();
         });
         ui.add_space(12.0);

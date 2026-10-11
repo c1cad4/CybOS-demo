@@ -109,7 +109,6 @@ impl Store {
             .optional().map_err(|e| format!("read identity: {e}"))
     }
 
-    #[cfg(test)]
     pub(crate) fn set_checked(&self, key: &str, value: &str) -> Result<(), String> {
         self.conn.execute("INSERT INTO kv(key,value) VALUES(?1,?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value", params![key, value])
             .map(|_| ()).map_err(|e| format!("persist identity: {e}"))

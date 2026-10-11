@@ -69,3 +69,15 @@ Unit/loopback tests do not establish real LAN/BLE interoperability. Noise keys
 remain local SQLite data; OS keychain integration, authenticated key rotation,
 cross-device trust synchronization and external cryptographic review are
 separate work. There is no automatic trust reset or key replacement flow.
+
+## Saved devices and connection checks
+
+Open Chat → Add device by address. Copy the other device's node ID from My device identity, enter its IPv4 address and choose Save and select. The secure TCP port is 39394. Hostnames, IPv6 and custom ports are not supported by this form. Up to 32 routing entries are retained in the local database.
+
+Verify connection performs only the initial Noise handshake to retrieve the device's public key; no message body is sent. Compare the entire fingerprint out of band before approving it. Verify connection again after approval to check the saved key, then send your message. An approved receiver must also approve the sender before delivery succeeds.
+
+Saved addresses and approved identity keys are independent. Updating or removing an address does not replace or revoke its approved key. Changed keys remain rejected. Discovered entries show Seen on LAN; manual entries show Availability unknown until you explicitly verify or send. A successful key check does not claim discovery or a delivery ACK.
+
+The two composer buttons are explicit: Ask local assistant starts a local assistant request; Send to device uses the selected encrypted peer. Enter inserts a new line. Both buttons require a nonempty draft; device sending also requires a selected device and available transport.
+
+Secure receiving and delivery polling run across all application pages; keeping Chat open is not required for ACK processing.

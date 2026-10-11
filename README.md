@@ -210,3 +210,7 @@ The ten sibling libraries are pinned in `components.lock.json`; existing checkou
 ## Secure CybChat approval
 
 [First contact, upgrade and durable delivery](docs/SECURE_CHAT.md). Unknown receivers receive no message body until their key is approved; incoming messages are acknowledged only after SQLite commit.
+
+### Workspace and device chat
+
+The home screen provides direct links to chat, network, assistant, knowledge and diagnostics, with current runtime and database status. Farm counters are demonstration data, not live sensor readings. CybChat supports saved IPv4 addresses, explicit key approval, connection checks without sending message content, and separate assistant/device actions. See [secure chat](docs/SECURE_CHAT.md).
