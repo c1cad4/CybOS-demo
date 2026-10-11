@@ -12,10 +12,11 @@ impl CybOs {
         let dim = Color32::from_rgb(55, 145, 105);
         let memories = self.store.memories();
         ui.label(
-            RichText::new("MEMORY · GRAPH · LOCAL AI · NO FAKE CLOUD BRAIN")
+            RichText::new("Личные знания хранятся локально. Синхронизация с глобальным мозгом ещё не реализована.")
                 .size(11.0)
                 .color(dim),
         );
+        if ui.button("Открыть граф знаний").clicked() { self.go(crate::Page::Graph); }
         ui.add_space(10.0);
         egui::Grid::new("brain").num_columns(4).spacing([10.0, 8.0]).show(ui, |ui| {
             self.card(ui, "MEMORY", &format!("{}", memories.len()));

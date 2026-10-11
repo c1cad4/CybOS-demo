@@ -23,7 +23,7 @@ impl CybOs {
                             .color(neon),
                     );
                     ui.label(
-                        RichText::new("PROTOCOL ROUTER · BOUNDED DOCUMENT ENGINE")
+                        RichText::new("Чтение веб-страниц · без поддержки всех функций сайтов")
                             .size(9.0)
                             .color(dim),
                     );
@@ -33,7 +33,7 @@ impl CybOs {
 
                 ui.horizontal(|ui| {
                     let response = ui.add_sized(
-                        [620.0, 32.0],
+                        [(ui.available_width() - 90.0).max(80.0), 32.0],
                         egui::TextEdit::singleline(&mut self.browser_url)
                             .hint_text("https://… · ipfs://… · ipns://… · ar://… · cyb://ipfs/…"),
                     );
@@ -56,21 +56,7 @@ impl CybOs {
 
                 ui.add_space(6.0);
 
-                ui.horizontal_wrapped(|ui| {
-                    for (name, url) in [
-                        ("CYBERIA", "https://cyberia.blog"),
-                        ("IPFS TEST", "ipfs://bafybeigdyrzt5example"),
-                        ("ARWEAVE", "ar://AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),
-                    ] {
-                        if ui
-                            .add(egui::Button::new(RichText::new(name).size(9.0).color(neon)))
-                            .clicked()
-                        {
-                            self.browser_url = url.into();
-                            self.navigate_browser();
-                        }
-                    }
-                });
+
             });
 
         ui.add_space(10.0);

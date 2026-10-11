@@ -43,20 +43,40 @@ pub(crate) enum Icon {
 impl Page {
     pub(crate) fn title(self) -> &'static str {
         match self {
-            Page::Dashboard => "CENTRAL CYBOS DASHBOARD",
-            Page::Graph => "CYBOS GRAPH",
-            Page::Network => "NETWORK MATRIX",
-            Page::Radar => "CYB RADAR",
-            Page::Brain => "CYBOS BRAIN",
+            Page::Dashboard => "Главная",
+            Page::Graph => "Граф знаний",
+            Page::Network => "Устройства",
+            Page::Radar => "Поиск устройств",
+            Page::Brain => "Мозг",
             Page::Farm => "CICADAFARM",
-            Page::Robot => "ROBOTCYB",
-            Page::System => "SYSTEM CORE",
-            Page::Chat => "CYBCHAT",
+            Page::Robot => "Агенты",
+            Page::System => "Диагностика",
+            Page::Chat => "CybChat",
             Page::Assets => "ASSETS",
             Page::Cameras => "FARM CAMERAS",
-            Page::CybLex => "CYBLEX",
+            Page::CybLex => "CybLex",
             Page::CybDex => "CYBDEX · MARKET",
-            Page::Browser => "CYBBROWSER",
+            Page::Browser => "Браузер",
+        }
+    }
+
+    pub(crate) fn description(self) -> &'static str {
+        match self {
+            Self::Dashboard => "Ваше пространство для общения, знаний и работы с интернетом.",
+            Self::Chat => "Переписывайтесь с подключёнными устройствами через CybChat.",
+            Self::Brain | Self::Graph => {
+                "Сохраняйте знания локально и исследуйте связи между ними."
+            }
+            Self::Browser => {
+                "Читайте веб-страницы внутри CybOS. Полная анонимность не гарантируется."
+            }
+            Self::CybLex => "Музыка, фильмы и файлы: загрузка и раздача через BitTorrent.",
+            Self::Robot => "Поручите задачу локальному ИИ-помощнику.",
+            Self::Network | Self::Radar => {
+                "Найдите устройства и подготовьте защищённое соединение."
+            }
+            Self::System => "Состояние приложения и технические сведения.",
+            _ => "Дополнительный модуль CybOS.",
         }
     }
 
@@ -81,19 +101,19 @@ impl Page {
 
     pub(crate) fn matches_query(self, q: &str) -> bool {
         let keys = match self {
-            Page::Dashboard => "dashboard home core sigma live node activity",
-            Page::Robot => "robot robotcyb agent qwen ai робот",
+            Page::Dashboard => "dashboard home главная core sigma live node activity",
+            Page::Robot => "robot robotcyb agent agents qwen ai робот агенты помощник",
             Page::Farm => "farm cicadafarm hive chicken goat honey eggs environment ферма улей пасека",
             Page::Chat => "chat cybchat message peer чат",
             Page::Graph => "graph cybergraph nodes links граф",
             Page::Brain => "brain memory knowledge qwen мозг память знания",
-            Page::Network => "network lan p2p ble nostr сеть",
+            Page::Network => "network devices lan p2p ble nostr сеть устройства",
             Page::Radar => "radar proximity nearby peers bluetooth ble nearby узлы друзья",
             Page::Assets => "assets tokens cicadafarm robotcyb mint solana токены токен",
             Page::Cameras => "cameras camera rtsp farm live",
-            Page::CybLex => "cyblex archive torrent bittorrent magnet seed share download p2p files",
+            Page::CybLex => "cyblex сайблекс музыка фильмы файлы библиотека torrent archive bittorrent magnet seed share download p2p files",
             Page::CybDex => "cybdex dex market tokens pairs pools ohlcv candlestick price liquidity volume swap solana",
-            Page::Browser => "browser cybbrowser web web2 http https ipfs ipns arweave ar decentralized browser",
+            Page::Browser => "browser браузер cybbrowser web web2 http https ipfs ipns arweave ar decentralized browser",
             Page::System => "system energy battery node database",
         };
 

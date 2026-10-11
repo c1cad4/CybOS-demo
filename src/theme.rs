@@ -193,7 +193,7 @@ impl CybOs {
     pub(crate) fn neon_theme(&self, ctx: &egui::Context) {
         let mut visuals = egui::Visuals::dark();
 
-        visuals.override_text_color = Some(Color32::from_rgb(210, 255, 228));
+        visuals.override_text_color = Some(Color32::from_rgb(220, 232, 228));
 
         visuals.extreme_bg_color = Color32::from_rgb(1, 6, 5);
 
@@ -207,6 +207,16 @@ impl CybOs {
 
         visuals.hyperlink_color = Color32::from_rgb(80, 255, 170);
 
+        visuals.selection.bg_fill = Color32::from_rgb(16, 67, 49);
+        visuals.selection.stroke = Stroke::new(1.0, Self::neon());
+        visuals.widgets.inactive.bg_fill = Color32::from_rgb(13, 30, 24);
+        visuals.widgets.inactive.weak_bg_fill = Color32::from_rgb(13, 30, 24);
+        visuals.widgets.inactive.bg_stroke = Stroke::new(1.0, Color32::from_rgb(38, 65, 54));
+        visuals.widgets.hovered.bg_fill = Color32::from_rgb(22, 55, 41);
+        visuals.widgets.hovered.weak_bg_fill = Color32::from_rgb(22, 55, 41);
+        visuals.widgets.hovered.bg_stroke = Stroke::new(1.0, Self::neon());
+        visuals.widgets.active.bg_fill = Color32::from_rgb(25, 75, 52);
+        visuals.widgets.active.weak_bg_fill = Color32::from_rgb(25, 75, 52);
         ctx.set_visuals(visuals);
     }
 

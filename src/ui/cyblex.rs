@@ -16,14 +16,14 @@ impl CybOs {
             .inner_margin(egui::Margin::same(14))
             .show(ui, |ui| {
                 ui.label(
-                    RichText::new("CYBLEX · DECENTRALIZED DIGITAL ARCHIVE")
+                    RichText::new("Ваша библиотека CybLex")
                         .size(14.0)
                         .strong()
                         .color(neon),
                 );
                 ui.label(
                     RichText::new(
-                        "Embedded librqbit 9.0.1 · DHT / trackers · native local-first control plane",
+                        "Загружайте музыку, фильмы и другие файлы. Делитесь файлами с другими участниками.",
                     )
                     .size(10.0)
                     .color(dim),
@@ -31,7 +31,7 @@ impl CybOs {
                 ui.add_space(8.0);
                 ui.label(
                     RichText::new(
-                        "AUTHORIZED CONTENT ONLY · OWNED · PUBLIC-DOMAIN · OPEN-LICENSE · CREATOR-AUTHORIZED",
+                        "Для загрузки нужна magnet-ссылка или ссылка на .torrent. Для раздачи — файл или папка.",
                     )
                     .size(9.0)
                     .strong()
@@ -47,35 +47,35 @@ impl CybOs {
             .corner_radius(10)
             .inner_margin(egui::Margin::same(12))
             .show(ui, |ui| {
-                ui.label(RichText::new("DOWNLOAD").size(12.0).strong().color(neon));
+                ui.label(RichText::new("Загрузить файл").size(12.0).strong().color(neon));
                 ui.add_space(6.0);
 
                 ui.horizontal(|ui| {
                     ui.add(
                         egui::TextEdit::singleline(&mut self.cyblex_source)
-                            .desired_width(560.0)
+                            .desired_width((ui.available_width() - 150.0).max(80.0))
                             .hint_text("magnet:?… or https://…/file.torrent"),
                     );
 
-                    if ui.button("START DOWNLOAD").clicked() {
+                    if ui.button("Загрузить").clicked() {
                         match self.cyblex.add_source(
                             self.cyblex_source.clone(),
                             self.cyblex_download_path.clone(),
                         ) {
-                            Ok(()) => self.notify("CYBLEX DOWNLOAD QUEUED"),
+                            Ok(()) => self.notify("Загрузка добавлена в очередь"),
                             Err(error) => self.notify(format!("CYBLEX: {error}")),
                         }
                     }
                 });
 
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new("OUTPUT").size(9.0).color(dim));
+                    ui.label(RichText::new("Папка загрузки").size(9.0).color(dim));
                     ui.add(
                         egui::TextEdit::singleline(&mut self.cyblex_download_path)
-                            .desired_width(560.0),
+                            .desired_width((ui.available_width() - 150.0).max(80.0)),
                     );
 
-                    if ui.button("DEFAULT").clicked() {
+                    if ui.button("По умолчанию").clicked() {
                         self.cyblex_download_path = Self::cyblex_default_download_path();
                     }
                 });
@@ -90,7 +90,7 @@ impl CybOs {
             .inner_margin(egui::Margin::same(12))
             .show(ui, |ui| {
                 ui.label(
-                    RichText::new("SEED / SHARE")
+                    RichText::new("Раздать свои файлы")
                         .size(12.0)
                         .strong()
                         .color(neon),
@@ -100,13 +100,13 @@ impl CybOs {
                 ui.horizontal(|ui| {
                     ui.add(
                         egui::TextEdit::singleline(&mut self.cyblex_seed_path)
-                            .desired_width(560.0)
-                            .hint_text("~/path/to/file-or-folder"),
+                            .desired_width((ui.available_width() - 150.0).max(80.0))
+                            .hint_text("Путь к файлу или папке"),
                     );
 
-                    if ui.button("CREATE + SEED").clicked() {
+                    if ui.button("Начать раздачу").clicked() {
                         match self.cyblex.seed_path(self.cyblex_seed_path.clone()) {
-                            Ok(()) => self.notify("CYBLEX SEEDING QUEUED"),
+                            Ok(()) => self.notify("Раздача добавлена в очередь"),
                             Err(error) => self.notify(format!("CYBLEX: {error}")),
                         }
                     }
@@ -114,7 +114,7 @@ impl CybOs {
 
                 ui.label(
                     RichText::new(
-                        "Creates a .torrent sidecar beside the shared content and reports a magnet URI.",
+                        "Создаёт .torrent рядом с файлом и magnet-ссылку, которой можно поделиться.",
                     )
                     .size(9.0)
                     .color(dim),
@@ -131,7 +131,7 @@ impl CybOs {
                     .color(neon),
             );
             ui.label(
-                RichText::new(format!("{} TORRENT(S)", self.cyblex_torrents.len()))
+                RichText::new(format!("Торрентов: {}", self.cyblex_torrents.len()))
                     .size(9.0)
                     .color(dim),
             );
@@ -142,7 +142,7 @@ impl CybOs {
         if self.cyblex_torrents.is_empty() {
             ui.label(
                 RichText::new(
-                    "No active CybLex torrents. Add a magnet/.torrent source or seed authorized local content.",
+                    "Загрузок пока нет. Добавьте torrent-ссылку или начните раздачу своих файлов.",
                 )
                 .size(10.0)
                 .color(dim),
