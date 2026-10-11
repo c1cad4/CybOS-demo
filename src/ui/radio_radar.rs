@@ -60,6 +60,90 @@ fn parse(bytes: &[u8]) -> Result<Feed, String> {
     }
     Ok(feed)
 }
+// Stratux /traffic sends individual JSON WebSocket frames, not aircraft.json.
+// Import one recorded frame or a JSON array of frames. No receiver is fabricated.
+#[derive(Deserialize)]
+#[serde(rename_all = "PascalCase")]
+struct StratuxAircraft {
+    #[serde(rename = "Icao_addr")]
+    icao: u32,
+    tail: String,
+    #[serde(rename = "Position_valid")]
+    position_valid: bool,
+    lat: f64,
+    lng: f64,
+    age: f64,
+    timestamp: String,
+}
+fn parse_stratux(bytes: &[u8], now: f64) -> Result<Feed, String> {
+    if bytes.len() > 2_000_000 || !now.is_finite() {
+        return Err("Слишком большой ответ приёмника".into());
+    }
+    let value: serde_json::Value =
+        serde_json::from_slice(bytes).map_err(|_| "Неверный формат Stratux JSON")?;
+    let records = match value {
+        serde_json::Value::Array(rows) => rows,
+        row @ serde_json::Value::Object(_) => vec![row],
+        _ => return Err("Неверный формат Stratux JSON".into()),
+    };
+    if records.len() > 5000 {
+        return Err("Слишком много объектов".into());
+    }
+    let mut aircraft = std::collections::BTreeMap::new();
+    let mut latest: f64 = 0.0;
+    for value in records {
+        let row: StratuxAircraft =
+            serde_json::from_value(value).map_err(|_| "Неверные поля Stratux TrafficInfo")?;
+        let timestamp = chrono::DateTime::parse_from_rfc3339(&row.timestamp)
+            .map_err(|_| "Неверное время Stratux")?
+            .timestamp_millis() as f64
+            / 1000.0;
+        if timestamp <= 0.0 || timestamp > now + 30.0 {
+            return Err("Некорректное время Stratux".into());
+        }
+        latest = latest.max(timestamp);
+        let elapsed = (now - timestamp).max(0.0);
+        if row.icao > 0xffffff || !row.age.is_finite() || row.age < 0.0 {
+            return Err("Некорректный адрес или возраст Stratux".into());
+        }
+        // Timestamp is the traffic-message time, Age is the last position age.
+        // A recorded frame may already be old when imported: include elapsed time.
+        let age = row.age + elapsed;
+        if age > 30.0 {
+            continue;
+        }
+        let valid = row.position_valid
+            && row.lat.is_finite()
+            && row.lng.is_finite()
+            && (-90.0..=90.0).contains(&row.lat)
+            && (-180.0..=180.0).contains(&row.lng);
+        let item = Aircraft {
+            hex: format!("{:06x}", row.icao),
+            flight: Some(
+                row.tail
+                    .chars()
+                    .filter(|c| !c.is_control())
+                    .take(32)
+                    .collect(),
+            ),
+            lat: valid.then_some(row.lat),
+            lon: valid.then_some(row.lng),
+            seen: age,
+            seen_pos: valid.then_some(age),
+        };
+        // Repeated frames for one address retain the freshest valid record.
+        if aircraft
+            .get(&row.icao)
+            .is_none_or(|old: &Aircraft| old.seen >= age)
+        {
+            aircraft.insert(row.icao, item);
+        }
+    }
+    Ok(Feed {
+        now: latest,
+        aircraft: aircraft.into_values().collect(),
+    })
+}
 fn fetch(port: u16) -> Result<Feed, String> {
     if port == 0 {
         return Err("Укажите порт приёмника".into());
@@ -82,7 +166,7 @@ fn fetch(port: u16) -> Result<Feed, String> {
     parse(&bytes)
 }
 pub(crate) fn show(ui: &mut egui::Ui) {
-    ui.heading("Авиационный радар");
+    ui.heading(crate::i18n::tr(ui.ctx(), "Авиационный радар"));
     ui.label("Отдельный источник: ваш ADS-B приёмник dump1090. Самолёты не считаются пользователями CybOS. Без приёмника данные не появятся.");
     let id = egui::Id::new("adsb_request");
     let port_id = egui::Id::new("adsb_port");
@@ -98,7 +182,10 @@ pub(crate) fn show(ui: &mut egui::Ui) {
         ui.label("127.0.0.1 :");
         ui.add(egui::DragValue::new(&mut port).range(1..=65535));
         if ui
-            .add_enabled(!busy, egui::Button::new("Получить данные приёмника"))
+            .add_enabled(
+                !busy,
+                egui::Button::new(crate::i18n::tr(ui.ctx(), "Получить данные приёмника")),
+            )
             .clicked()
         {
             let request = Request(Arc::new(Mutex::new(None)));
@@ -114,7 +201,16 @@ pub(crate) fn show(ui: &mut egui::Ui) {
         }
     });
     ui.ctx().data_mut(|d| d.insert_temp(port_id, port));
-    ui.collapsing("Импорт aircraft.json", |ui| {
+    ui.collapsing(crate::i18n::tr(ui.ctx(), "Импорт данных радара"), |ui| {
+        let source_id = egui::Id::new("radar_import_source");
+        let mut stratux = ui.ctx().data(|d| d.get_temp::<bool>(source_id)).unwrap_or(false);
+        ui.horizontal(|ui| {
+            ui.label(crate::i18n::tr(ui.ctx(), "Источник данных"));
+            ui.selectable_value(&mut stratux, false, "dump1090 aircraft.json");
+            ui.selectable_value(&mut stratux, true, "Stratux TrafficInfo");
+        });
+        ui.ctx().data_mut(|d| d.insert_temp(source_id, stratux));
+        if stratux { ui.small("Stratux: JSON кадр /traffic или массив записанных кадров. Прямое WebSocket-подключение ещё не реализовано."); }
         let input_id = egui::Id::new("adsb_input");
         let mut input = ui
             .ctx()
@@ -125,8 +221,8 @@ pub(crate) fn show(ui: &mut egui::Ui) {
                 .desired_rows(3)
                 .char_limit(2_000_000),
         );
-        if ui.button("Прочитать JSON").clicked() {
-            let result = parse(input.as_bytes());
+        if ui.button(crate::i18n::tr(ui.ctx(), "Прочитать JSON")).clicked() {
+            let result = if stratux { parse_stratux(input.as_bytes(), chrono::Utc::now().timestamp_millis() as f64 / 1000.0) } else { parse(input.as_bytes()) };
             ui.ctx()
                 .data_mut(|d| d.insert_temp(id, Request(Arc::new(Mutex::new(Some(result))))));
         }
@@ -140,7 +236,7 @@ pub(crate) fn show(ui: &mut egui::Ui) {
     };
     match slot.as_ref() {
         None => {
-            ui.label("Ожидаем приёмник…");
+            ui.label(crate::i18n::tr(ui.ctx(), "Ожидаем приёмник…"));
         }
         Some(Err(e)) => {
             ui.label(e);
@@ -162,7 +258,7 @@ pub(crate) fn show(ui: &mut egui::Ui) {
             egui::Grid::new("adsb_rows").striped(true).show(ui, |ui| {
                 for label in ["ICAO", "Позывной", "Координаты", "Возраст, с"]
                 {
-                    ui.strong(label);
+                    ui.strong(crate::i18n::tr(ui.ctx(), label));
                 }
                 ui.end_row();
                 for a in feed.aircraft.iter().take(200) {
@@ -170,7 +266,7 @@ pub(crate) fn show(ui: &mut egui::Ui) {
                     ui.label(a.flight.as_deref().unwrap_or("—"));
                     ui.label(match a.lat.zip(a.lon) {
                         Some((lat, lon)) => format!("{lat:.4}, {lon:.4}"),
-                        None => "Позиция недоступна".into(),
+                        None => crate::i18n::tr(ui.ctx(), "Позиция недоступна"),
                     });
                     ui.label(format!("{:.1}", a.seen));
                     ui.end_row();
@@ -182,6 +278,29 @@ pub(crate) fn show(ui: &mut egui::Ui) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn stratux_uses_real_schema_freshness_and_position_validity() {
+        let bytes = br#"[{"Icao_addr":11259375,"Tail":"AB123","Position_valid":true,"Lat":10,"Lng":20,"Age":2,"Timestamp":"2023-11-14T22:13:20Z"},{"Icao_addr":1193046,"Tail":"STALE","Position_valid":true,"Lat":10,"Lng":20,"Age":40,"Timestamp":"2023-11-14T22:13:20Z"}]"#;
+        let feed = parse_stratux(bytes, 1700000005.0).unwrap();
+        assert_eq!(feed.aircraft.len(), 1);
+        assert_eq!(feed.aircraft[0].hex, "abcdef");
+        assert_eq!(feed.aircraft[0].seen, 7.0);
+        assert_eq!(feed.aircraft[0].lat, Some(10.0));
+        assert!(
+            parse_stratux(bytes, 1700000100.0)
+                .unwrap()
+                .aircraft
+                .is_empty()
+        );
+        let invalid = br#"{"Icao_addr":1,"Tail":"X","Position_valid":false,"Lat":0,"Lng":0,"Age":0,"Timestamp":"2023-11-14T22:13:20Z"}"#;
+        assert!(
+            parse_stratux(invalid, 1700000001.0).unwrap().aircraft[0]
+                .lat
+                .is_none()
+        );
+        assert!(parse_stratux(invalid, 1699999900.0).is_err());
+        assert!(parse_stratux(br#"{"Icao_addr":1}"#, 1700000001.0).is_err());
+    }
     #[test]
     fn rejects_stale_targets_and_does_not_invent_missing_positions() {
         let feed=parse(br#"{"now":1700000000,"aircraft":[{"hex":"abcdef","flight":"FLIGHT","seen":1,"lat":10,"lon":20,"seen_pos":50},{"hex":"123456","seen":40},{"hex":"bad","seen":1}]}"#).unwrap();

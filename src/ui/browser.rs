@@ -27,21 +27,27 @@ impl CybOs {
         ui.set_max_width(1100.0);
         ui.add_space(22.0);
         ui.label(
-            RichText::new("Куда отправимся сегодня?")
+            RichText::new(crate::i18n::tr(ui.ctx(), "Куда отправимся сегодня?"))
                 .size(30.0)
                 .strong()
                 .color(Self::neon()),
         );
-        ui.label("Введи вопрос или адрес сайта — CybBrowser откроет результаты.");
+        ui.label(crate::i18n::tr(
+            ui.ctx(),
+            "Введи вопрос или адрес сайта — CybBrowser откроет результаты.",
+        ));
         ui.add_space(18.0);
         ui.horizontal(|ui| {
             let input = ui.add_sized(
                 [(ui.available_width() - 120.0).max(120.0), 42.0],
                 egui::TextEdit::singleline(&mut self.browser_url)
-                    .hint_text("Поиск или адрес сайта…"),
+                    .hint_text(crate::i18n::tr(ui.ctx(), "Поиск или адрес сайта…")),
             );
             if ui
-                .add_sized([110.0, 42.0], egui::Button::new("Найти"))
+                .add_sized(
+                    [110.0, 42.0],
+                    egui::Button::new(crate::i18n::tr(ui.ctx(), "Найти")),
+                )
                 .clicked()
                 || (input.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)))
             {
@@ -49,43 +55,56 @@ impl CybOs {
             }
         });
         ui.add_space(12.0);
+        let wiki = format!("https://{}.wikipedia.org", crate::i18n::language(ui.ctx()));
         ui.horizontal_wrapped(|ui| {
             for (label, url) in [
                 ("Поиск", "https://duckduckgo.com"),
-                ("Википедия", "https://ru.wikipedia.org"),
+                ("Википедия", wiki.as_str()),
                 ("Видео", "https://www.youtube.com"),
             ] {
-                if ui.button(label).clicked() {
+                if ui.button(crate::i18n::tr(ui.ctx(), label)).clicked() {
                     self.browser_url = url.into();
                     self.launch_cybbrowser();
                 }
             }
         });
         ui.add_space(22.0);
-        ui.collapsing("Режим чтения внутри CybOS", |ui| {
-            ui.label("Только текст и ссылки. Для интерактивных сайтов используй кнопку «Найти».");
-            if ui.button("Прочитать страницу").clicked() {
-                self.navigate_browser();
-            }
-            ui.label(&self.browser_status);
-            if !self.browser_text.is_empty() {
-                ui.heading(&self.browser_title);
-                egui::ScrollArea::vertical()
-                    .max_height(300.0)
-                    .show(ui, |ui| {
-                        ui.label(&self.browser_text);
-                    });
-                ui.collapsing("Ссылки на странице", |ui| {
-                    for link in self.browser_links.clone() {
-                        if ui.button(&link.label).clicked() {
-                            self.browser_url = link.url;
-                            self.navigate_browser();
-                        }
-                    }
-                });
-            }
-        });
+        ui.collapsing(
+            crate::i18n::tr(ui.ctx(), "Режим чтения внутри CybOS"),
+            |ui| {
+                ui.label(crate::i18n::tr(
+                    ui.ctx(),
+                    "Только текст и ссылки. Для интерактивных сайтов используй кнопку «Найти».",
+                ));
+                if ui
+                    .button(crate::i18n::tr(ui.ctx(), "Прочитать страницу"))
+                    .clicked()
+                {
+                    self.navigate_browser();
+                }
+                ui.label(&self.browser_status);
+                if !self.browser_text.is_empty() {
+                    ui.heading(&self.browser_title);
+                    egui::ScrollArea::vertical()
+                        .max_height(300.0)
+                        .show(ui, |ui| {
+                            ui.label(&self.browser_text);
+                        });
+                    ui.collapsing(
+                        crate::i18n::tr(ui.ctx(), "Ссылки на странице"),
+                        |ui| {
+                            for link in self.browser_links.clone() {
+                                if ui.button(&link.label).clicked() {
+                                    self.browser_url = link.url;
+                                    self.navigate_browser();
+                                }
+                            }
+                        },
+                    );
+                }
+            },
+        );
         ui.add_space(18.0);
-        ui.small("Сеанс CybBrowser не сохраняет cookies между запусками. Сеть и система могут видеть активность.");
+        ui.small(crate::i18n::tr(ui.ctx(), "Сеанс CybBrowser не сохраняет cookies между запусками. Сеть и система могут видеть активность."));
     }
 }

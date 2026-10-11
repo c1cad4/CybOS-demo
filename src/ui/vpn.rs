@@ -4,10 +4,18 @@ use eframe::egui;
 impl CybOs {
     pub(crate) fn vpn_page(&mut self, ui: &mut egui::Ui) {
         ui.heading(crate::i18n::tr(ui.ctx(), "Защищённый интернет"));
-        ui.label(
-            "Статус: защита интернет-трафика не подтверждена. Экспорт настроек не включает VPN.",
+        ui.colored_label(
+            egui::Color32::YELLOW,
+            crate::i18n::tr(ui.ctx(), "Статус подключения не проверен"),
         );
-        ui.label("1. Добавьте свой сервер. 2. Сверьте его публичный ключ. 3. Импортируйте профиль в WireGuard и включите его. 4. Проверьте маршрут, DNS и IPv6.");
+        ui.label(crate::i18n::tr(
+            ui.ctx(),
+            "Нужен ваш VPN-сервер. Подготовьте профиль, затем включите его в WireGuard.",
+        ));
+        ui.small(crate::i18n::tr(
+            ui.ctx(),
+            "Экспорт профиля не включает VPN. Проверка ключей не подтверждает защиту трафика.",
+        ));
         let id = egui::Id::new("vpn_dns");
         let mut dns = ui
             .ctx()
@@ -28,7 +36,7 @@ impl CybOs {
         {
             self.vpn_setup.export_internet(&self.store, &dns);
         }
-        ui.label("Интернет-профиль направляет IPv4 и IPv6 в туннель. Серверу нужны IP forwarding, NAT и доступный DNS. Kill switch в CybOS пока не реализован; его необходимо проверять в системном VPN-клиенте.");
+        ui.label(crate::i18n::tr(ui.ctx(), "Проверьте маршрут, DNS и IPv6 в системном VPN-клиенте. Автоматическая блокировка трафика пока не реализована."));
         if ui
             .button(crate::i18n::tr(ui.ctx(), "Проверить соединение"))
             .clicked()
@@ -37,7 +45,10 @@ impl CybOs {
         }
         ui.label(&self.vpn_setup.diagnostic_status);
         ui.separator();
-        self.wireguard_setup_panel(ui);
+        ui.collapsing(
+            crate::i18n::tr(ui.ctx(), "Настройка профиля"),
+            |ui| self.wireguard_setup_panel(ui),
+        );
         ui.collapsing("Разработка CybVPN",|ui| {
             ui.label("Следующий этап: отдельный системный сервис, AmneziaWG, проверка DNS/IPv6, аварийная блокировка трафика и подписанные обновления. Приложение не меняет маршруты с правами администратора без работающего сервера.");
             ui.hyperlink_to("Amnezia: исходный код","https://github.com/amnezia-vpn/amnezia-client");

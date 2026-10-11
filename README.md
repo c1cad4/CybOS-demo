@@ -254,3 +254,7 @@ CybVPN is now a separate page with private-subnet and full-internet WireGuard pr
 CybRadar has an opt-in dump1090 JSON adapter, distinct from CybChat peers. Cyb Dispatcher has an original read-only process snapshot; sandboxed runs may prohibit process enumeration. The browser helper adds HTTPS-only, session reset and default media-capture denial; it does not claim Tor/Mullvad fingerprint protection. Optional `tools/read_only_markets.py` exports CCXT public spot OHLCV; it neither trades nor lists CYBH.
 
 See [upstream integration review](docs/UPSTREAM_INTEGRATION_RU.md) for every requested source, license observations, implementation boundaries and the development sequence. [CybHero](https://github.com/c1cad4/cybhero) is an unlaunched protocol development project; no mining reward or post-quantum transaction privacy is claimed.
+
+### Localization and Stratux follow-up
+
+The local interface catalog now contains 104 keys in ten widely used languages plus Russian. Browser actions, VPN guidance and WireGuard profile fields have broader coverage; backend errors and native Swift helpers remain partially localized. The aircraft radar imports a recorded Stratux `/traffic` JSON frame or an array of frames using the upstream TrafficInfo schema. It rejects stale/invalid positions and labels imported snapshots; live Stratux WebSocket and AIS reception are not implemented. No radio hardware or VPN server is assumed.
