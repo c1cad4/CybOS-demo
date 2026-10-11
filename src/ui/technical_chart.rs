@@ -139,7 +139,10 @@ pub(crate) fn show(
     candles.sort_by_key(|c| c.timestamp);
     candles.dedup_by_key(|c| c.timestamp);
     if candles.is_empty() {
-        ui.label("Нет корректных свечей для анализа.");
+        ui.label(crate::i18n::tr(
+            ui.ctx(),
+            "Нет корректных свечей для анализа.",
+        ));
         return None;
     }
     let key = format!("technical-chart:{pair}");
@@ -158,31 +161,43 @@ pub(crate) fn show(
     settings.ema_period = settings.ema_period.clamp(2, 200);
     ui.horizontal_wrapped(|ui| {
         ui.checkbox(&mut settings.sma, "SMA")
-            .on_hover_text("Простая средняя цены закрытия");
+            .on_hover_text(crate::i18n::tr(ui.ctx(), "Простая средняя цены закрытия"));
         ui.checkbox(&mut settings.ema, "EMA")
-            .on_hover_text("Экспоненциальная средняя цены закрытия");
+            .on_hover_text(crate::i18n::tr(
+                ui.ctx(),
+                "Экспоненциальная средняя цены закрытия",
+            ));
         ui.checkbox(&mut settings.bands, "Боллинджер")
-            .on_hover_text("SMA 20 ± два стандартных отклонения");
+            .on_hover_text(crate::i18n::tr(
+                ui.ctx(),
+                "SMA 20 ± два стандартных отклонения",
+            ));
         ui.checkbox(&mut settings.rsi, "RSI 14")
-            .on_hover_text("Индекс относительной силы, сглаживание Уайлдера");
+            .on_hover_text(crate::i18n::tr(
+                ui.ctx(),
+                "Индекс относительной силы, сглаживание Уайлдера",
+            ));
         ui.checkbox(&mut settings.macd, "MACD")
-            .on_hover_text("EMA 12 − EMA 26, сигнал EMA 9");
-        ui.checkbox(&mut settings.volume, "Объём");
+            .on_hover_text(crate::i18n::tr(ui.ctx(), "EMA 12 − EMA 26, сигнал EMA 9"));
+        ui.checkbox(&mut settings.volume, crate::i18n::tr(ui.ctx(), "Объём"));
     });
-    ui.collapsing("Параметры средних", |ui| {
-        ui.horizontal(|ui| {
-            ui.label("Период SMA");
-            ui.add(egui::DragValue::new(&mut settings.sma_period).range(2..=200));
-            ui.label("Период EMA");
-            ui.add(egui::DragValue::new(&mut settings.ema_period).range(2..=200));
-        });
-    });
+    ui.collapsing(
+        crate::i18n::tr(ui.ctx(), "Параметры средних"),
+        |ui| {
+            ui.horizontal(|ui| {
+                ui.label(crate::i18n::tr(ui.ctx(), "Период SMA"));
+                ui.add(egui::DragValue::new(&mut settings.sma_period).range(2..=200));
+                ui.label(crate::i18n::tr(ui.ctx(), "Период EMA"));
+                ui.add(egui::DragValue::new(&mut settings.ema_period).range(2..=200));
+            });
+        },
+    );
     ui.horizontal_wrapped(|ui| {
         for (tool, label) in [
-            (Tool::Cursor, "Курсор"),
-            (Tool::Level, "Уровень"),
-            (Tool::Trend, "Линия тренда"),
-            (Tool::Fibonacci, "Фибоначчи"),
+            (Tool::Cursor, crate::i18n::tr(ui.ctx(), "Курсор")),
+            (Tool::Level, crate::i18n::tr(ui.ctx(), "Уровень")),
+            (Tool::Trend, crate::i18n::tr(ui.ctx(), "Линия тренда")),
+            (Tool::Fibonacci, crate::i18n::tr(ui.ctx(), "Фибоначчи")),
         ] {
             if ui.selectable_label(settings.tool == tool, label).clicked() {
                 settings.tool = tool;
@@ -192,13 +207,16 @@ pub(crate) fn show(
         if ui
             .add_enabled(
                 !settings.drawings.is_empty(),
-                egui::Button::new("Отменить линию"),
+                egui::Button::new(crate::i18n::tr(ui.ctx(), "Отменить линию")),
             )
             .clicked()
         {
             settings.drawings.pop();
         }
-        if ui.button("Сбросить вид").clicked() {
+        if ui
+            .button(crate::i18n::tr(ui.ctx(), "Сбросить вид"))
+            .clicked()
+        {
             settings.bars = 100;
             settings.offset = 0;
             settings.pending = None;
@@ -207,17 +225,20 @@ pub(crate) fn show(
     });
     match settings.tool {
         Tool::Level => {
-            ui.small("Нажми на графике, чтобы поставить горизонтальный уровень.");
+            ui.small(crate::i18n::tr(
+                ui.ctx(),
+                "Нажми на графике, чтобы поставить горизонтальный уровень.",
+            ));
         }
         Tool::Trend | Tool::Fibonacci => {
             ui.small(if settings.pending.is_some() {
-                "Выбери вторую точку. Esc отменяет первую."
+                crate::i18n::tr(ui.ctx(), "Выбери вторую точку. Esc отменяет первую.")
             } else {
-                "Выбери две точки на графике."
+                crate::i18n::tr(ui.ctx(), "Выбери две точки на графике.")
             });
         }
         _ => {
-            ui.small("Наведи курсор: цена, время и OHLC. Перетаскивай график, чтобы двигаться по истории.");
+            ui.small(crate::i18n::tr(ui.ctx(), "Наведи курсор: цена, время и OHLC. Перетаскивай график, чтобы двигаться по истории."));
         }
     }
     if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
@@ -226,13 +247,19 @@ pub(crate) fn show(
     let len = candles.len();
     settings.bars = settings.bars.clamp(1, len);
     ui.horizontal_wrapped(|ui| {
-        ui.add(egui::Slider::new(&mut settings.bars, len.min(20)..=len).text("Свечей на экране"));
+        ui.add(
+            egui::Slider::new(&mut settings.bars, len.min(20)..=len)
+                .text(crate::i18n::tr(ui.ctx(), "Свечей на экране")),
+        );
         settings.offset = settings.offset.min(len - settings.bars);
         ui.add(
             egui::Slider::new(&mut settings.offset, 0..=len - settings.bars)
-                .text("Назад по истории"),
+                .text(crate::i18n::tr(ui.ctx(), "Назад по истории")),
         );
-        if ui.button("К последней свече").clicked() {
+        if ui
+            .button(crate::i18n::tr(ui.ctx(), "К последней свече"))
+            .clicked()
+        {
             settings.offset = 0;
         }
     });

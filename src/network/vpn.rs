@@ -137,6 +137,12 @@ impl Setup {
         }
     }
     pub fn export(&mut self, store: &crate::store::Store) {
+        self.export_mode(store, None);
+    }
+    pub fn export_internet(&mut self, store: &crate::store::Store, dns: &str) {
+        self.export_mode(store, Some(dns));
+    }
+    fn export_mode(&mut self, store: &crate::store::Store, dns: Option<&str>) {
         self.export_path = None;
         let result = (|| {
             if !self.server_verified {
@@ -145,7 +151,10 @@ impl Setup {
             self.profile.validate()?;
             let key = ensure_identity(&identity_path(store))?;
             self.public_key = Some(public_key(&key)?);
-            let config = self.profile.render(&key)?;
+            let config = match dns {
+                Some(dns) => self.profile.render_internet(&key, dns)?,
+                None => self.profile.render(&key)?,
+            };
             store.set_checked(
                 "wireguard_profile",
                 &serde_json::to_string(&self.profile)
@@ -276,6 +285,33 @@ impl Profile {
             self.endpoint.trim(),
             self.network.trim()
         ))
+    }
+    /// Full-tunnel preparation, never activation or a claim that a kill switch is installed.
+    pub fn render_internet(&self, private: &[u8; 32], dns: &str) -> Result<String, String> {
+        let config = self.render(private)?;
+        let dns: std::net::Ipv4Addr = dns.trim().parse().map_err(|_| "DNS must be one IPv4 address.")?;
+        if dns.is_unspecified() || dns.is_loopback() || dns.is_multicast() || dns == Ipv4Addr::BROADCAST || dns.is_link_local() {
+            return Err("Choose a reachable DNS server, not a local or multicast address.".into());
+        }
+        // IPv6 also routes into the tunnel. A server without IPv6 forwarding will drop it,
+        // instead of leaving an IPv6 default route outside this exported profile.
+        Ok(config.replace("\n\n[Peer]", &format!("\nDNS = {dns}\n\n[Peer]"))
+            .replace(&format!("AllowedIPs = {}", self.network.trim()), "AllowedIPs = 0.0.0.0/0, ::/0"))
+    }
+}
+
+#[cfg(test)]
+mod internet_tests {
+    use super::*;
+    #[test]
+    fn full_tunnel_contains_dns_and_both_routes_without_changing_private_profile() {
+        let profile=Profile {endpoint:"203.0.113.10:51820".into(),server_key:public_key(&[7;32]).unwrap(),..Default::default()};
+        let text=profile.render_internet(&[8;32],"9.9.9.9").unwrap();
+        assert!(text.contains("AllowedIPs = 0.0.0.0/0, ::/0")); assert!(text.contains("DNS = 9.9.9.9"));
+        assert!(profile.render(&[8;32]).unwrap().contains("AllowedIPs = 10.77.0.0/24"));
+        for dns in ["127.0.0.1","0.0.0.0","224.0.0.1","9.9.9.9\nPostUp = evil","255.255.255.255"] {
+            assert!(profile.render_internet(&[8;32],dns).is_err());
+        }
     }
 }
 #[cfg(unix)]

@@ -150,6 +150,11 @@ TOOL RESULT:
         if self.robot_job.is_some() {
             return false;
         }
+        let mut run = crate::agent_run::Run::create(&query);
+        if let Err(error) = run.save(&self.store).and_then(|_| self.store.set_checked("agent_last_run", &run.id)) {
+            self.robot_output = format!("Не удалось сохранить запуск: {error}");
+            return false;
+        }
 
         let snapshot = AgentSnapshot {
             node_id: self.node_id.clone(),
@@ -179,11 +184,18 @@ TOOL RESULT:
                     return;
                 }
             };
+            if let Err(error) = run.transition("running").and_then(|_| run.save(&worker.store)) {
+                worker_contract.finish("ERROR"); let _ = tx.send(Err(error)); return;
+            }
 
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 worker.agent_answer_with_deadline(&query, deadline)
             }))
             .map_err(|_| "RobotCYB worker terminated unexpectedly.".to_string());
+
+            let terminal = if Instant::now() >= deadline { "timeout" } else if result.is_ok() { "completed" } else { "error" };
+            let checkpoint_result = run.transition(terminal).and_then(|_| run.save(&worker.store));
+            let result = match checkpoint_result { Ok(()) => result, Err(error) => Err(format!("Не удалось сохранить результат запуска: {error}")) };
 
             worker_contract.finish(if result.is_ok() { "READY" } else { "ERROR" });
             let _ = tx.send(result);

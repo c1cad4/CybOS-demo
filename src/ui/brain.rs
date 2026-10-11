@@ -13,7 +13,7 @@ impl CybOs {
                 .size(11.0)
                 .color(dim),
         );
-        if ui.button("Открыть граф знаний").clicked() { self.go(crate::Page::Graph); }
+        if ui.button(crate::i18n::tr(ui.ctx(), "Открыть граф знаний")).clicked() { self.go(crate::Page::Graph); }
         ui.add_space(10.0);
         ui.add_space(12.0);
         if !self.qwen_status.contains("ONLINE") {
@@ -52,7 +52,7 @@ impl CybOs {
             .corner_radius(12)
             .inner_margin(egui::Margin::same(12))
             .show(ui, |ui| {
-                ui.label(RichText::new("Добавить знание").size(11.0).strong().color(neon));
+                ui.label(RichText::new(crate::i18n::tr(ui.ctx(), "Добавить знание")).size(11.0).strong().color(neon));
                 ui.add_space(6.0);
                 ui.horizontal(|ui| {
                     ui.add(
@@ -61,7 +61,7 @@ impl CybOs {
                             .desired_width(ui.available_width() - 130.0),
                     );
                     if ui
-                        .add(egui::Button::new(RichText::new("Запомнить").strong().color(neon)).min_size(Vec2::new(110.0, 30.0)))
+                        .add(egui::Button::new(RichText::new(crate::i18n::tr(ui.ctx(), "Запомнить")).strong().color(neon)).min_size(Vec2::new(110.0, 30.0)))
                         .clicked()
                     {
                         let note = self.remember_note.trim().to_string();
@@ -76,7 +76,7 @@ impl CybOs {
                 });
             });
         ui.add_space(10.0);
-        ui.label(RichText::new("Недавние знания").size(11.0).strong().color(neon));
+        ui.label(RichText::new(crate::i18n::tr(ui.ctx(), "Недавние знания")).size(11.0).strong().color(neon));
         egui::ScrollArea::vertical().max_height(280.0).show(ui, |ui| {
             if memories.is_empty() {
                 ui.label(RichText::new("Пока пусто. Добавь заметку или напиши сообщение в чате.").color(dim));

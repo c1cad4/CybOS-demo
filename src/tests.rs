@@ -10,6 +10,9 @@ fn navigation_supports_russian_page_names() {
     assert!(Page::Network.matches_query("сеть"));
     assert!(Page::Assets.matches_query("токен"));
     assert!(Page::Browser.matches_query("browser"));
+    assert!(Page::Vpn.matches_query("vpn"));
+    assert!(Page::Vpn.matches_query("впн"));
+    assert!(Page::Radar.matches_query("adsb"));
 }
 
 #[test]
@@ -52,4 +55,20 @@ fn graph_write_failure_rolls_back_new_memory() {
     store.test_execute("CREATE TABLE memories(id TEXT PRIMARY KEY,time TEXT,text TEXT,source TEXT,importance REAL);");
     assert!(store.capture_user_message("Не должно сохраниться частично").is_err());
     assert!(store.memories().is_empty());
+}
+
+#[test]
+fn indexed_memory_search_finds_old_unicode_notes_and_tracks_changes() {
+    let store = crate::store::Store::test_store(":memory:");
+    store.test_execute("CREATE TABLE memories(id TEXT PRIMARY KEY,time TEXT,text TEXT,source TEXT,importance REAL);
+        INSERT INTO memories VALUES('old','2020','Квантовая защита проект','USER_MESSAGE',0.5);");
+    for i in 0..250 {store.test_execute(&format!("INSERT INTO memories VALUES('id-{i}','2026','обычная заметка','USER_MESSAGE',0.5);"));}
+    assert!(store.memories().iter().all(|m|m.id!="old"));
+    assert_eq!(store.search_memories("квантов")[0].id,"old");
+    store.test_execute("UPDATE memories SET text='Новый термин' WHERE id='old';");
+    assert!(store.search_memories("квантов").is_empty());
+    assert_eq!(store.search_memories("термин")[0].id,"old");
+    store.test_execute("DELETE FROM memories WHERE id='old';");
+    assert!(store.search_memories("термин").is_empty());
+    assert!(store.search_memories("\" OR NOT *").len()<=8);
 }

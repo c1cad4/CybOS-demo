@@ -15,3 +15,7 @@ pub mod shell;
 mod telemetry;
 
 mod technical_chart;
+
+mod vpn;
+mod processes;
+mod radio_radar;

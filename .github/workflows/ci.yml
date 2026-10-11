@@ -1,3 +1,4 @@
+/Users/pussy/.zprofile:6: no such file or directory: /opt/homebrew/bin/brew
 name: cybOS CI
 
 on:
@@ -31,6 +32,9 @@ jobs:
 
       - name: Test WireGuard preparation and enrollment
         run: python3 -m unittest discover -s scripts/tests -p 'test_wireguard*.py'
+
+      - name: Test read-only market data validation
+        run: python3 -m unittest discover -s tools -p 'test_*.py'
 
       - name: Validate macOS packaging script
         run: bash -n scripts/package_macos.sh
@@ -79,10 +83,10 @@ jobs:
         run: swiftc -target x86_64-apple-macos11 macos/CybOSPlayer.swift -o /tmp/cybos-player-intel -framework AppKit -framework AVKit -framework AVFoundation
 
       - name: Compile CoreBluetooth advertiser ARM64
-        run: swiftc -arch arm64 macos/CybOSBLEAdvertiser.swift -o /tmp/cybOS-ble-arm64 -framework CoreBluetooth
+        run: swiftc -target arm64-apple-macos11 macos/CybOSBLEAdvertiser.swift -o /tmp/cybOS-ble-arm64 -framework CoreBluetooth
 
       - name: Compile CoreBluetooth advertiser Intel
-        run: swiftc -arch x86_64 macos/CybOSBLEAdvertiser.swift -o /tmp/cybOS-ble-x86_64 -framework CoreBluetooth
+        run: swiftc -target x86_64-apple-macos11 macos/CybOSBLEAdvertiser.swift -o /tmp/cybOS-ble-x86_64 -framework CoreBluetooth
 
       - name: Verify universal packaging
         run: |

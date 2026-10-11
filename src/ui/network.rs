@@ -19,7 +19,11 @@ impl CybOs {
             }
         }
 
-        if let Some(result) = self.ble_scan.as_ref().and_then(crate::network::ble::poll_scan) {
+        if let Some(result) = self
+            .ble_scan
+            .as_ref()
+            .and_then(crate::network::ble::poll_scan)
+        {
             self.ble_scan = None;
             self.ble_scan_contract = None;
             match result {
@@ -41,7 +45,9 @@ impl CybOs {
         let neon = Self::neon();
         let dim = Color32::from_rgb(55, 145, 105);
 
-        ui.collapsing("Защищённая сеть · настройка VPN", |ui| { self.wireguard_setup_panel(ui); });
+        if ui.button(crate::i18n::tr(ui.ctx(), "CybVPN")).clicked() {
+            self.go(crate::Page::Vpn);
+        }
         ui.add_space(10.0);
         egui::Frame::new()
             .fill(Color32::from_rgb(4, 16, 11))
@@ -104,11 +110,21 @@ impl CybOs {
 
                     let ble_scanning = self.ble_scan.is_some();
                     if ui
-                        .add_enabled(!ble_scanning, egui::Button::new(if ble_scanning { "BLE Поиск…" } else { "Поиск Bluetooth" }))
+                        .add_enabled(
+                            !ble_scanning,
+                            egui::Button::new(if ble_scanning {
+                                "BLE Поиск…"
+                            } else {
+                                "Поиск Bluetooth"
+                            }),
+                        )
                         .clicked()
                     {
                         self.ble_scan = Some(crate::network::ble::start_scan());
-                        self.ble_scan_contract = Some(crate::runtime::WorkerContract::new("RADAR", std::time::Duration::from_secs(7)));
+                        self.ble_scan_contract = Some(crate::runtime::WorkerContract::new(
+                            "RADAR",
+                            std::time::Duration::from_secs(7),
+                        ));
                         self.ble_status = "BLE · SCANNING · 5s WINDOW".into();
                         self.runtime.set_status("RADAR", "RUNNING");
                         self.notify("BLE RADAR SCAN STARTED");
@@ -130,12 +146,9 @@ impl CybOs {
                 ui.add_space(7.0);
 
                 ui.label(
-                    RichText::new(format!(
-                        "LAN DELIVERY · {}",
-                        self.lan_delivery_status
-                    ))
-                    .size(9.0)
-                    .color(neon),
+                    RichText::new(format!("LAN DELIVERY · {}", self.lan_delivery_status))
+                        .size(9.0)
+                        .color(neon),
                 );
             });
 
@@ -289,53 +302,51 @@ impl CybOs {
             });
 
         ui.add_space(10.0);
-
-
     }
 }
 
 impl CybOs {
-    fn wireguard_setup_panel(&mut self, ui: &mut egui::Ui) {
+    pub(crate) fn wireguard_setup_panel(&mut self, ui: &mut egui::Ui) {
         ui.group(|ui| {
-            ui.heading("Защищённая сеть устройств");
-            ui.hyperlink_to("Установить WireGuard", "https://www.wireguard.com/install/");
-            ui.label("Prepare a device profile and activate it in WireGuard. CLI diagnostics provide manual snapshots; App Store tunnels are not monitored.");
+            ui.heading(crate::i18n::tr(ui.ctx(), "Защищённая сеть устройств"));
+            ui.hyperlink_to(crate::i18n::tr(ui.ctx(), "Установить WireGuard"), "https://www.wireguard.com/install/");
+            ui.label(crate::i18n::tr(ui.ctx(), "Нужен ваш VPN-сервер. Подготовьте профиль, затем включите его в WireGuard."));
             ui.label("This profile routes only the private device subnet; it does not set a default internet route or DNS.");
             ui.separator();
-            if ui.button("Подготовить это устройство").clicked() { self.vpn_setup.create_identity(&self.store); }
+            if ui.button(crate::i18n::tr(ui.ctx(), "Подготовить это устройство")).clicked() { self.vpn_setup.create_identity(&self.store); }
             if let Some(key) = &self.vpn_setup.public_key {
-                ui.label("Device public key — add this on the server");
+                ui.label(crate::i18n::tr(ui.ctx(), "Публичный ключ устройства"));
                 ui.add(egui::Label::new(key).selectable(true).wrap());
-                if ui.button("Копировать публичный ключ").clicked() { ui.ctx().copy_text(key.clone()); }
+                if ui.button(crate::i18n::tr(ui.ctx(), "Копировать публичный ключ")).clicked() { ui.ctx().copy_text(key.clone()); }
             }
-            ui.collapsing("Добавить приглашение", |ui| {
+            ui.collapsing(crate::i18n::tr(ui.ctx(), "Добавить приглашение"), |ui| {
                 ui.add(egui::TextEdit::multiline(&mut self.vpn_setup.invitation_input).desired_rows(3).desired_width(f32::INFINITY).hint_text("Paste device-invitation.json; never paste private keys"));
-                if ui.button("Load public invitation").clicked() { self.vpn_setup.import_invitation(); }
+                if ui.button(crate::i18n::tr(ui.ctx(), "Загрузить приглашение")).clicked() { self.vpn_setup.import_invitation(); }
             });
-            ui.collapsing("Настроить сервер", |ui| {
-                ui.label("Server endpoint (IP:UDP-port)");
+            ui.collapsing(crate::i18n::tr(ui.ctx(), "Настроить сервер"), |ui| {
+                ui.label(crate::i18n::tr(ui.ctx(), "Адрес сервера (IP:порт)"));
                 let mut changed = ui.add(egui::TextEdit::singleline(&mut self.vpn_setup.profile.endpoint).hint_text("203.0.113.10:51820").desired_width(f32::INFINITY)).changed();
-                ui.label("Server public key — verify with the administrator");
+                ui.label(crate::i18n::tr(ui.ctx(), "Публичный ключ сервера"));
                 changed |= ui.add(egui::TextEdit::singleline(&mut self.vpn_setup.profile.server_key).desired_width(f32::INFINITY)).changed();
-                ui.label("Unique device address (/32)"); changed |= ui.text_edit_singleline(&mut self.vpn_setup.profile.address).changed();
-                ui.label("Private device subnet (AllowedIPs)"); changed |= ui.text_edit_singleline(&mut self.vpn_setup.profile.network).changed();
+                ui.label(crate::i18n::tr(ui.ctx(), "Адрес устройства (/32)")); changed |= ui.text_edit_singleline(&mut self.vpn_setup.profile.address).changed();
+                ui.label(crate::i18n::tr(ui.ctx(), "Подсеть устройств (AllowedIPs)")); changed |= ui.text_edit_singleline(&mut self.vpn_setup.profile.network).changed();
                 if changed { self.vpn_setup.settings_changed(); }
             });
-            ui.checkbox(&mut self.vpn_setup.server_verified, "I verified the server public key through a trusted channel");
+            ui.checkbox(&mut self.vpn_setup.server_verified, crate::i18n::tr(ui.ctx(), "Я сверил публичный ключ сервера через доверенный канал"));
             let validation = self.vpn_setup.profile.validate();
             if let Err(error) = &validation { ui.label(error); }
-            if ui.add_enabled(validation.is_ok() && self.vpn_setup.server_verified, egui::Button::new("Export WireGuard profile")).clicked() { self.vpn_setup.export(&self.store); }
+            if ui.add_enabled(validation.is_ok() && self.vpn_setup.server_verified, egui::Button::new(crate::i18n::tr(ui.ctx(), "Экспорт профиля WireGuard"))).clicked() { self.vpn_setup.export(&self.store); }
             ui.add(egui::Label::new(&self.vpn_setup.status).wrap());
             if let Some(path) = &self.vpn_setup.export_path {
-                ui.label("Private config file: import locally, do not share.");
+                ui.label(crate::i18n::tr(ui.ctx(), "Файл содержит приватный ключ. Не отправляйте его другим."));
                 ui.add(egui::Label::new(path.display().to_string()).selectable(true).wrap());
             }
-            ui.collapsing("CLI tunnel diagnostics", |ui| {
+            ui.collapsing(crate::i18n::tr(ui.ctx(), "Диагностика WireGuard"), |ui| {
                 ui.label("Reads public keys and handshake timestamps only. App Store tunnels are not monitored by the CLI.");
-                if ui.add_enabled(self.vpn_setup.diagnostic_task.is_none(), egui::Button::new("Refresh WireGuard diagnostics")).clicked() { self.vpn_setup.start_diagnostics(); }
+                if ui.add_enabled(self.vpn_setup.diagnostic_task.is_none(), egui::Button::new(crate::i18n::tr(ui.ctx(), "Обновить диагностику"))).clicked() { self.vpn_setup.start_diagnostics(); }
                 ui.add(egui::Label::new(&self.vpn_setup.diagnostic_status).wrap());
             });
-            ui.label("Если сервера ещё нет, можно подготовить устройство сейчас, а сервер добавить позже.");
+            ui.label(crate::i18n::tr(ui.ctx(), "Если сервера ещё нет, можно подготовить устройство сейчас, а сервер добавить позже."));
         });
     }
 }
