@@ -9,6 +9,11 @@ use std::time::Duration;
 impl CybOs {
     pub(crate) fn shell_ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         self.runtime.tick();
+        if let Some(answer) = self.poll_robot_job() {
+            self.robot_output = answer.clone();
+            self.chat_output = answer.clone();
+            self.push_chat_message("ROBOTCYB", answer, false);
+        }
         self.ensure_qwen();
         self.poll_lan_scan();
         self.poll_secure_events();

@@ -18,6 +18,7 @@ impl CybOs {
         if let Ok(addr) = address.parse() {
             if std::net::TcpStream::connect_timeout(&addr, Duration::from_millis(50)).is_ok() {
                 self.qwen_status = "QWEN · ONLINE".into();
+                self.qwen_retry_after = Instant::now() + Duration::from_secs(2);
                 self.status = "LOCAL-FIRST · QWEN ONLINE".into();
                 return;
             }

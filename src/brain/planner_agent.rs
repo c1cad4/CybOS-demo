@@ -364,3 +364,27 @@ struct AgentSnapshot {
     nodes: Vec<crate::models::GraphNode>,
     links: Vec<crate::models::GraphLink>,
 }
+
+#[cfg(test)]
+mod integration_tests {
+    use super::*;
+    #[test]
+    #[ignore = "Requires a live local Qwen server and isolated CYBOS_DATA_DIR"]
+    fn local_agent_worker_returns_a_visible_answer() {
+        assert!(std::env::var("CYBOS_DATA_DIR").is_ok(), "Use isolated test storage");
+        let mut app = CybOs::from_agent_snapshot(AgentSnapshot {
+            node_id: "agent-test".into(), status: "TEST".into(), qwen_status: "ONLINE".into(),
+            temperature: 0.0, battery: 0.0, chat: vec![], events: vec![], nodes: vec![], links: vec![],
+        }).unwrap();
+        assert!(app.start_robot_job("Ответь одним словом: привет".into()));
+        let deadline = Instant::now() + Duration::from_secs(95);
+        loop {
+            if let Some(answer) = app.poll_robot_job() {
+                assert!(answer.to_lowercase().contains("привет"), "Unexpected agent response: {answer}");
+                break;
+            }
+            assert!(Instant::now() < deadline, "Agent worker did not complete");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    }
+}

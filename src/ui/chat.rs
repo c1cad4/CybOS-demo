@@ -4,11 +4,11 @@ use egui::{Color32, RichText, Vec2};
 
 impl CybOs {
     pub(crate) fn chat_page(&mut self, ui: &mut egui::Ui) {
-        if let Some(answer) = self.poll_robot_job() {
-            self.robot_output = answer.clone();
-            self.push_chat_message("ROBOTCYB", answer, false);
-            self.add_event("ROBOT", "RobotCYB local chat worker completed the request");
-            self.chat_output = self.robot_output.clone();
+
+
+        if self.last_scan.is_none_or(|last| last.elapsed().as_secs() >= 10) && self.lan_scan.is_none() {
+            self.last_scan = Some(std::time::Instant::now());
+            self.start_lan_scan();
         }
 
         let neon = Color32::from_rgb(0, 255, 150);
@@ -24,6 +24,18 @@ impl CybOs {
                     .color(dim),
             );
 
+            ui.collapsing(format!("Радар · {} пользователей рядом", self.lan_peers.iter().filter(|p| p.last_seen.elapsed().as_secs() <= 20).count()), |ui| {
+                ui.label("Пользователи, обнаруженные в локальной сети. Это не глобальный онлайн; скрытые устройства не отображаются.");
+                if ui.button("Найти пользователей").clicked() { self.start_lan_scan(); }
+                let peers = self.lan_peers.clone();
+                for peer in peers.iter().filter(|p| p.last_seen.elapsed().as_secs() <= 20) {
+                    ui.horizontal(|ui| {
+                        ui.label(format!("● {} · {}", peer.node_id, peer.address));
+                        if ui.button("Выбрать").clicked() { self.lan_target = Some(peer.node_id.clone()); }
+                    });
+                }
+                if ui.button("Видимость и устройства").clicked() { self.go(crate::Page::Network); }
+            });
             ui.add_space(14.0);
             ui.collapsing("My device identity", |ui| {
                 ui.add(egui::Label::new(format!("Node ID: {}", self.node_id)).selectable(true));

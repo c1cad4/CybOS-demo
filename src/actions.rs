@@ -31,6 +31,8 @@ impl CybOs {
             Page::Chat,
             Page::Graph,
             Page::Brain,
+            Page::Browser,
+            Page::CybLex,
             Page::Network,
             Page::Assets,
             Page::Cameras,

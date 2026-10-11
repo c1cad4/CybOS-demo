@@ -3,11 +3,7 @@ use eframe::egui::{self, RichText};
 
 impl CybOs {
     pub(crate) fn robot(&mut self, ui: &mut egui::Ui) {
-        if let Some(answer) = self.poll_robot_job() {
-            self.robot_output = answer.clone();
-            self.push_chat_message("ROBOTCYB", answer, false);
-            self.add_event("ROBOT", "RobotCYB worker completed the request");
-        }
+
         ui.label(RichText::new("Личный помощник").size(24.0).strong());
         ui.label("Объяснит сложное, поможет сформулировать идею или разобрать текст. Для ответов нужна работающая локальная модель.");
         ui.add_space(10.0);

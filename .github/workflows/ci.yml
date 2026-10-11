@@ -66,6 +66,12 @@ jobs:
       - name: macOS Intel release build
         run: cargo build --release --target x86_64-apple-darwin
 
+      - name: Compile WebKit browser ARM64
+        run: swiftc -target arm64-apple-macos11 macos/CybOSBrowser.swift -o /tmp/cybos-browser-arm64 -framework AppKit -framework WebKit
+
+      - name: Compile WebKit browser Intel
+        run: swiftc -target x86_64-apple-macos11 macos/CybOSBrowser.swift -o /tmp/cybos-browser-intel -framework AppKit -framework WebKit
+
       - name: Compile CoreBluetooth advertiser ARM64
         run: swiftc -arch arm64 macos/CybOSBLEAdvertiser.swift -o /tmp/cybOS-ble-arm64 -framework CoreBluetooth
 

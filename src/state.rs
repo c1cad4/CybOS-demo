@@ -280,7 +280,8 @@ impl Default for CybOs {
 
 impl CybOs {
     pub(crate) fn navigate_browser(&mut self) {
-        let url = self.browser_url.trim().to_string();
+        let url = crate::network::browser::resolve_input(&self.browser_url);
+        self.browser_url = url.clone();
         if self.browser_contract.is_some() {
             self.notify("CYBBROWSER REQUEST ALREADY RUNNING");
             return;
