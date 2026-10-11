@@ -84,7 +84,8 @@ pub(crate) fn show(ui: &mut egui::Ui) {
     let id = egui::Id::new("process_snapshot");
     ui.collapsing("Процессы компьютера", |ui| {
         ui.label("Данные операционной системы. CPU здесь — усреднение ps; верхний график CybOS показывает нагрузку за интервал.");
-        if ui.button("Обновить список процессов").clicked() {
+        let busy = ui.ctx().data(|d| d.get_temp::<Snapshot>(id)).is_some_and(|s| s.0.lock().map(|v| v.is_none()).unwrap_or(true));
+        if ui.add_enabled(!busy, egui::Button::new("Обновить список процессов")).clicked() {
             let data=Snapshot(Arc::new(Mutex::new(None)));ui.ctx().data_mut(|d|d.insert_temp(id,data.clone()));
             let ctx=ui.ctx().clone();std::thread::spawn(move||{let result=measure();if let Ok(mut slot)=data.0.lock(){*slot=Some(result);}ctx.request_repaint();});
         }
