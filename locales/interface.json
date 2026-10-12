@@ -1,4 +1,3 @@
-/Users/pussy/.zprofile:6: no such file or directory: /opt/homebrew/bin/brew
 {
   "Граф знаний": {
     "en": "Knowledge graph",
@@ -2118,5 +2117,122 @@
     "ru": "Ты",
     "ur": "آپ",
     "id": "Anda"
+  },
+  "Тестовая сеть · без реальных выплат": {
+    "en": "Test network · no real payouts",
+    "zh": "测试网络 · 无实际支付",
+    "hi": "परीक्षण नेटवर्क · वास्तविक भुगतान नहीं",
+    "es": "Red de prueba · sin pagos reales",
+    "ar": "شبكة اختبار · بلا مدفوعات حقيقية",
+    "fr": "Réseau de test · aucun paiement réel",
+    "bn": "পরীক্ষামূলক নেটওয়ার্ক · প্রকৃত অর্থ প্রদান নেই",
+    "pt": "Rede de teste · sem pagamentos reais",
+    "ru": "Тестовая сеть · без реальных выплат",
+    "ur": "آزمائشی نیٹ ورک · حقیقی ادائیگی نہیں",
+    "id": "Jaringan uji · tanpa pembayaran nyata"
+  },
+  "Публичный тестовый адрес": {
+    "en": "Public test address",
+    "zh": "公开测试地址",
+    "hi": "सार्वजनिक परीक्षण पता",
+    "es": "Dirección pública de prueba",
+    "ar": "عنوان اختبار عام",
+    "fr": "Adresse publique de test",
+    "bn": "সর্বজনীন পরীক্ষামূলক ঠিকানা",
+    "pt": "Endereço público de teste",
+    "ru": "Публичный тестовый адрес",
+    "ur": "عوامی آزمائشی پتہ",
+    "id": "Alamat publik untuk pengujian"
+  },
+  "CPU-потоки": {
+    "en": "CPU threads",
+    "zh": "CPU 线程",
+    "hi": "CPU थ्रेड",
+    "es": "Hilos de CPU",
+    "ar": "خيوط المعالج",
+    "fr": "Threads CPU",
+    "bn": "CPU থ্রেড",
+    "pt": "Threads da CPU",
+    "ru": "CPU-потоки",
+    "ur": "CPU تھریڈز",
+    "id": "Thread CPU"
+  },
+  "Согласен на нагрузку CPU": {
+    "en": "I agree to CPU usage",
+    "zh": "我同意使用 CPU",
+    "hi": "मैं CPU के उपयोग की अनुमति देता हूँ",
+    "es": "Acepto el uso de la CPU",
+    "ar": "أوافق على استخدام المعالج",
+    "fr": "J’accepte l’utilisation du CPU",
+    "bn": "আমি CPU ব্যবহারে সম্মতি দিচ্ছি",
+    "pt": "Concordo com o uso da CPU",
+    "ru": "Согласен на нагрузку CPU",
+    "ur": "میں CPU کے استعمال سے اتفاق کرتا ہوں",
+    "id": "Saya menyetujui penggunaan CPU"
+  },
+  "Начать тест": {
+    "en": "Start test",
+    "zh": "开始测试",
+    "hi": "परीक्षण शुरू करें",
+    "es": "Iniciar prueba",
+    "ar": "بدء الاختبار",
+    "fr": "Démarrer le test",
+    "bn": "পরীক্ষা শুরু করুন",
+    "pt": "Iniciar teste",
+    "ru": "Начать тест",
+    "ur": "ٹیسٹ شروع کریں",
+    "id": "Mulai pengujian"
+  },
+  "Остановить майнинг": {
+    "en": "Stop mining",
+    "zh": "停止挖矿",
+    "hi": "माइनिंग रोकें",
+    "es": "Detener minería",
+    "ar": "إيقاف التعدين",
+    "fr": "Arrêter le minage",
+    "bn": "মাইনিং বন্ধ করুন",
+    "pt": "Parar mineração",
+    "ru": "Остановить майнинг",
+    "ur": "مائننگ روکیں",
+    "id": "Hentikan penambangan"
+  },
+  "Хешрейт": {
+    "en": "Hashrate",
+    "zh": "哈希率",
+    "hi": "हैश दर",
+    "es": "Tasa de hash",
+    "ar": "معدل التجزئة",
+    "fr": "Taux de hachage",
+    "bn": "হ্যাশরেট",
+    "pt": "Taxa de hash",
+    "ru": "Хешрейт",
+    "ur": "ہیش ریٹ",
+    "id": "Hashrate"
+  },
+  "Журнал наград пока не подключён": {
+    "en": "Reward ledger is not connected yet",
+    "zh": "奖励账本尚未连接",
+    "hi": "रिवॉर्ड लेजर अभी कनेक्ट नहीं है",
+    "es": "El registro de recompensas aún no está conectado",
+    "ar": "سجل المكافآت غير متصل بعد",
+    "fr": "Le registre des récompenses n’est pas encore connecté",
+    "bn": "পুরস্কারের খাতা এখনও সংযুক্ত হয়নি",
+    "pt": "O registro de recompensas ainda não está conectado",
+    "ru": "Журнал наград пока не подключён",
+    "ur": "انعامات کا ریکارڈ ابھی منسلک نہیں ہے",
+    "id": "Buku besar hadiah belum terhubung"
+  },
+  "Закрытие CybOS не останавливает отдельный узел. Остановите майнер кнопкой выше.": {
+    "en": "Closing CybOS does not stop the separate node. Stop the miner with the button above.",
+    "zh": "关闭 CybOS 不会停止独立节点。请使用上方按钮停止挖矿。",
+    "hi": "CybOS बंद करने से अलग नोड नहीं रुकता। ऊपर दिए बटन से माइनर रोकें।",
+    "es": "Cerrar CybOS no detiene el nodo separado. Detén el minero con el botón de arriba.",
+    "ar": "إغلاق CybOS لا يوقف العقدة المنفصلة. أوقف التعدين بالزر أعلاه.",
+    "fr": "Fermer CybOS n’arrête pas le nœud séparé. Arrêtez le mineur avec le bouton ci-dessus.",
+    "bn": "CybOS বন্ধ করলে পৃথক নোড বন্ধ হয় না। উপরের বোতাম দিয়ে মাইনার বন্ধ করুন।",
+    "pt": "Fechar o CybOS não para o nó separado. Pare o minerador com o botão acima.",
+    "ru": "Закрытие CybOS не останавливает отдельный узел. Остановите майнер кнопкой выше.",
+    "ur": "CybOS بند کرنے سے الگ نوڈ نہیں رکتا۔ اوپر والے بٹن سے مائنر روکیں۔",
+    "id": "Menutup CybOS tidak menghentikan node terpisah. Hentikan penambang dengan tombol di atas."
   }
 }

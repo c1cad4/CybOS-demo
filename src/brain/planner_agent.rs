@@ -269,6 +269,7 @@ TOOL RESULT:
 
         let vpn_setup = crate::network::vpn::Setup::load(&store);
         Ok(Self {
+            mining: crate::mining::Panel::default(),
             store,
             page: crate::navigation::Page::Robot,
             search: String::new(),

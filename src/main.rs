@@ -8,6 +8,7 @@ mod movie_catalog;
 mod media_stream;
 mod torrent_indexer;
 mod models;
+mod mining;
 mod store;
 
 mod actions;

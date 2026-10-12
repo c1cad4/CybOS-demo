@@ -17,6 +17,7 @@ use std::time::Instant;
 pub(crate) type RobotJobResult = Result<String, String>;
 
 pub(crate) struct CybOs {
+    pub(crate) mining: crate::mining::Panel,
     pub(crate) store: Store,
     pub(crate) page: Page,
     pub(crate) search: String,
@@ -208,6 +209,7 @@ impl Default for CybOs {
             cyblex_seed_path: String::new(),
             cyblex_status: "CYBLEX · STARTING".into(),
             cyblex_torrents: Vec::new(),
+            mining: crate::mining::Panel::default(),
             cybdex: crate::cybdex::CybDexRuntime::new(),
             cybdex_query: String::new(),
             cybdex_pairs: Vec::new(),
