@@ -15,6 +15,8 @@ pub(crate) struct Report {
     pub states: BTreeMap<String, String>,
     #[serde(deserialize_with = "unique_map")]
     pub allocations_atomic: BTreeMap<String, String>,
+    #[serde(default, deserialize_with = "unique_map")]
+    pub pending_atomic: BTreeMap<String, String>,
     wallet_balance: bool,
     payments_enabled: bool,
 }
@@ -71,16 +73,21 @@ impl Report {
             || report.states.iter().any(|(key, state)| {
                 !hash(key) || !["pending", "matured", "orphaned"].contains(&state.as_str())
             })
-            || report.allocations_atomic.iter().any(|(key, amount)| {
-                key.is_empty()
-                    || key.len() > 128
-                    || !key
-                        .bytes()
-                        .all(|c| c.is_ascii_alphanumeric() || b"._:-".contains(&c))
-                    || amount.is_empty()
-                    || !amount.bytes().all(|c| c.is_ascii_digit())
-                    || amount.parse::<u128>().is_err()
-            })
+            || report.pending_atomic.len() > 4096
+            || report
+                .allocations_atomic
+                .iter()
+                .chain(report.pending_atomic.iter())
+                .any(|(key, amount)| {
+                    key.is_empty()
+                        || key.len() > 128
+                        || !key
+                            .bytes()
+                            .all(|c| c.is_ascii_alphanumeric() || b"._:-".contains(&c))
+                        || amount.is_empty()
+                        || !amount.bytes().all(|c| c.is_ascii_digit())
+                        || amount.parse::<u128>().is_err()
+                })
         {
             return Err("Отчёт другой сети или содержит недопустимые данные".into());
         }
@@ -147,6 +154,23 @@ mod tests {
         assert!(Report::parse(&raw).is_err());
         let mut value = fixture();
         value["observed_at"] = serde_json::json!("2026-99-99T99:99:99+00:00");
+        assert!(Report::parse(&value.to_string()).is_err());
+    }
+    #[test]
+    fn pending_amounts_are_exact_and_old_reports_remain_readable() {
+        assert!(
+            Report::parse(&fixture().to_string())
+                .unwrap()
+                .pending_atomic
+                .is_empty()
+        );
+        let mut value = fixture();
+        value["pending_atomic"] = serde_json::json!({"owner":"100"});
+        assert_eq!(
+            Report::parse(&value.to_string()).unwrap().pending_atomic["owner"],
+            "100"
+        );
+        value["pending_atomic"] = serde_json::json!({"owner":"-1"});
         assert!(Report::parse(&value.to_string()).is_err());
     }
 }

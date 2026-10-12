@@ -119,6 +119,11 @@ impl CybOs {
                     let label=match state {"pending"=>"Ожидают созревания","matured"=>"Созрели на момент отчёта",_=>"Исключены из цепочки"};
                     ui.label(format!("{}: {}",label,report.states.values().filter(|s| s.as_str()==state).count()));
                 }
+                ui.label("Ожидающие суммы · атомарные единицы · пока недоступны");
+                egui::ScrollArea::vertical().id_salt("pending_rewards").max_height(120.0).show(ui, |ui| {
+                    for (participant, amount) in &report.pending_atomic { ui.label(format!("{participant}: {amount}")); }
+                });
+                if report.pending_atomic.is_empty() { ui.label("Ожидающих начислений в отчёте нет"); }
                 ui.label("Распределения в атомарных единицах лаборатории · выплат нет");
                 egui::ScrollArea::vertical().max_height(180.0).show(ui, |ui| {
                     for (participant, amount) in &report.allocations_atomic {
