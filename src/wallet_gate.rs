@@ -4,6 +4,7 @@ use eframe::egui;
 use std::{
     path::PathBuf,
     sync::mpsc::{self, Receiver},
+    time::{Duration, Instant},
 };
 use zeroize::{Zeroize, Zeroizing};
 
@@ -20,6 +21,8 @@ pub(crate) struct Gate {
     restore: bool,
     task: Option<Receiver<Result<(Vault, Zeroizing<[u8; 32]>), String>>>,
     inner: Option<CybOs>,
+    idle: IdleLock,
+    unlock_task: Option<Receiver<Result<(), String>>>,
 }
 impl Gate {
     pub fn new() -> Self {
@@ -45,7 +48,57 @@ impl Gate {
             restore: false,
             task: None,
             inner: None,
+            idle: IdleLock::new(Instant::now()),
+            unlock_task: None,
         }
+    }
+    fn lock_screen(&mut self, ui: &mut egui::Ui) {
+        if let Some(result) = self.unlock_task.as_ref().and_then(|rx| match rx.try_recv() {
+            Ok(result) => Some(result),
+            Err(mpsc::TryRecvError::Empty) => None,
+            Err(mpsc::TryRecvError::Disconnected) => Some(Err("Проверка пароля прервалась".into())),
+        }) {
+            self.unlock_task = None;
+            self.password.zeroize();
+            match result {
+                Ok(()) => { self.idle.unlocked(Instant::now()); self.error.clear(); }
+                Err(error) => self.error = error,
+            }
+        }
+        // Render no application content on the frame that completes authentication.
+        ui.vertical_centered(|ui| {
+            ui.add_space(60.);
+            ui.heading("CybOS заблокирован");
+            ui.label("Введите пароль профиля, чтобы продолжить");
+            ui.label("Фоновые задачи продолжаются. Для завершения сессии закройте приложение.");
+            let mut submit = false;
+            ui.add_enabled_ui(self.unlock_task.is_none(), |ui| {
+                ui.add(egui::TextEdit::singleline(&mut *self.password).password(true));
+                submit = ui.button("Разблокировать").clicked();
+            });
+            if submit {
+                let path = self.path.clone();
+                let password = Zeroizing::new(self.password.to_string());
+                let expected_id = self.vault.as_ref().map(|vault| vault.id.clone());
+                self.password.zeroize();
+                let (tx, rx) = mpsc::channel();
+                self.unlock_task = Some(rx);
+                self.error.clear();
+                std::thread::spawn(move || {
+                    let result = Vault::load(&path).and_then(|vault| {
+                        if Some(&vault.id) != expected_id.as_ref() {
+                            return Err("Профиль изменился. Закройте приложение и войдите заново".into());
+                        }
+                        vault.unlock(&password)
+                    });
+                    let _ = tx.send(result);
+                });
+            }
+            if self.unlock_task.is_some() { ui.spinner(); }
+            ui.colored_label(egui::Color32::RED, &self.error);
+            ui.label("Забыли пароль? Закройте CybOS и восстановите доступ по 24 словам при запуске.");
+        });
+        ui.ctx().request_repaint_after(Duration::from_millis(100));
     }
     fn request(&mut self) {
         if self.task.is_some() {
@@ -124,6 +177,7 @@ impl Gate {
                     app.wallet_profile_id = vault.id.clone();
                     self.vault = Some(vault);
                     self.inner = Some(app);
+                    self.idle.unlocked(Instant::now());
                 }
                 Err(error) => {
                     self.password.zeroize();
@@ -151,8 +205,26 @@ impl Drop for Gate {
 impl eframe::App for Gate {
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
         self.poll();
-        if let Some(app) = &mut self.inner {
-            eframe::App::ui(app, ui, frame);
+        if self.inner.is_some() {
+            let now = Instant::now();
+            // Check expiry before accepting fresh input (including resume from sleep).
+            self.idle.check(now);
+            if self.idle.locked { self.lock_screen(ui); return; }
+            let activity = ui.input(|input| input.focused && !input.events.is_empty());
+            if activity { self.idle.activity(now); }
+            let lock = ui.horizontal(|ui| {
+                ui.label("Автоблокировка · 5 минут");
+                ui.button("🔒 Заблокировать").clicked()
+            }).inner;
+            if lock {
+                self.idle.locked = true;
+                self.password.zeroize();
+                self.error.clear();
+                self.lock_screen(ui);
+                return;
+            }
+            ui.ctx().request_repaint_after(Duration::from_secs(1));
+            if let Some(app) = &mut self.inner { eframe::App::ui(app, ui, frame); }
             return;
         }
         ui.ctx().set_visuals(egui::Visuals::dark());
@@ -184,5 +256,39 @@ impl eframe::App for Gate {
             if self.task.is_some(){ui.spinner();ui.ctx().request_repaint_after(std::time::Duration::from_millis(100));}
             ui.colored_label(egui::Color32::RED,&self.error);
         });
+    }
+}
+
+/// Only explicit UI input refreshes the timer; rendering/background work never does.
+struct IdleLock { last_activity: Instant, locked: bool }
+impl IdleLock {
+    fn new(now: Instant) -> Self { Self { last_activity: now, locked: false } }
+    fn check(&mut self, now: Instant) {
+        if now.saturating_duration_since(self.last_activity) >= Duration::from_secs(300) {
+            self.locked = true;
+        }
+    }
+    fn activity(&mut self, now: Instant) { if !self.locked { self.last_activity = now; } }
+    fn unlocked(&mut self, now: Instant) { self.last_activity = now; self.locked = false; }
+}
+#[cfg(test)]
+mod lock_tests {
+    use super::*;
+    #[test]
+    fn idle_expiry_cannot_be_bypassed_by_resume_input() {
+        let start = Instant::now();
+        let mut timer = IdleLock::new(start);
+        timer.check(start + Duration::from_secs(299));
+        assert!(!timer.locked);
+        timer.check(start + Duration::from_secs(300));
+        timer.activity(start + Duration::from_secs(300));
+        assert!(timer.locked);
+        timer.unlocked(start + Duration::from_secs(301));
+        assert!(!timer.locked);
+        timer.activity(start + Duration::from_secs(500));
+        timer.check(start + Duration::from_secs(799));
+        assert!(!timer.locked);
+        timer.check(start + Duration::from_secs(800));
+        assert!(timer.locked);
     }
 }
