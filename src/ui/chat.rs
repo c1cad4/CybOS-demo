@@ -364,6 +364,7 @@ impl CybOs {
                     ui.small(crate::i18n::tr(ui.ctx(), "История хранится на этом устройстве"));
                 });
                 if let Some(peer_id) = &peer {
+                    self.transfer_panel(ui,peer_id);
                     ui.collapsing("📎 Защищённый файл · до 8 КиБ", |ui| {
                         ui.small("Сначала сохраните файл в CybWallet. Получатель увидит кнопку сохранения; файлы не открываются автоматически.");
                         match self.store.protected_files() {

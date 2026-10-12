@@ -209,7 +209,10 @@ impl eframe::App for Gate {
             let now = Instant::now();
             // Check expiry before accepting fresh input (including resume from sleep).
             self.idle.check(now);
-            if self.idle.locked { self.lock_screen(ui); return; }
+            if self.idle.locked {
+                if let Some(app)=&mut self.inner {app.poll_secure_events();app.poll_secure_send();}
+                self.lock_screen(ui); return;
+            }
             let activity = ui.input(|input| input.focused && !input.events.is_empty());
             if activity { self.idle.activity(now); }
             let lock = ui.horizontal(|ui| {

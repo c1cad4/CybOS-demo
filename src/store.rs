@@ -10,6 +10,9 @@ pub(crate) struct Store {
     conn: Connection,
 }
 impl Store {
+    pub(crate) fn file_transfers(&self,peer:&str)->Result<Vec<crate::file_transfer::Status>,String>{crate::file_transfer::statuses(&self.conn,peer)}
+    pub(crate) fn discard_transfer(&self,id:&str,peer:&str)->Result<(),String>{crate::file_transfer::discard(&self.conn,id,peer)}
+
     pub(crate) fn protected_files(&self) -> Result<Vec<crate::secure_files::Entry>,String> { crate::secure_files::list(&self.conn) }
     pub(crate) fn attachment_message(&self, id: &str) -> Result<String,String> { crate::secure_files::outgoing(&self.conn,id) }
     pub(crate) fn save_chat_attachment(&self, message: &str) -> Result<(),String> {
@@ -154,13 +157,16 @@ impl Store {
         if text.starts_with(crate::chat_attachment::PREFIX) { crate::chat_attachment::decode(text)?; }
         immunocybchain::validate_message_identity(message_id, sender)
             .map_err(|e| format!("invalid message identity: {e:?}"))?;
-        let tx = self.conn.unchecked_transaction().map_err(|e| e.to_string())?;
+        if text.starts_with(crate::file_transfer::PREFIX) {crate::file_transfer::schema(&self.conn)?;crate::secure_files::schema(&self.conn)?;}
+        let tx = rusqlite::Transaction::new_unchecked(&self.conn,rusqlite::TransactionBehavior::Immediate).map_err(|e| e.to_string())?;
+        if text.starts_with(crate::file_transfer::PREFIX) {crate::file_transfer::receive(&tx,sender,text)?;}
         let time = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
         let inserted = tx.execute("INSERT OR IGNORE INTO secure_message_ids(message_id,time,sender) VALUES(?1,?2,?3)", params![message_id, time, sender])
             .map_err(|e| format!("persist replay identity: {e}"))?;
         if inserted == 0 { return Ok(false); }
-        tx.execute("INSERT INTO chat_messages(id,time,who,text,mine) VALUES(?1,?2,?3,?4,0)", params![Uuid::new_v4().to_string(), time, format!("CYB:{sender}"), text])
-            .map_err(|e| format!("persist secure message: {e}"))?;
+        if !text.starts_with(crate::file_transfer::PREFIX) {
+            tx.execute("INSERT INTO chat_messages(id,time,who,text,mine) VALUES(?1,?2,?3,?4,0)", params![Uuid::new_v4().to_string(), time, format!("CYB:{sender}"), text]).map_err(|e| format!("persist secure message: {e}"))?;
+        }
         tx.execute("DELETE FROM secure_message_ids WHERE message_id NOT IN (SELECT message_id FROM secure_message_ids ORDER BY rowid DESC LIMIT 1024)", [])
             .map_err(|e| format!("prune replay identities: {e}"))?;
         tx.commit().map_err(|e| format!("commit secure message: {e}"))?;
