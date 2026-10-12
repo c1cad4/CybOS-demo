@@ -9,6 +9,7 @@ mod media_stream;
 mod torrent_indexer;
 mod models;
 mod mining;
+mod mining_report;
 mod store;
 
 mod actions;

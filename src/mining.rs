@@ -3,7 +3,7 @@ use serde_json::{Value, json};
 use std::sync::mpsc::{self, Receiver};
 use std::time::{Duration, Instant};
 
-const GENESIS: &str = "e162f6367a0140999726bb9564b955cc5f03b33121f1531e48d545387e864345";
+pub(crate) const GENESIS: &str = "e162f6367a0140999726bb9564b955cc5f03b33121f1531e48d545387e864345";
 
 #[derive(Clone, Debug)]
 pub(crate) struct Snapshot {
@@ -201,6 +201,9 @@ pub(crate) fn execute(port: u16, operation: Operation) -> Result<Snapshot, Strin
 }
 
 pub(crate) struct Panel {
+    pub report_path: String,
+    pub report: Option<crate::mining_report::Report>,
+    pub report_error: String,
     pub port: u16,
     pub address: String,
     pub threads: usize,
@@ -213,6 +216,9 @@ pub(crate) struct Panel {
 impl Default for Panel {
     fn default() -> Self {
         Self {
+            report_path: String::new(),
+            report: None,
+            report_error: String::new(),
             port: 28981,
             address: String::new(),
             threads: 1,

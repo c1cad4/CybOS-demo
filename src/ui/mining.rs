@@ -101,7 +101,37 @@ impl CybOs {
                 ));
             }
         }
-        ui.small(crate::i18n::tr(&ctx, "Журнал наград пока не подключён"));
+        ui.separator();
+        ui.collapsing("Журнал тестовых наград", |ui| {
+            ui.label("Импорт снимка учёта CybHero. Это исторический отчёт, не баланс кошелька и не подтверждение текущего состояния цепочки.");
+            ui.label("Путь к JSON-отчёту");
+            if ui.text_edit_singleline(&mut self.mining.report_path).changed() {
+                self.mining.report = None;
+                self.mining.report_error.clear();
+            }
+            if ui.button("Прочитать отчёт").clicked() {
+                self.mining.report = None;
+                match crate::mining_report::Report::load(&self.mining.report_path) {
+                    Ok(report) => { self.mining.report=Some(report); self.mining.report_error.clear(); },
+                    Err(error) => self.mining.report_error=error,
+                }
+            }
+            ui.label(&self.mining.report_error);
+            if let Some(report)=&self.mining.report {
+                ui.label(format!("Проверено экспортёром: {} · высота {}",report.observed_at,report.chain_height));
+                for state in ["pending","matured","orphaned"] {
+                    let label=match state {"pending"=>"Ожидают созревания","matured"=>"Созрели на момент отчёта",_=>"Исключены из цепочки"};
+                    ui.label(format!("{}: {}",label,report.states.values().filter(|s| s.as_str()==state).count()));
+                }
+                ui.label("Распределения в атомарных единицах лаборатории · выплат нет");
+                egui::ScrollArea::vertical().max_height(180.0).show(ui, |ui| {
+                    for (participant, amount) in &report.allocations_atomic {
+                        ui.label(format!("{participant}: {amount}"));
+                    }
+                });
+                if report.allocations_atomic.is_empty() { ui.label("Подтверждённых распределений в отчёте нет"); }
+            }
+        });
         ui.small(crate::i18n::tr(
             &ctx,
             "Закрытие CybOS не останавливает отдельный узел. Остановите майнер кнопкой выше.",
