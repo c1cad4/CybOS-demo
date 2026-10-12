@@ -61,7 +61,7 @@ impl CybOs {
 
         if mine {
             let learned = crate::conversations::GroupMessage::decode(&message).map(|m| m.text).unwrap_or_else(|| message.clone());
-            self.capture_user_knowledge(&learned);
+            if !learned.starts_with(crate::chat_attachment::PREFIX) { self.capture_user_knowledge(&learned); }
         }
         self.store.add_chat_message(&who, &message, mine);
         self.chat.push((who, message, mine));

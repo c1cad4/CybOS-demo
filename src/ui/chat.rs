@@ -1,4 +1,3 @@
-/Users/pussy/.zprofile:6: no such file or directory: /opt/homebrew/bin/brew
 use crate::{
     CybOs,
     conversations::{Book, Group, GroupMessage},
@@ -11,6 +10,7 @@ struct ChatView {
     selected: String,
     tab: usize,
     search: String,
+    attachment: String,
     add_friend: bool,
     create_group: bool,
     name: String,
@@ -329,7 +329,20 @@ impl CybOs {
                         count += 1;
                         egui::Frame::NONE.fill(if *mine { Color32::from_rgb(16, 57, 43) } else { Color32::from_rgb(12, 29, 25) }).corner_radius(10).inner_margin(10.0).show(ui, |ui| {
                             ui.label(RichText::new(if *mine { crate::i18n::tr(ui.ctx(), "Ты") } else { book.name(who.strip_prefix("CYB:").unwrap_or(who)).to_owned() }).small().color(Color32::from_rgb(100, 220, 165)));
-                            ui.add(egui::Label::new(body).selectable(true).wrap());
+                            if body.starts_with(crate::chat_attachment::PREFIX) {
+                                match crate::chat_attachment::decode(&body) {
+                                    Ok(file)=>{
+                                        ui.label(format!("📎 {} · {} байт",file.name,file.content.len()));
+                                        if ui.button("Сохранить защищённую копию").clicked() {
+                                            view.error = match self.store.save_chat_attachment(&body) {
+                                                Ok(())=>"Сохранено. Откройте CybWallet → Защищённые файлы и обновите список".into(),
+                                                Err(error)=>error,
+                                            };
+                                        }
+                                    },
+                                    Err(error)=>{ui.colored_label(Color32::LIGHT_RED,error);}
+                                }
+                            } else { ui.add(egui::Label::new(body).selectable(true).wrap()); }
                         });
                         ui.add_space(7.0);
                     }
@@ -350,6 +363,27 @@ impl CybOs {
                     }
                     ui.small(crate::i18n::tr(ui.ctx(), "История хранится на этом устройстве"));
                 });
+                if let Some(peer_id) = &peer {
+                    ui.collapsing("📎 Защищённый файл · до 8 КиБ", |ui| {
+                        ui.small("Сначала сохраните файл в CybWallet. Получатель увидит кнопку сохранения; файлы не открываются автоматически.");
+                        match self.store.protected_files() {
+                            Ok(files)=>{
+                                egui::ComboBox::from_id_salt("chat-file-picker").selected_text(files.iter().find(|f|f.id==view.attachment).map(|f|f.name.as_str()).unwrap_or("Выберите файл")).show_ui(ui,|ui| {
+                                    for file in files.iter().filter(|f|f.bytes<=crate::chat_attachment::MAX_BYTES as u64) { ui.selectable_value(&mut view.attachment,file.id.clone(),&file.name); }
+                                });
+                                let trusted = crate::network::peer_trust::approved_key(&self.store,peer_id).ok().flatten().is_some();
+                                if ui.add_enabled(!busy && route_ready && transport_ready && trusted && !view.attachment.is_empty(),egui::Button::new("Отправить файл")).clicked() {
+                                    match self.store.attachment_message(&view.attachment) {
+                                        Ok(message)=>{self.lan_target=Some(peer_id.clone());self.send_secure_chat(&message);view.error.clear();},
+                                        Err(error)=>view.error=error,
+                                    }
+                                }
+                                if !trusted {ui.small("Сначала сверьте и подтвердите код безопасности друга.");}
+                            },
+                            Err(error)=>{ui.colored_label(Color32::LIGHT_RED,error);}
+                        }
+                    });
+                }
                 if group.is_some() { ui.add(egui::Label::new(&self.secure_status).wrap()); }
                 if !transport_ready { ui.colored_label(Color32::LIGHT_RED, crate::i18n::tr(ui.ctx(), "Соединение недоступно. Подробности — в Cyb Диспетчере. Проверь, не запущена ли другая копия CybOS.")); }
                 if !route_ready { ui.label(crate::i18n::tr(ui.ctx(), "Добавь адрес этого собеседника через кнопку «+ Друг».")); }
