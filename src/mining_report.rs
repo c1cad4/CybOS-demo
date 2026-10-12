@@ -1,5 +1,5 @@
 //! Read-only, historical laboratory reports. Never authorizes mining or payments.
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 use std::collections::BTreeMap;
 use std::io::Read;
 
@@ -11,11 +11,40 @@ pub(crate) struct Report {
     pub observed_at: String,
     pub chain_height: u64,
     tip_hash: String,
+    #[serde(deserialize_with = "unique_map")]
     pub states: BTreeMap<String, String>,
+    #[serde(deserialize_with = "unique_map")]
     pub allocations_atomic: BTreeMap<String, String>,
     wallet_balance: bool,
     payments_enabled: bool,
 }
+fn unique_map<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<BTreeMap<String, String>, D::Error> {
+    struct Unique;
+    impl<'de> serde::de::Visitor<'de> for Unique {
+        type Value = BTreeMap<String, String>;
+        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            formatter.write_str("a bounded map without duplicate keys")
+        }
+        fn visit_map<A: serde::de::MapAccess<'de>>(
+            self,
+            mut access: A,
+        ) -> Result<Self::Value, A::Error> {
+            let mut map = BTreeMap::new();
+            while let Some((key, value)) = access.next_entry::<String, String>()? {
+                if map.len() >= 4096 || map.insert(key, value).is_some() {
+                    return Err(serde::de::Error::custom(
+                        "duplicate or excessive report entries",
+                    ));
+                }
+            }
+            Ok(map)
+        }
+    }
+    deserializer.deserialize_map(Unique)
+}
+
 fn hash(value: &str) -> bool {
     value.len() == 64
         && value
@@ -36,7 +65,7 @@ impl Report {
             || !hash(&report.tip_hash)
             || report.observed_at.len() > 64
             || report.observed_at.len() < 20
-            || !report.observed_at.contains('T')
+            || chrono::DateTime::parse_from_rfc3339(&report.observed_at).is_err()
             || report.states.len() > 4096
             || report.allocations_atomic.len() > 4096
             || report.states.iter().any(|(key, state)| {
@@ -58,7 +87,16 @@ impl Report {
         Ok(report)
     }
     pub fn load(path: &str) -> Result<Self, String> {
-        let file = std::fs::File::open(path.trim()).map_err(|_| "Не удалось открыть отчёт")?;
+        let mut options = std::fs::OpenOptions::new();
+        options.read(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.custom_flags(libc::O_NONBLOCK);
+        }
+        let file = options
+            .open(path.trim())
+            .map_err(|_| "Не удалось открыть отчёт")?;
         if !file
             .metadata()
             .map_err(|_| "Не удалось проверить файл")?
@@ -99,5 +137,16 @@ mod tests {
             };
             assert!(Report::parse(&v.to_string()).is_err());
         }
+    }
+    #[test]
+    fn rejects_duplicate_entries_and_invalid_dates() {
+        let raw = fixture().to_string().replace(
+            "\"worker\":\"18446744073709551616\"",
+            "\"worker\":\"1\",\"worker\":\"2\"",
+        );
+        assert!(Report::parse(&raw).is_err());
+        let mut value = fixture();
+        value["observed_at"] = serde_json::json!("2026-99-99T99:99:99+00:00");
+        assert!(Report::parse(&value.to_string()).is_err());
     }
 }

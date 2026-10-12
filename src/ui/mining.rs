@@ -106,19 +106,15 @@ impl CybOs {
             ui.label("Импорт снимка учёта CybHero. Это исторический отчёт, не баланс кошелька и не подтверждение текущего состояния цепочки.");
             ui.label("Путь к JSON-отчёту");
             if ui.text_edit_singleline(&mut self.mining.report_path).changed() {
-                self.mining.report = None;
-                self.mining.report_error.clear();
+                self.mining.clear_report();
             }
-            if ui.button("Прочитать отчёт").clicked() {
-                self.mining.report = None;
-                match crate::mining_report::Report::load(&self.mining.report_path) {
-                    Ok(report) => { self.mining.report=Some(report); self.mining.report_error.clear(); },
-                    Err(error) => self.mining.report_error=error,
-                }
+            if ui.add_enabled(!self.mining.report_busy(), egui::Button::new("Прочитать отчёт")).clicked() {
+                self.mining.read_report(&ctx);
             }
+            if self.mining.report_busy() { ui.spinner(); ctx.request_repaint_after(std::time::Duration::from_millis(100)); }
             ui.label(&self.mining.report_error);
             if let Some(report)=&self.mining.report {
-                ui.label(format!("Проверено экспортёром: {} · высота {}",report.observed_at,report.chain_height));
+                ui.label(format!("Дата наблюдения в файле: {} · высота {}",report.observed_at,report.chain_height));
                 for state in ["pending","matured","orphaned"] {
                     let label=match state {"pending"=>"Ожидают созревания","matured"=>"Созрели на момент отчёта",_=>"Исключены из цепочки"};
                     ui.label(format!("{}: {}",label,report.states.values().filter(|s| s.as_str()==state).count()));

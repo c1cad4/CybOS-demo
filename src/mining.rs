@@ -204,6 +204,7 @@ pub(crate) struct Panel {
     pub report_path: String,
     pub report: Option<crate::mining_report::Report>,
     pub report_error: String,
+    report_task: Option<Receiver<Result<crate::mining_report::Report, String>>>,
     pub port: u16,
     pub address: String,
     pub threads: usize,
@@ -219,6 +220,7 @@ impl Default for Panel {
             report_path: String::new(),
             report: None,
             report_error: String::new(),
+            report_task: None,
             port: 28981,
             address: String::new(),
             threads: 1,
@@ -231,6 +233,25 @@ impl Default for Panel {
     }
 }
 impl Panel {
+    pub fn report_busy(&self) -> bool {
+        self.report_task.is_some()
+    }
+    pub fn clear_report(&mut self) {
+        self.report = None;
+        self.report_error.clear();
+        self.report_task = None;
+    }
+    pub fn read_report(&mut self, ctx: &eframe::egui::Context) {
+        self.clear_report();
+        let (tx, rx) = mpsc::channel();
+        self.report_task = Some(rx);
+        let path = self.report_path.clone();
+        let ctx = ctx.clone();
+        std::thread::spawn(move || {
+            let _ = tx.send(crate::mining_report::Report::load(&path));
+            ctx.request_repaint();
+        });
+    }
     pub fn busy(&self) -> bool {
         self.task.is_some()
     }
@@ -258,6 +279,24 @@ impl Panel {
         });
     }
     pub fn poll(&mut self) {
+        let report_result = self
+            .report_task
+            .as_ref()
+            .and_then(|rx| match rx.try_recv() {
+                Ok(value) => Some(value),
+                Err(mpsc::TryRecvError::Empty) => None,
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    Some(Err("Чтение отчёта прервалось".into()))
+                }
+            });
+        if let Some(result) = report_result {
+            self.report_task = None;
+            match result {
+                Ok(report) => self.report = Some(report),
+                Err(error) => self.report_error = error,
+            }
+        }
+
         let result = self.task.as_ref().and_then(|rx| match rx.try_recv() {
             Ok(value) => Some(value),
             Err(mpsc::TryRecvError::Empty) => None,
