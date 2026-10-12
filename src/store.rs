@@ -456,7 +456,7 @@ impl Store {
         );
     }
 }
-fn dirs_fallback() -> PathBuf {
+pub(crate) fn dirs_fallback() -> PathBuf {
     if let Some(path) = std::env::var_os("CYBOS_DATA_DIR").filter(|path| !path.is_empty()) {
         return PathBuf::from(path);
     }
