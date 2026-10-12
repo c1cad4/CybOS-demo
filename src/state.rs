@@ -528,10 +528,11 @@ impl CybOs {
                         }
                     }
                     // History is already durable; avoid a second best-effort INSERT.
-                    self.chat.push((format!("CYB:{node_id}"), message, false));
+                    let file_transfer=message.starts_with(crate::file_transfer::PREFIX);
+                    if !file_transfer {self.chat.push((format!("CYB:{node_id}"), message, false));}
                     if self.chat.len() > 500 { self.chat.drain(0..self.chat.len() - 500); }
                     // Optional graph/log work must not delay the durable delivery ACK.
-                    let _ = reply.send(crate::network::secure_chat::SecureReply::Ack);
+                    let _ = reply.send(if file_transfer {crate::network::secure_chat::SecureReply::TransferAck}else{crate::network::secure_chat::SecureReply::Ack});
                     self.upsert_secure_peer(&node_id, &fingerprint, true);
                     self.add_event(
                         "CHAT",

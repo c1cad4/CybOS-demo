@@ -14,7 +14,7 @@ pub(crate) struct Entry {
     pub name: String,
     pub bytes: u64,
 }
-fn schema(conn: &Connection) -> Result<(), String> {
+pub(crate) fn schema(conn: &Connection) -> Result<(), String> {
     conn.execute_batch("CREATE TABLE IF NOT EXISTS protected_files(id TEXT PRIMARY KEY,name TEXT NOT NULL,content BLOB NOT NULL);")
         .map_err(|_| "Хранилище файлов недоступно".into())
 }
@@ -72,7 +72,39 @@ pub(crate) fn save_bytes(conn: &Connection, name: &str, bytes: &[u8]) -> Result<
     let count: u64 = tx
         .query_row("SELECT count(*) FROM protected_files", [], |r| r.get(0))
         .map_err(|_| "Не удалось проверить список")?;
-    if used.saturating_add(bytes.len() as u64) > MAX_TOTAL || count >= 1024 {
+    let transfers_exist: bool = tx
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='file_in')",
+            [],
+            |r| r.get(0),
+        )
+        .map_err(|_| "Ошибка квоты передач")?;
+    let reserved: u64 = if transfers_exist {
+        tx.query_row(
+            "SELECT coalesce(sum(size),0) FROM file_in WHERE phase='receiving'",
+            [],
+            |r| r.get(0),
+        )
+        .map_err(|_| "Ошибка квоты передач")?
+    } else {
+        0
+    };
+    let reserved_files: u64 = if transfers_exist {
+        tx.query_row(
+            "SELECT count(*) FROM file_in WHERE phase='receiving'",
+            [],
+            |r| r.get(0),
+        )
+        .map_err(|_| "Ошибка квоты передач")?
+    } else {
+        0
+    };
+    if used
+        .saturating_add(reserved)
+        .saturating_add(bytes.len() as u64)
+        > MAX_TOTAL
+        || count.saturating_add(reserved_files) >= 1024
+    {
         return Err("Лимит хранилища: 256 МБ и 1024 файла".into());
     }
     tx.execute(

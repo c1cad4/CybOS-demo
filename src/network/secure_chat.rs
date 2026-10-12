@@ -18,6 +18,7 @@ const PATTERN: &str = "Noise_XX_25519_ChaChaPoly_BLAKE2s";
 #[derive(Clone, Debug)]
 pub(crate) enum SecureReply {
     Ack,
+    TransferAck,
     Reject(String),
 }
 
@@ -260,8 +261,10 @@ fn send_with_deadline(
         let payload_len = transport.read_message(&buf[..n], &mut payload)
             .map_err(|e| format!("ack decrypt: {e}"))?;
 
-        if payload[..payload_len] == *b"ACK" {
-            return Ok(());
+        let expected: &[u8] = if message.starts_with(crate::file_transfer::PREFIX) {b"ACK:FILE-TRANSFER/1"}else{b"ACK"};
+        if &payload[..payload_len] == expected { return Ok(()); }
+        if message.starts_with(crate::file_transfer::PREFIX) && payload[..payload_len]==*b"ACK" {
+            return Err("receiver does not support file transfer v1; update both applications".into());
         }
 
         let reason = std::str::from_utf8(&payload[..payload_len])
@@ -360,6 +363,7 @@ fn receive_one(
 
     let response = match reply {
         SecureReply::Ack => b"ACK".to_vec(),
+        SecureReply::TransferAck => b"ACK:FILE-TRANSFER/1".to_vec(),
         SecureReply::Reject(reason) => {
             let safe: String = reason.replace(['\r', '\n'], " ").chars().take(512).collect();
             format!("REJECT:{}", safe).into_bytes()
@@ -812,6 +816,121 @@ mod tests {
             }
             other => panic!("expected delivered secure message, got {other:?}"),
         }
+
+        drop(listener);
+    }
+    #[test]
+    fn transfer_offer_loopback_requires_durable_special_ack() {
+        let params: NoiseParams = PATTERN.parse().expect("noise params");
+        let sender = Builder::new(params.clone()).generate_keypair().expect("sender keypair");
+        let receiver = Builder::new(params).generate_keypair().expect("receiver keypair");
+
+        let socket = std::net::TcpListener::bind(("127.0.0.1", 0)).expect("test listener");
+        let port = socket.local_addr().unwrap().port();
+        let listener = spawn_listener_socket("node-b".to_string(), receiver.private.clone(), Ok(socket)).expect("listener");
+
+        let offer=format!("{}{}",crate::file_transfer::PREFIX,serde_json::json!({"kind":"Offer","id":uuid::Uuid::new_v4().to_string(),"name":"empty","size":0,"hash":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"}));
+        let sender_key = sender.private.clone();
+        let receiver_public = receiver.public.clone();
+        let sender_thread = thread::spawn(move || {
+            send_on_port(
+                "node-a",
+                "node-b",
+                "127.0.0.1",
+                port,
+                &sender_key,
+                Some(&receiver_public),
+                &offer,
+            )
+        });
+
+        let deadline = Instant::now() + Duration::from_secs(4);
+        let message_id = loop {
+            match listener.try_recv() {
+                Ok(SecureEvent::Received {
+                    message_id,
+                    node_id,
+                    message,
+                    reply,
+                    ..
+                }) => {
+                    assert_eq!(node_id, "node-a");
+                    assert!(message.starts_with(crate::file_transfer::PREFIX));
+                    let store=crate::store::Store::test_store(":memory:");assert!(store.accept_secure_message(&message_id,&node_id,&message).unwrap());
+                    reply.send(SecureReply::TransferAck).expect("send ACK decision");
+                    break message_id;
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) if Instant::now() < deadline => {
+                    thread::sleep(Duration::from_millis(20));
+                }
+                Err(error) => panic!("secure listener did not receive message: {error:?}"),
+            }
+        };
+
+        let status = sender_thread.join().expect("sender thread join");
+        match status {
+            SecureSendStatus::Delivered {
+                message_id: delivered_id,
+                peer_id,
+            } => {
+                assert_eq!(peer_id, "node-b");
+                assert_eq!(delivered_id, message_id);
+            }
+            other => panic!("expected delivered secure message, got {other:?}"),
+        }
+
+        drop(listener);
+    }
+    #[test]
+    fn transfer_specific_ack_refuses_legacy_peer() {
+        let params: NoiseParams = PATTERN.parse().expect("noise params");
+        let sender = Builder::new(params.clone()).generate_keypair().expect("sender keypair");
+        let receiver = Builder::new(params).generate_keypair().expect("receiver keypair");
+
+        let socket = std::net::TcpListener::bind(("127.0.0.1", 0)).expect("test listener");
+        let port = socket.local_addr().unwrap().port();
+        let listener = spawn_listener_socket("node-b".to_string(), receiver.private.clone(), Ok(socket)).expect("listener");
+
+        let offer=format!("{}{}",crate::file_transfer::PREFIX,serde_json::json!({"kind":"Offer","id":uuid::Uuid::new_v4().to_string(),"name":"empty","size":0,"hash":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"}));
+        let sender_key = sender.private.clone();
+        let receiver_public = receiver.public.clone();
+        let sender_thread = thread::spawn(move || {
+            send_on_port(
+                "node-a",
+                "node-b",
+                "127.0.0.1",
+                port,
+                &sender_key,
+                Some(&receiver_public),
+                &offer,
+            )
+        });
+
+        let deadline = Instant::now() + Duration::from_secs(4);
+        let message_id = loop {
+            match listener.try_recv() {
+                Ok(SecureEvent::Received {
+                    message_id,
+                    node_id,
+                    message,
+                    reply,
+                    ..
+                }) => {
+                    assert_eq!(node_id, "node-a");
+                    assert!(message.starts_with(crate::file_transfer::PREFIX));
+                    reply.send(SecureReply::Ack).expect("send ACK decision");
+                    break message_id;
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) if Instant::now() < deadline => {
+                    thread::sleep(Duration::from_millis(20));
+                }
+                Err(error) => panic!("secure listener did not receive message: {error:?}"),
+            }
+        };
+
+        let status = sender_thread.join().expect("sender thread join");
+        match status {SecureSendStatus::Failed{reason,..}=>assert!(reason.contains("does not support")),other=>panic!("legacy receiver incorrectly accepted: {other:?}")}
+        let _=message_id;
 
         drop(listener);
     }
