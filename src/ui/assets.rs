@@ -5,6 +5,12 @@ use egui::{Color32, RichText, Stroke};
 
 impl CybOs {
     pub(crate) fn assets(&mut self, ui: &mut egui::Ui) {
+        let id=egui::Id::new("assets_mining_tab");
+        let mut mining=ui.ctx().data(|d| d.get_temp::<bool>(id)).unwrap_or(false);
+        ui.horizontal(|ui| {ui.selectable_value(&mut mining,false,crate::i18n::tr(ui.ctx(),"Токены")); ui.selectable_value(&mut mining,true,"CybHero · CPU lab");});
+        ui.ctx().data_mut(|d| d.insert_temp(id,mining));
+        ui.separator();
+        if mining { self.mining_panel(ui); return; }
         ui.label("Токены проекта и публичные адреса. Кошелёк пока не подключён: показанные демо-балансы не являются твоими средствами.");
         if ui.button("Открыть CybDEX · найти торговую пару").clicked() { self.go(crate::Page::CybDex); }
         ui.collapsing("Демо экономики проекта", |ui| { self.token_matrix(ui); });

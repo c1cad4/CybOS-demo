@@ -9,6 +9,7 @@ pub mod chat;
 pub mod network;
 pub mod cameras;
 pub mod assets;
+mod mining;
 pub mod system;
 pub mod shell;
 
