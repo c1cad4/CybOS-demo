@@ -745,4 +745,74 @@ mod tests {
 
         drop(listener);
     }
+    #[test]
+    fn bounded_attachment_loopback_is_validated_and_saved_before_ack() {
+        let params: NoiseParams = PATTERN.parse().expect("noise params");
+        let sender = Builder::new(params.clone()).generate_keypair().expect("sender keypair");
+        let receiver = Builder::new(params).generate_keypair().expect("receiver keypair");
+
+        let socket = std::net::TcpListener::bind(("127.0.0.1", 0)).expect("test listener");
+        let port = socket.local_addr().unwrap().port();
+        let listener = spawn_listener_socket("node-b".to_string(), receiver.private.clone(), Ok(socket)).expect("listener");
+
+        let payload = crate::chat_attachment::encode("binary.bin", &vec![255;crate::chat_attachment::MAX_BYTES]).unwrap();
+        let sender_key = sender.private.clone();
+        let receiver_public = receiver.public.clone();
+        let sender_thread = thread::spawn(move || {
+            send_on_port(
+                "node-a",
+                "node-b",
+                "127.0.0.1",
+                port,
+                &sender_key,
+                Some(&receiver_public),
+                &payload,
+            )
+        });
+
+        let deadline = Instant::now() + Duration::from_secs(4);
+        let message_id = loop {
+            match listener.try_recv() {
+                Ok(SecureEvent::Received {
+                    message_id,
+                    node_id,
+                    message,
+                    reply,
+                    ..
+                }) => {
+                    assert_eq!(node_id, "node-a");
+                    let store = crate::store::Store::test_store(":memory:");
+                    assert!(store.accept_secure_message(&message_id,&node_id,&message).unwrap());
+                    assert!(!store.accept_secure_message(&message_id,&node_id,&message).unwrap());
+                    store.save_chat_attachment(&message).unwrap();
+                    let files=store.protected_files().unwrap();assert_eq!(files[0].bytes,crate::chat_attachment::MAX_BYTES as u64);
+                    let saved=crate::chat_attachment::decode(&store.attachment_message(&files[0].id).unwrap()).unwrap();
+                    assert_eq!(*saved.content,vec![255;crate::chat_attachment::MAX_BYTES]);
+                    let forged=message.replace("binary.bin","../bad");
+                    assert!(store.accept_secure_message(&uuid::Uuid::new_v4().to_string(),&node_id,&forged).is_err());
+                    assert_eq!(store.chat_messages().len(),1);
+                    reply.send(SecureReply::Ack).expect("send ACK decision");
+                    break message_id;
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) if Instant::now() < deadline => {
+                    thread::sleep(Duration::from_millis(20));
+                }
+                Err(error) => panic!("secure listener did not receive message: {error:?}"),
+            }
+        };
+
+        let status = sender_thread.join().expect("sender thread join");
+        match status {
+            SecureSendStatus::Delivered {
+                message_id: delivered_id,
+                peer_id,
+            } => {
+                assert_eq!(peer_id, "node-b");
+                assert_eq!(delivered_id, message_id);
+            }
+            other => panic!("expected delivered secure message, got {other:?}"),
+        }
+
+        drop(listener);
+    }
 }

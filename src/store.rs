@@ -10,6 +10,13 @@ pub(crate) struct Store {
     conn: Connection,
 }
 impl Store {
+    pub(crate) fn protected_files(&self) -> Result<Vec<crate::secure_files::Entry>,String> { crate::secure_files::list(&self.conn) }
+    pub(crate) fn attachment_message(&self, id: &str) -> Result<String,String> { crate::secure_files::outgoing(&self.conn,id) }
+    pub(crate) fn save_chat_attachment(&self, message: &str) -> Result<(),String> {
+        let file=crate::chat_attachment::decode(message)?;
+        crate::secure_files::save_bytes(&self.conn,&file.name,&file.content)
+    }
+
     pub(crate) fn open() -> Self {
         let base = dirs_fallback();
         let _ = fs::create_dir_all(&base);
@@ -144,6 +151,7 @@ impl Store {
 
     /// Commit replay protection and chat history together before delivery ACK.
     pub(crate) fn accept_secure_message(&self, message_id: &str, sender: &str, text: &str) -> Result<bool, String> {
+        if text.starts_with(crate::chat_attachment::PREFIX) { crate::chat_attachment::decode(text)?; }
         immunocybchain::validate_message_identity(message_id, sender)
             .map_err(|e| format!("invalid message identity: {e:?}"))?;
         let tx = self.conn.unchecked_transaction().map_err(|e| e.to_string())?;

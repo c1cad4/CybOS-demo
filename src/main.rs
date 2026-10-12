@@ -14,6 +14,7 @@ mod wallet_vault;
 mod wallet_gate;
 mod secure_store;
 mod secure_files;
+mod chat_attachment;
 mod store;
 
 mod actions;

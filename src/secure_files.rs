@@ -53,9 +53,14 @@ pub(crate) fn import(conn: &mut Connection, source: &Path) -> Result<(), String>
     if bytes.len() as u64 > MAX_FILE {
         return Err("Файл вырос; предел — 32 МБ".into());
     }
+    save_bytes(conn, name, &bytes)
+}
+pub(crate) fn save_bytes(conn: &Connection, name: &str, bytes: &[u8]) -> Result<(), String> {
+    if name.is_empty() || name.len() > 1024 || bytes.len() as u64 > MAX_FILE {
+        return Err("Недопустимый файл".into());
+    }
     schema(conn)?;
-    let tx = conn
-        .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+    let tx = rusqlite::Transaction::new_unchecked(conn, rusqlite::TransactionBehavior::Immediate)
         .map_err(|_| "Хранилище занято")?;
     let used: u64 = tx
         .query_row(
@@ -72,11 +77,23 @@ pub(crate) fn import(conn: &mut Connection, source: &Path) -> Result<(), String>
     }
     tx.execute(
         "INSERT INTO protected_files(id,name,content) VALUES(?1,?2,?3)",
-        params![uuid::Uuid::new_v4().to_string(), name, bytes.as_slice()],
+        params![uuid::Uuid::new_v4().to_string(), name, bytes],
     )
     .map_err(|_| "Не удалось сохранить файл")?;
     tx.commit()
         .map_err(|_| "Не удалось завершить сохранение".into())
+}
+pub(crate) fn outgoing(conn: &Connection, id: &str) -> Result<String, String> {
+    schema(conn)?;
+    let (name, bytes) = conn
+        .query_row(
+            "SELECT name,content FROM protected_files WHERE id=?1 AND length(content)<=?2",
+            params![id, crate::chat_attachment::MAX_BYTES],
+            |r| Ok((r.get::<_, String>(0)?, r.get::<_, Vec<u8>>(1)?)),
+        )
+        .map_err(|_| "Выберите защищённый файл до 8 КиБ")?;
+    let bytes = Zeroizing::new(bytes);
+    crate::chat_attachment::encode(&name, &bytes)
 }
 pub(crate) fn export(conn: &Connection, id: &str, destination: &Path) -> Result<(), String> {
     schema(conn)?;
