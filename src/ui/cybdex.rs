@@ -7,6 +7,7 @@ impl CybOs {
     pub(crate) fn cybdex_page(&mut self, ui: &mut egui::Ui) {
         self.poll_cybdex();
         ui.label("Рынок Solana · выбери пару, изучи график и перейди к обмену.");
+        ui.hyperlink_to("Цены RobotCYB и CicadaFarm в Chrome / Edge ↗", "https://github.com/c1cad4/plugin-robotcyb-cicadafarm#installation");
         ui.add_space(10.0);
         ui.horizontal(|ui| {
             let input = ui.add_sized(
