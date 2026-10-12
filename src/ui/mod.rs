@@ -20,3 +20,5 @@ mod technical_chart;
 mod vpn;
 mod processes;
 mod radio_radar;
+
+mod protected_files;
