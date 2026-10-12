@@ -455,4 +455,22 @@ mod tests {
         bad["offline"] = json!(false);
         assert!(validate_identity(&bad, &header).is_err());
     }
+    #[test]
+    #[ignore = "requires an explicitly started local offline laboratory node"]
+    fn real_lab_readonly_connection() {
+        let port: u16 = std::env::var("CYBH_LAB_TEST_PORT")
+            .expect("explicit CYBH_LAB_TEST_PORT required")
+            .parse()
+            .unwrap();
+        let snapshot = execute(port, Operation::Check).expect("identified lab RPC");
+        assert!(snapshot.height >= 1);
+        assert!(
+            !snapshot.active,
+            "this test expects an idle node and never starts mining"
+        );
+        println!(
+            "CybOS native lab check: height={}, mining_active={}",
+            snapshot.height, snapshot.active
+        );
+    }
 }
