@@ -13,8 +13,8 @@ impl Store {
     pub(crate) fn open() -> Self {
         let base = dirs_fallback();
         let _ = fs::create_dir_all(&base);
-        let path = base.join("cybos.db");
-        let conn = Connection::open(&path).expect("cannot open cybOS database");
+        let path = base.join("cybos-encrypted.db");
+        let conn = crate::secure_store::open_session(&base).expect("authenticated encrypted database required");
         let _ = conn.busy_timeout(Duration::from_secs(3));
         let _ = conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;");
         conn.execute_batch(

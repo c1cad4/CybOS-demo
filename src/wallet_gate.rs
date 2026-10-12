@@ -18,7 +18,7 @@ pub(crate) struct Gate {
     backup: [Zeroizing<String>; 3],
     saved: bool,
     restore: bool,
-    task: Option<Receiver<Result<Vault, String>>>,
+    task: Option<Receiver<Result<(Vault, Zeroizing<[u8; 32]>), String>>>,
     inner: Option<CybOs>,
 }
 impl Gate {
@@ -78,19 +78,24 @@ impl Gate {
         self.error.clear();
         std::thread::spawn(move || {
             let result = (|| {
-                if creating {
+                let vault = if creating {
                     let vault = Vault::seal(&phrase, &password)?;
                     vault.save_new(&path)?;
-                    Ok(vault)
+                    vault
                 } else {
                     let vault = Vault::load(&path)?;
                     if recovery {
-                        vault.recover(&path, &phrase, &password)
+                        vault.recover(&path, &phrase, &password)?
                     } else {
-                        vault.unlock(&password)?;
-                        Ok(vault)
+                        vault
                     }
-                }
+                };
+                let data_key = vault.data_key(&password)?;
+                crate::secure_store::prepare(
+                    path.parent().ok_or("Папка профиля недоступна")?,
+                    &data_key,
+                )?;
+                Ok((vault, data_key))
             })();
             let _ = tx.send(result);
         });
@@ -104,7 +109,11 @@ impl Gate {
         if let Some(result) = result {
             self.task = None;
             match result {
-                Ok(vault) => {
+                Ok((vault, data_key)) => {
+                    if let Err(error) = crate::secure_store::set_session_key(data_key) {
+                        self.error = error;
+                        return;
+                    }
                     self.phrase.zeroize();
                     self.password.zeroize();
                     self.repeat.zeroize();
@@ -120,9 +129,23 @@ impl Gate {
                     self.password.zeroize();
                     self.repeat.zeroize();
                     self.error = error;
+                    // Profile creation may have succeeded before database preparation failed.
+                    if let Ok(vault) = Vault::load(&self.path) {
+                        self.vault = Some(vault);
+                        self.phrase.zeroize();
+                        for word in &mut self.backup {
+                            word.zeroize();
+                        }
+                    }
                 }
             }
         }
+    }
+}
+impl Drop for Gate {
+    fn drop(&mut self) {
+        self.inner.take();
+        crate::secure_store::clear_session_key();
     }
 }
 impl eframe::App for Gate {
@@ -136,7 +159,7 @@ impl eframe::App for Gate {
         ui.vertical_centered(|ui| {
             ui.add_space(30.);ui.heading(egui::RichText::new("CybWallet").size(32.).color(egui::Color32::from_rgb(100,255,170)));ui.label("Ваш ключ доступа к CybOS");
             ui.label("24 слова BIP39 восстанавливают ключ профиля. Это не seed кошелька Monero/CybHero.");
-            ui.label("Ключ хранится зашифрованным. Существующие чаты и файлы пока не зашифрованы.");
+            ui.label("Ключ и активная база будут зашифрованы. Старый cybos.db сохранится как открытая резервная копия; остальные файлы пока без шифрования.");
             ui.label("Модули CybOS запустятся после входа.");ui.add_space(16.);
             if self.damaged {ui.colored_label(egui::Color32::RED,&self.error);ui.label("Повреждённый файл сохранён. Автоматический сброс запрещён.");return;}
             ui.add_enabled_ui(self.task.is_none(),|ui| {

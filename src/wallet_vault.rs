@@ -88,7 +88,7 @@ impl Vault {
             sealed_entropy,
         })
     }
-    pub fn unlock(&self, password: &str) -> Result<(), String> {
+    fn decrypt_entropy(&self, password: &str) -> Result<Zeroizing<Vec<u8>>, String> {
         if password.len() > 1024 {
             return Err("Неверный пароль".into());
         }
@@ -114,7 +114,17 @@ impl Vault {
         if identity(value) != self.id {
             return Err("Повреждённый идентификатор профиля".into());
         }
-        Ok(())
+        Ok(entropy)
+    }
+    pub fn unlock(&self, password: &str) -> Result<(), String> {
+        self.decrypt_entropy(password).map(|_| ())
+    }
+    pub fn data_key(&self, password: &str) -> Result<Zeroizing<[u8; 32]>, String> {
+        let entropy = self.decrypt_entropy(password)?;
+        let mut hash = Sha256::new();
+        hash.update(b"CybOS SQLCipher data key v1");
+        hash.update(entropy.as_slice());
+        Ok(Zeroizing::new(hash.finalize().into()))
     }
     pub fn recovery_matches(&self, phrase: &str) -> Result<(), String> {
         if identity(&*Self::entropy(phrase)?) != self.id {
@@ -242,8 +252,10 @@ mod tests {
         let before = std::fs::read(&path).unwrap();
         assert!(vault.recover(&path, "abandon", "new-password-123").is_err());
         assert_eq!(std::fs::read(&path).unwrap(), before);
+        let old_key = vault.data_key("test-password-123").unwrap();
         let recovered = vault.recover(&path, PHRASE, "new-password-123").unwrap();
         recovered.unlock("new-password-123").unwrap();
+        assert_eq!(*old_key, *recovered.data_key("new-password-123").unwrap());
         assert!(recovered.unlock("test-password-123").is_err());
         assert_eq!(Vault::load(&path).unwrap().id, vault.id);
         #[cfg(unix)]

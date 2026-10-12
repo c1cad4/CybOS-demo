@@ -12,6 +12,7 @@ mod mining;
 mod mining_report;
 mod wallet_vault;
 mod wallet_gate;
+mod secure_store;
 mod store;
 
 mod actions;
