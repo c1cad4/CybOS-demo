@@ -10,6 +10,8 @@ mod torrent_indexer;
 mod models;
 mod mining;
 mod mining_report;
+mod wallet_vault;
+mod wallet_gate;
 mod store;
 
 mod actions;
@@ -57,6 +59,6 @@ fn main() -> eframe::Result {
     eframe::run_native(
         "cybOS",
         opts,
-        Box::new(|cc| { i18n::install_fonts(&cc.egui_ctx); Ok(Box::new(CybOs::default())) }),
+        Box::new(|cc| { i18n::install_fonts(&cc.egui_ctx); Ok(Box::new(wallet_gate::Gate::new())) }),
     )
 }

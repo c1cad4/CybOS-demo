@@ -107,6 +107,7 @@ impl CybOs {
                         (Page::Robot, "Агенты"),
                         (Page::Network, "Устройства"),
                         (Page::Vpn, "CybVPN"),
+                        (Page::Wallet, "CybWallet"),
                         (Page::Assets, "Токены"),
                         (Page::CybDex, "CybDEX"),
                         (Page::System, "Cyb Диспетчер"),
@@ -187,6 +188,14 @@ impl CybOs {
                     ui.separator();
                     ui.add_space(8.0);
                     match self.page {
+                        Page::Wallet => {
+                            ui.heading("CybWallet");
+                            ui.label("Локальный профиль открыт. Ключ защищён паролем и 24 словами восстановления.");
+                            ui.label(format!("ID профиля: {}",self.wallet_profile_id));
+                            ui.label("Фраза BIP39 восстанавливает профиль CybOS. Для Monero/CybHero используется отдельный формат кошелька.");
+                            ui.label("Кошелёк реальных средств и отправка транзакций пока не подключены. Это хранилище ключа доступа к приложению.");
+                            ui.label("Для блокировки завершите CybOS: следующий запуск снова потребует вход. Существующие чаты и файлы пока не зашифрованы.");
+                        }
                         Page::Vpn => { egui::ScrollArea::vertical().show(ui, |ui| self.vpn_page(ui)); }
                         Page::Graph => self.graph(ui),
                         Page::Robot => {

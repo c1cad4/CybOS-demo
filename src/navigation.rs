@@ -18,6 +18,7 @@ pub(crate) enum Page {
     Browser,
     System,
     Vpn,
+    Wallet,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -42,6 +43,7 @@ pub(crate) enum Icon {
 impl Page {
     pub(crate) fn title(self) -> &'static str {
         match self {
+            Page::Wallet => "CybWallet",
             Page::Vpn => "CybVPN",
             Page::Graph => "Граф знаний",
             Page::Network => "Устройства",
@@ -61,6 +63,7 @@ impl Page {
 
     pub(crate) fn description(self) -> &'static str {
         match self {
+            Self::Wallet => "Ключ профиля и восстановление доступа.",
             Self::Vpn => "Защищённый интернет и частная сеть устройств. Настройте сервер и проверьте соединение.",
             Self::Chat => "Переписывайтесь с подключёнными устройствами через CybChat.",
             Self::Brain | Self::Graph => {
@@ -84,6 +87,7 @@ impl Page {
 
     pub(crate) fn icon(self) -> Icon {
         match self {
+            Page::Wallet => Icon::Assets,
             Page::Vpn => Icon::Network,
             Page::Graph => Icon::Graph,
             Page::Network => Icon::Network,
@@ -103,6 +107,7 @@ impl Page {
 
     pub(crate) fn matches_query(self, q: &str) -> bool {
         let keys = match self {
+            Page::Wallet => "wallet кошелек кошелёк seed профиль восстановление",
             Page::Vpn => "vpn cybvpn wireguard amnezia впн интернет защита",
             Page::Robot => "robot robotcyb agent agents qwen ai робот агенты помощник",
             Page::Farm => "farm cicadafarm hive chicken goat honey eggs environment ферма улей пасека",
